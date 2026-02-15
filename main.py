@@ -5,8 +5,7 @@ from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from googleapiclient.http import MediaIoBaseUpload
 
-from tools.sys_monitor import get_system_metrics
-from tools.finance_reader import read_financial_inbox, FinanceReader
+from tools.finance_manager import FinanceManager 
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,36 +15,51 @@ def load_config():
         return json.load(f)
 
 config = load_config()
-
-# CONSISTENT NESTED ACCESS
 AUTH_USER_ID = int(config['telegram']['authorized_user_id'])
 BOT_TOKEN = config['telegram']['bot_token']
 LOCATION = config.get('user', {}).get('location', 'Sachse, TX')
 
 client = genai.Client(api_key=config['gemini']['api_key'])
-
 SYSTEM_PROMPT = f"You are the 'Chief of Staff' for Matthew in {LOCATION}."
+
+# 1. Initialize the Scaling Finance Manager
+fm = FinanceManager()
+
+# --- ✅ CLEAN TOOLS FOR GEMINI (Defined before usage) ---
+
+def run_finance_processing():
+    """Scans the GDrive inbox, parses statements with Gemini, and updates the yearly ledger."""
+    return fm.process_latest_file()
+
+def get_system_status():
+    """Returns the current CPU usage of the agent's dedicated machine."""
+    return f"CPU Usage: {psutil.cpu_percent()}%"
+
+def get_spending_report(year: int, month: str):
+    """
+    Retrieves transaction data for a specific month/year.
+    The AI uses this to answer questions about spending.
+    """
+    return fm.query_spending(year, month)
+
+# --- 🛰️ TELEGRAM COMMAND HANDLERS ---
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != AUTH_USER_ID: return
-    
     doc = update.message.document
     await update.message.reply_text(f"🦅 Financial Hawk: Receiving {doc.file_name}...")
-
     try:
         tg_file = await context.bot.get_file(doc.file_id)
         file_stream = io.BytesIO()
         await tg_file.download_to_memory(file_stream)
         file_stream.seek(0)
 
-        reader = FinanceReader()
         media = MediaIoBaseUpload(file_stream, mimetype=doc.mime_type)
-        reader.drive_service.files().create(
-            body={'name': doc.file_name, 'parents': [reader.inbox_folder_id]},
+        fm.drive.files().create(
+            body={'name': doc.file_name, 'parents': [fm.inbox_id]},
             media_body=media
         ).execute()
-
-        await update.message.reply_text(f"✅ Uploaded {doc.file_name} to the financial inbox. Run /process_inbox to process it.")
+        await update.message.reply_text(f"✅ Uploaded {doc.file_name}. Run /process_inbox to log it.")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
@@ -56,22 +70,25 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_inbox_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != AUTH_USER_ID: return
-    await update.message.reply_text("⏳ Processing financial inbox...")
+    await update.message.reply_text("⏳ Scaling Manager: Processing financial inbox...")
     try:
-        result = read_financial_inbox()
-        if isinstance(result, dict):
-            await update.message.reply_text(f"✅ {result.get('message', 'Processing complete.')}")
-        else:
-            await update.message.reply_text(f"✅ {result}")
+        result = fm.process_latest_file()
+        await update.message.reply_text(f"✅ {result}")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
+# --- 🧠 THE BRAIN: AI MESSAGE HANDLER ---
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != AUTH_USER_ID: return
+    
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-2.0-flash',
         contents=update.message.text,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, tools=[get_system_metrics, read_financial_inbox, process_inbox_command])
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT, 
+            tools=[get_system_status, run_finance_processing, get_spending_report] 
+        )
     )
     await update.message.reply_text(response.text)
 
