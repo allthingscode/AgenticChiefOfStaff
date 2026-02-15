@@ -1,0 +1,23 @@
+{
+    "user": {
+        "location": "city, state"
+    },
+    
+    "gemini": {
+        "api_key": "aaa",
+        "model": "gemini-2.5-flash"
+    },
+
+    "telegram": {
+        "bot_token": "bbb",
+        "authorized_user_id": 12345
+    },
+
+    "finance": {
+        "google_drive": {
+            "transaction_inbox_folder_id": "ccc",
+            "transaction_processed_folder_id": "ddd",
+            "general_ledger_sheet": "eee"
+        }
+    }
+}

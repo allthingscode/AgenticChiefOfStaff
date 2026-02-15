@@ -1,0 +1,15 @@
+# --- Core Agent ---
+google-genai
+python-telegram-bot
+psutil
+pandas
+
+# --- Google APIs ---
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# --- Testing ---
+pytest
+pytest-asyncio
+pytest-cov
