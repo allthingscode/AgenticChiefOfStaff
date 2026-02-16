@@ -54,12 +54,10 @@ async def process_inbox_command(update: Update, context: ContextTypes.DEFAULT_TY
     if update.effective_user.id != AUTH_USER_ID: return
     await update.message.reply_text("⏳ Scaling Manager: Processing financial inbox...")
     try:
-        result = fm.process_latest_file()
+        result = fm.process_financial_inbox()
         await update.message.reply_text(f"✅ {result}")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
-
-# --- 🧠 THE BRAIN: AI MESSAGE HANDLER ---
 
 # --- 🧠 THE BRAIN: AI MESSAGE HANDLER ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

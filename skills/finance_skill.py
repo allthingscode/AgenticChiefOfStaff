@@ -9,7 +9,7 @@ def run_finance_processing():
     Scans the Google Drive financial inbox, parses bank statements using Gemini,
     and updates the yearly ledger (e.g., Finance_Ledger_2026).
     """
-    return fm.process_latest_file()
+    return fm.process_financial_inbox()
 
 def get_spending_report(year: int, month: str):
     """
