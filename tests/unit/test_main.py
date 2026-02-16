@@ -59,7 +59,7 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertIn(self.mock_finance[0], actual_tools)
         self.assertIn(self.mock_system[0], actual_tools)
 
-    async def test_process_inbox_command_via_fm(self):
+    async def test_finproc_command_via_fm(self):
         """Verify the Telegram /process_inbox command calls the new inbox method."""
         update = AsyncMock(spec=Update)
         update.effective_user.id = 123
@@ -68,12 +68,12 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         # ✅ Point to the renamed method
         self.mock_fm.process_financial_inbox.return_value = "Successfully processed 1 files."
 
-        await main_module.process_inbox_command(update, None)
+        await main_module.finproc_command(update, None)
         
         update.message.reply_text.assert_any_call("✅ Successfully processed 1 files.")
         self.mock_fm.process_financial_inbox.assert_called_once()
 
-    async def test_process_inbox_command_return_string(self):
+    async def test_finproc_command_return_string(self):
         """Verify the Telegram command handles the 'multiple tabs' success message."""
         update = AsyncMock(spec=Update)
         update.effective_user.id = 123
@@ -81,6 +81,6 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         
         self.mock_fm.process_financial_inbox.return_value = "Successfully processed 1 files across multiple tabs."
 
-        await main_module.process_inbox_command(update, None)
+        await main_module.finproc_command(update, None)
         
         update.message.reply_text.assert_any_call("✅ Successfully processed 1 files across multiple tabs.")
