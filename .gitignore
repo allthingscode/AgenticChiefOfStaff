@@ -21,3 +21,6 @@ poetry.lock
 botpy.log
 secrets/
 config.json
+workspace/AGENTS.md
+workspace/USER.md
+GEMINI.md
