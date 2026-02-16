@@ -50,6 +50,7 @@ class AgentLoop:
         cron_service: "CronService | None" = None,
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
+        llm_routing_config: dict | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         from nanobot.cron.service import CronService
@@ -65,6 +66,8 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.llm_routing_config = llm_routing_config or {}
+        print(f"DEBUG: LLM Routing config loaded: {self.llm_routing_config}")
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
