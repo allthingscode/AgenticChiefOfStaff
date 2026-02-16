@@ -50,7 +50,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cpu = psutil.cpu_percent(interval=0.1)
     await update.message.reply_text(f"🖥️ Status: ONLINE | CPU: {cpu}%")
 
-async def process_inbox_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def finproc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != AUTH_USER_ID: return
     await update.message.reply_text("⏳ Scaling Manager: Processing financial inbox...")
     try:
@@ -79,7 +79,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("process_inbox", process_inbox_command))
+    app.add_handler(CommandHandler("finproc", finproc_command))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling(drop_pending_updates=True)

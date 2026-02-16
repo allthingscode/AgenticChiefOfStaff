@@ -1,10 +1,12 @@
+import datetime
 import io, json, logging
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2 import service_account
 from google import genai
 from google.genai import types
-from tools.constants import MASTER_CATEGORIES  # ✅ Use constants
+from tools.constants import MASTER_CATEGORIES
+from tools.prompts import get_prompt, SYSTEM_IDENTITY
 
 logger = logging.getLogger(__name__)
 
@@ -53,28 +55,21 @@ class FinanceReader:
         return file_list
 
     def parse_pdf_with_gemini(self, pdf_bytes):
+        # 1. Fetch the instructions from our new prompts.py
         category_list_str = ", ".join(MASTER_CATEGORIES)
+        task_instructions = get_prompt('FINANCIAL_INGESTION', categories=category_list_str)
         
-        prompt = (
-            f"Extract every transaction to JSON. Use categories: {category_list_str}. "
-            f"\n\nCRITICAL DATE LOGIC: "
-            f"\n- You MUST return dates as 'YYYY-MM-DD'."
-            f"\n- Determine the YEAR based on the statement period. "
-            f"\n- Example: If the statement covers Dec of last year to Jan this year, '12/28' is '<last-year>-12-28' and '01/02' is '<this-year>-01-02'."
-            f"\n- NEVER return a date in the future."
-            f"\n- NEVER return a date that is after the statement date, or statement due date."
-            f"\n\nCRITICAL INSTRUCTIONS: "
-            f"\n1. SIGN CONVENTION: Preserve mathematical signs as shown. Payments/Credits are typically negative."
-            f"\n2. AUDIT TOTAL: You MUST find the 'New Balance' or 'Total Activity' dollar amount. "
-            f"\n3. IGNORE POINTS: Do NOT use values from 'Rewards Program', 'Ultimate Rewards', 'Rewards Summary', or 'Point Balance' sections. "
-            f"If you see a number labeled as points, IGNORE IT. Look for the dollar amount representing the actual financial balance."
-        )
+        # 2. Combine with System Identity
+        full_prompt = f"{SYSTEM_IDENTITY}\n\n{task_instructions}"
 
+        # 3. Call Gemini with the STRICT SCHEMA intact
         res = self.ai_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf'), prompt],
+            model="models/gemini-2.5-pro",
+            contents=[types.Part.from_bytes(data=pdf_bytes, mime_type='application/pdf'), full_prompt],
             config=types.GenerateContentConfig(
+                temperature=0.0,        # Forces deterministic output
                 response_mime_type="application/json",
+                # ✅ THIS IS THE SAFETY NET
                 response_schema={
                     "type": "OBJECT",
                     "properties": {
@@ -99,6 +94,38 @@ class FinanceReader:
             )
         )
         return json.loads(res.text)
+    
+    def get_universal_finance_prompt(self, current_year, categories):
+        return f"""
+        TASK: Convert this financial statement into a structured JSON ledger.
+        CONTEXT: Today's date is in the year {current_year}.
+        
+        DATA EXTRACTION GUIDELINES:
+        1. SCOPE: Extract every individual transaction (money moving in or out). 
+        2. IGNORE SUMMARIES: Do not extract category sub-totals, statement summaries, or "total for this period" rows. 
+        3. DESCRIPTIONS: If a description spans multiple lines, merge it into a single clean string. Remove trailing reference numbers or unique transaction IDs where possible to keep descriptions human-readable.
+        
+        DATE NORMALIZATION:
+        - Format: 'YYYY-MM-DD'.
+        - YEAR INFERENCE: If the document lists dates without years (e.g., '12/25'), use the statement's metadata to infer the correct year.
+        - BOUNDARY RULE: Never return a date in the future. If a transaction date would fall in the future based on the current year, it likely belongs to the previous calendar year.
+        
+        FINANCIAL LOGIC:
+        - SIGN CONVENTION: Expenses/Purchases must be POSITIVE. Credits/Payments/Refunds must be NEGATIVE.
+        - CATEGORIZATION: Use ONLY these categories: {categories}.
+        
+        AUDIT FIELD:
+        - Find the 'New Balance', 'Closing Balance', or 'Total Amount Due' and put it in the 'statement_total' field. 
+        - EXCLUSION: Completely ignore any "Points," "Rewards," or non-currency balances.
+        
+        JSON SCHEMA:
+        {{
+        "transactions": [
+            {{ "date": "YYYY-MM-DD", "description": "STRING", "amount": FLOAT, "type": "DEBIT|CREDIT", "category": "STRING" }}
+        ],
+        "statement_total": FLOAT
+        }}
+        """
 
     def move_file(self, file_id):
         file = self.drive_service.files().get(fileId=file_id, fields='parents').execute()
