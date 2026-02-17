@@ -133,6 +133,55 @@ class AgentLoop:
             if isinstance(cron_tool, CronTool):
                 cron_tool.set_context(channel, chat_id)
 
+    def _get_model_for_request(self, messages: list[dict]) -> str:
+        """Selects the appropriate LLM based on routing rules and prompt content."""
+        powerful_model = "gemini-1.5-pro-latest"
+        fast_model = "gemini-1.5-flash-latest"
+        local_model = "ollama/llama3.1:8b"
+
+        logger.debug(f"LLM Router: Evaluating request for model selection.")
+
+        # Rule 1: MUST use powerful model to process tool results.
+        last_message = messages[-1] if messages else {}
+        if last_message.get("role") == "assistant" and last_message.get("tool_calls"):
+            logger.info(f"LLM Router: Rule 1 - Detected pending tool calls. Selecting powerful model '{powerful_model}'.")
+            return powerful_model
+
+        # Find the last user message to analyze for subsequent rules.
+        last_user_message = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content")
+                if isinstance(content, str):
+                    last_user_message = content.lower().strip()
+                    break
+        
+        if not last_user_message:
+            logger.info("LLM Router: No user message found, defaulting to local model.")
+            return local_model
+
+        logger.debug(f"LLM Router: Analyzing user message: '{last_user_message[:100]}'")
+
+        # Rule 2: Use fast model for knowledge-based questions.
+        knowledge_prefixes = ["what is", "what are", "who is", "who are", "explain", "how does", "what's", "tell me about"]
+        if any(last_user_message.startswith(p) for p in knowledge_prefixes):
+            logger.info(f"LLM Router: Rule 2 - Knowledge prefix found. Selecting fast model '{fast_model}'.")
+            return fast_model
+
+        # Rule 3: Use powerful model for prompts that likely require tool use.
+        tool_keywords = [
+            'read file', 'write file', 'edit file', 'list dir', 'ls', 
+            'execute', 'run command', 'shell', 'search', 'fetch url', 
+            'get weather', 'set reminder', 'create skill', 'spawn'
+        ]
+        if any(keyword in last_user_message for keyword in tool_keywords):
+            logger.info(f"LLM Router: Rule 3 - Tool keyword found. Selecting powerful model '{powerful_model}'.")
+            return powerful_model
+
+        # Rule 4: Default to the local model for everything else (creative, simple chat).
+        logger.info(f"LLM Router: Rule 4 - No specific rules met. Defaulting to local model '{local_model}'.")
+        return local_model
+
     async def _run_agent_loop(self, initial_messages: list[dict]) -> tuple[str | None, list[str]]:
         """
         Run the agent iteration loop.
@@ -151,10 +200,13 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
+            # Select the model based on routing rules
+            selected_model = self._get_model_for_request(messages)
+
             response = await self.provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
-                model=self.model,
+                model=selected_model,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
             )
@@ -181,8 +233,11 @@ class AgentLoop:
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info(f"Tool call: {tool_call.name}({args_str[:200]})")
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    
+                    # Ensure result is a string before adding to context
+                    result_str = str(result) if not isinstance(result, str) else result
                     messages = self.context.add_tool_result(
-                        messages, tool_call.id, tool_call.name, result
+                        messages, tool_call.id, tool_call.name, result_str
                     )
                 messages.append({"role": "user", "content": "Reflect on the results and decide next steps."})
             else:
@@ -368,10 +423,16 @@ class AgentLoop:
 
         lines = []
         for m in old_messages:
-            if not m.get("content"):
+            content = m.get("content")
+            if not content:
                 continue
+
+            # Ensure content is a string before formatting
+            if not isinstance(content, str):
+                content = json.dumps(content)
+
             tools = f" [tools: {', '.join(m['tools_used'])}]" if m.get("tools_used") else ""
-            lines.append(f"[{m.get('timestamp', '?')[:16]}] {m['role'].upper()}{tools}: {m['content']}")
+            lines.append(f"[{m.get('timestamp', '?')[:16]}] {m['role'].upper()}{tools}: {content}")
         conversation = "\n".join(lines)
         current_memory = memory.read_long_term()
 
