@@ -25,3 +25,4 @@ workspace/AGENTS.md
 workspace/USER.md
 GEMINI.md
 start_nanobot.ps1
+list_gemini_models.py
