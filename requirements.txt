@@ -3,6 +3,8 @@ google-genai
 python-telegram-bot
 psutil
 pandas
+json-repair
+oauth-cli-kit
 
 # --- Google APIs ---
 google-api-python-client
