@@ -24,3 +24,4 @@ config.json
 workspace/AGENTS.md
 workspace/USER.md
 GEMINI.md
+start_nanobot.ps1
