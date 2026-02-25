@@ -5,6 +5,17 @@ psutil
 pandas
 json-repair
 oauth-cli-kit
+pydantic
+pydantic-settings
+loguru
+typer
+
+# --- Infrastructure & Protocols ---
+mcp
+litellm
+aiohttp
+websockets
+prompt_toolkit
 
 # --- Google APIs ---
 google-api-python-client

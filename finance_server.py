@@ -1,4 +1,4 @@
-# C:\Users\HayesAiAgent\Documents\nanobot\finance_server.py
+# C:\Users\HayesChiefOfStaff\Documents\nanobot\finance_server.py
 
 from mcp.server.fastmcp import FastMCP
 from tools.finance_manager import FinanceManager

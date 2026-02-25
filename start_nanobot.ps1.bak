@@ -1,0 +1,19 @@
+# File: C:\Users\HayesChiefOfStaff\Documents\nanobot\start_nanobot.ps1
+$CondaEnvPath = "C:\Users\HayesChiefOfStaff\miniconda3\envs\openclaw"
+$AppPath = "C:\Users\HayesChiefOfStaff\Documents\nanobot"
+
+# Set working directory
+Set-Location $AppPath
+
+# Set local Path for this session (avoiding the need for 'conda activate')
+$env:PATH = "$CondaEnvPath;$CondaEnvPath\Scripts;$CondaEnvPath\Library\bin;$env:PATH"
+
+Write-Host "--- Starting Nanobot Gateway (Port 18790) ---" -ForegroundColor Cyan
+
+while($true) {
+    # Explicitly use the python.exe from the environment
+    & "$CondaEnvPath\python.exe" -m nanobot gateway
+    
+    Write-Host "Gateway exited. Restarting in 5 seconds..." -ForegroundColor Red
+    Start-Sleep -Seconds 5
+}
