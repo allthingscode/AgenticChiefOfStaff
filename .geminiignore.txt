@@ -1,0 +1,27 @@
+# Exclude Virtual Environments
+venv/
+.venv/
+env/
+.env/
+bin/
+lib/
+# If you are using Conda, exclude the specific env folder if it's inside your project
+anaconda3/
+.conda/
+nanoClaw
+
+# Exclude Cache & Metadata
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Exclude Large Data/Log Directories (common in your Nanobot project)
+logs/
+data/
+*.log
+
+# Project specific: If Nanobot has a local 'cache' or 'tmp'
+cache/
+tmp/
