@@ -1,15 +1,16 @@
 # Tool Usage Notes
 
-Tool signatures are provided automatically via function calling.
-This file documents non-obvious constraints and usage patterns.
+## `exec`
 
-## exec — Safety Limits
+The `exec` tool runs shell commands.
 
-- Commands have a configurable timeout (default 60s)
-- Dangerous commands are blocked (rm -rf, format, dd, shutdown, etc.)
-- Output is truncated at 10,000 characters
-- `restrictToWorkspace` config can limit file access to the workspace
+### Safety Limits
 
-## cron — Scheduled Reminders
+- **Timeout**: Configurable (default 60s).
+- **Blocked**: Dangerous commands are blocked.
+- **Truncation**: Output is truncated at 10,000 characters.
+- **File Access**: Can be restricted to workspace.
 
-- Please refer to cron skill for usage.
+## `cron`
+
+See the `cron` skill for usage.
