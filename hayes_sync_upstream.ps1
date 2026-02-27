@@ -1,5 +1,5 @@
 # Simple PowerShell script to sync the local 'development' branch with 'upstream/main'
-# Usage: .\sync-upstream.ps1
+# Usage: .\hayes_sync_upstream.ps1
 
 Write-Host "Fetching latest changes from 'upstream' (HKUDS/nanobot)..." -ForegroundColor Cyan
 git fetch upstream
