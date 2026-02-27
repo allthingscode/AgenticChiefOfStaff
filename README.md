@@ -310,6 +310,72 @@ nanobot gateway
 </details>
 
 <details>
+<summary><b>Matrix (Element)</b></summary>
+
+Install Matrix dependencies first:
+
+```bash
+pip install nanobot-ai[matrix]
+```
+
+**1. Create/choose a Matrix account**
+
+- Create or reuse a Matrix account on your homeserver (for example `matrix.org`).
+- Confirm you can log in with Element.
+
+**2. Get credentials**
+
+- You need:
+  - `userId` (example: `@nanobot:matrix.org`)
+  - `accessToken`
+  - `deviceId` (recommended so sync tokens can be restored across restarts)
+- You can obtain these from your homeserver login API (`/_matrix/client/v3/login`) or from your client's advanced session settings.
+
+**3. Configure**
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://matrix.org",
+      "userId": "@nanobot:matrix.org",
+      "accessToken": "syt_xxx",
+      "deviceId": "NANOBOT01",
+      "e2eeEnabled": true,
+      "allowFrom": [],
+      "groupPolicy": "open",
+      "groupAllowFrom": [],
+      "allowRoomMentions": false,
+      "maxMediaBytes": 20971520
+    }
+  }
+}
+```
+
+> Keep a persistent `matrix-store` and stable `deviceId` — encrypted session state is lost if these change across restarts.
+
+| Option | Description |
+|--------|-------------|
+| `allowFrom` | User IDs allowed to interact. Empty = all senders. |
+| `groupPolicy` | `open` (default), `mention`, or `allowlist`. |
+| `groupAllowFrom` | Room allowlist (used when policy is `allowlist`). |
+| `allowRoomMentions` | Accept `@room` mentions in mention mode. |
+| `e2eeEnabled` | E2EE support (default `true`). Set `false` for plaintext-only. |
+| `maxMediaBytes` | Max attachment size (default `20MB`). Set `0` to block all media. |
+
+
+
+
+**4. Run**
+
+```bash
+nanobot gateway
+```
+
+</details>
+
+<details>
 <summary><b>WhatsApp</b></summary>
 
 Requires **Node.js ≥18**.
