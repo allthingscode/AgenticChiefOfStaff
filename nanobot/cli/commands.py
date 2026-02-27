@@ -923,7 +923,7 @@ def cron_enable(
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
     
-    store_path = get__data_dir() / "cron" / "jobs.json"
+    store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
     
     job = service.enable_job(job_id, enabled=not disable)
