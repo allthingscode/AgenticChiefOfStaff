@@ -6,7 +6,6 @@ build/
 docs/
 *.egg-info/
 *.egg
-*.pyc
 *.pyo
 *.pyd
 *.pyw
@@ -15,6 +14,8 @@ docs/
 *.pyzz
 .venv/
 venv/
+nanoClaw/
+nanoClaw_Backup/
 __pycache__/
 poetry.lock
 .pytest_cache/
@@ -32,8 +33,7 @@ AGENT.md
 /workspace/memory/MEMORY.md
 /workspace/memory/HISTORY.md
 /workspace/sessions/
-nanoClaw_Backup/
 workspace/HEARTBEAT.md
 workspace/TOOLS.md
-.gitignore
 workspace/SOUL.md
+*.bak
