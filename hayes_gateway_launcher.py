@@ -3,9 +3,25 @@ import sys
 import runpy
 import os
 
-# 1. Fix the Windows 'Event loop is closed' error
+# 1. Fix the Windows 'Event loop is closed' error while supporting subprocesses
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # WindowsProactorEventLoopPolicy is the default in Python 3.8+, but we 
+    # ensure it here to support subprocesses (which Selector doesn't).
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    # Monkey patch to silence 'Event loop is closed' errors during shutdown
+    from functools import wraps
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+    
+    _orig_del = _ProactorBasePipeTransport.__del__
+    @wraps(_orig_del)
+    def _patched_del(self):
+        try:
+            _orig_del(self)
+        except RuntimeError as e:
+            if str(e) != 'Event loop is closed':
+                raise
+    _ProactorBasePipeTransport.__del__ = _patched_del
 
 # 2. Add current directory to the path so it can see the 'nanobot' folder
 current_dir = os.path.dirname(os.path.abspath(__file__))
