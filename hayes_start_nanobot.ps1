@@ -11,17 +11,36 @@ function Stop-NanobotProcesses {
     
     # 1. Kill the specific Python process we started (and its children)
     if ($ProcessId) {
-        Write-Host "Stopping Nanobot Gateway (PID: $ProcessId)..." -ForegroundColor Gray
+        Write-Host "Stopping Nanobot Gateway (PID: $ProcessId) and its children..." -ForegroundColor Gray
+        
+        # Get children before killing the parent
+        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId"
+        
+        # Kill parent
         Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+        
+        # Kill children (MCP servers, playwright, etc.)
+        foreach ($child in $children) {
+            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    # 2. Cleanup common "zombie" targets that Nanobot uses
+    # 2. Cleanup leftover specific zombie targets if they are in this workspace
+    # Instead of killing ALL 'node', we check if they are related to nanobot or mcp
     $targets = @("node", "chromium", "playwright")
     foreach ($name in $targets) {
         $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
-        if ($procs) {
-            Write-Host "Cleaning up $name processes..." -ForegroundColor Gray
-            $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            try {
+                $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)").CommandLine
+                if ($cmd -like "*nanobot*" -or $cmd -like "*google-ai-mode-mcp*" -or $cmd -like "*playwright*") {
+                    # Safety: Don't kill the Gemini CLI node process
+                    if ($cmd -notlike "*gemini-cli*") {
+                        Write-Host "Cleaning up zombie $name process (PID: $($p.Id))..." -ForegroundColor Gray
+                        $p | Stop-Process -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            } catch {}
         }
     }
 
