@@ -40,9 +40,9 @@ Write-Host "   Hayes Customization Audit Report (Post-Merge)        " -Foregroun
 Write-Host "--------------------------------------------------------" -ForegroundColor White
 
 foreach ($file in $riskyFiles) {
-    # Check if the file changed in the merge
-    $changes = git diff --name-only ORIG_HEAD HEAD | Select-String -Pattern [regex]::Escape($file)
-    if ($changes) {
+    # Check if the file changed in the merge using git diff directly with the file path
+    $changedFile = git diff --name-only ORIG_HEAD HEAD -- $file
+    if ($changedFile) {
         Write-Host "[!] ALERT: $file was updated upstream." -ForegroundColor Red
         Write-Host "    -> Action: Verify that 'hayes_gateway_launcher.py' patches are still compatible." -ForegroundColor Yellow
     } else {
