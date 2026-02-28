@@ -12,10 +12,8 @@ uv.lock
 package-lock.json
 .gemini/
 
-# --- Strategic Edition (Private) ---
-strategery/GEMINI.md
-strategery/list_gemini_models.py
-strategery/tasks
+# --- Strategic Edition (Local & Private) ---
+strategery/private/
 GEMINI_TODO.md
 
 # --- Standard Safety ---
