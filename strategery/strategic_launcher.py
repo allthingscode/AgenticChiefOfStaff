@@ -282,15 +282,14 @@ try:
                         except: pass
                 
                 if not args or not isinstance(args, dict):
-                    print(f"[Launcher] Warning: Consolidator failed tool call. Attempting Regex Recovery on: {text[:200]}...")
+                    print(f"[Launcher] Warning: Consolidator failed tool call. Attempting json_repair recovery...")
                     try:
-                        import re
-                        match = re.search(r"\{.*\}", text, re.DOTALL)
-                        if match:
-                            candidate = json.loads(match.group(0))
+                        from json_repair import repair_json
+                        repaired = repair_json(text, return_objects=True)
+                        if isinstance(repaired, dict):
                             args = {
-                                "history_entry": candidate.get("history_entry") or candidate.get("summary") or "No summary available.",
-                                "memory_update": candidate.get("memory_update") or candidate.get("facts") or current_memory
+                                "history_entry": repaired.get("history_entry") or repaired.get("summary") or "No summary available.",
+                                "memory_update": repaired.get("memory_update") or repaired.get("facts") or current_memory
                             }
                     except: pass
 
@@ -336,13 +335,18 @@ try:
                     assistant_count = 0
                     for m in reversed(session.messages):
                         role = m.get("role")
-                        ts_str = m.get("timestamp")
                         is_old = False
-                        if ts_str:
+                        
+                        # Cache parsed timestamp to avoid expensive parsing on every message arrival
+                        if "_parsed_ts" not in m and m.get("timestamp"):
                             try:
-                                if datetime.fromisoformat(ts_str) < cutoff:
-                                    is_old = True
-                            except: pass
+                                m["_parsed_ts"] = datetime.fromisoformat(m["timestamp"])
+                            except:
+                                m["_parsed_ts"] = None
+                        
+                        if m.get("_parsed_ts") and m["_parsed_ts"] < cutoff:
+                            is_old = True
+                            
                         if role == "assistant": assistant_count += 1
                         if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3) or role == "user":
                             new_msgs.append(m)

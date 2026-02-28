@@ -27,12 +27,21 @@ STRATEGIC = CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
 CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
 
+# Performance Optimization: In-memory service singleton cache
+_SERVICE_CACHE = {}
+
 # 1. Credentials Setup (Restricted to Tasks:Write, Calendar:Read-Only)
 # We use a subfolder in config_root for surgical credentials
 CREDS_DIR = CONFIG_ROOT / "google_surgical" / "credentials"
 CREDS_PATH = CREDS_DIR / f"{USER_EMAIL}.json"
 
 def get_service(service_name):
+    global _SERVICE_CACHE
+    cache_key = f"{service_name}:{USER_EMAIL}"
+    
+    if cache_key in _SERVICE_CACHE:
+        return _SERVICE_CACHE[cache_key]
+
     if not CREDS_PATH.exists():
         # Fallback to a generic name if specific one doesn't exist
         fallback_path = CREDS_DIR / "default.json"
@@ -61,7 +70,10 @@ def get_service(service_name):
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
             
-    return build(service_name, "v1" if service_name == "tasks" else "v3", credentials=creds)
+    # static_discovery=True prevents downloading the discovery doc every time
+    service = build(service_name, "v1" if service_name == "tasks" else "v3", credentials=creds, static_discovery=True)
+    _SERVICE_CACHE[cache_key] = service
+    return service
 
 # 2. MCP Server Setup
 mcp = FastMCP("Google Surgical")

@@ -15,6 +15,12 @@ if project_root not in sys.path:
 import strategery.strategic_google_surgical as google_tool
 import strategery.strategic_email_reporter as email_tool
 
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear the service cache before each test to ensure fresh builds."""
+    google_tool._SERVICE_CACHE.clear()
+    yield
+
 @pytest.fixture
 def mock_creds_data():
     return {
@@ -58,7 +64,8 @@ def test_google_surgical_get_service_success(mock_creds_data):
             with patch("strategery.strategic_google_surgical.Credentials", return_value=mock_creds):
                 with patch("strategery.strategic_google_surgical.build") as mock_build:
                     google_tool.get_service("tasks")
-                    mock_build.assert_called_with("tasks", "v1", credentials=mock_creds)
+                    # Match the new static_discovery=True parameter
+                    mock_build.assert_called_with("tasks", "v1", credentials=mock_creds, static_discovery=True)
 
 def test_google_calendar_list_events():
     """Verify list_calendar_events correctly formats the timeMin parameter."""
