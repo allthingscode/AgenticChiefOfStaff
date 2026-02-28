@@ -118,7 +118,9 @@ def list_calendars():
 def list_calendar_events(calendar_id: str = "primary", max_results: int = 10):
     """Lists upcoming events from a specific calendar (Read-Only)."""
     service = get_service("calendar")
-    now = datetime.utcnow().isoformat() + 'Z'
+    # Use timezone-aware UTC datetime to avoid DeprecationWarning
+    from datetime import UTC
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     results = service.events().list(
         calendarId=calendar_id, 
         timeMin=now, 
