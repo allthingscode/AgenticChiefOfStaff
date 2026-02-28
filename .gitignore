@@ -39,10 +39,6 @@ CUSTOMIZATIONS.md
 config.json
 secrets/
 workspace/
-# Specific deep ignores
-/workspace/memory/MEMORY.md
-/workspace/memory/HISTORY.md
-/workspace/sessions/
 *.bak
 
 # --- Obsolete/Cleaned Root Scripts ---
