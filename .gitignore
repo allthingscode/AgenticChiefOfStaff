@@ -30,7 +30,6 @@ list_gemini_models.py
 AGENT.md
 GEMINI.md
 GEMINI_TODO.md
-.gitignore
 
 # Nanobot-specific ignored files
 /workspace/memory/MEMORY.md

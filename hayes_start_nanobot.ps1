@@ -1,7 +1,24 @@
 # --- Configuration ---
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $AppPath = "C:\Users\HayesChiefOfStaff\Documents\nanobot"
-$PythonExe = "$AppPath\nanoclaw\Scripts\python.exe"
+$VenvName = "nanoClaw"
+$PythonExe = Join-Path $AppPath "$VenvName\Scripts\python.exe"
+$LogDir = "D:\Nanobot_Storage\logs"
 $MCPDataPath = "$env:LOCALAPPDATA\google-ai-mode-mcp\Data\chrome_profile"
+
+# Ensure Log Directory exists
+if (-not (Test-Path $LogDir)) {
+    try {
+        New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction Stop | Out-Null
+        Write-Host "Created log directory: $LogDir" -ForegroundColor Gray
+    } catch {
+        Write-Host "Warning: Could not create log directory $LogDir. Logging to local 'logs' folder instead." -ForegroundColor Yellow
+        $LogDir = Join-Path $AppPath "logs"
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    }
+}
+
+$LogFile = Join-Path $LogDir "nanobot_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 Set-Location $AppPath
 
@@ -23,10 +40,20 @@ function Stop-NanobotProcesses {
         foreach ($child in $children) {
             Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
         }
+    } else {
+        # Search for any process running our launcher if no PID was provided
+        $launcherProcs = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%hayes_gateway_launcher.py%'"
+        foreach ($p in $launcherProcs) {
+             Write-Host "Stopping Nanobot Gateway (PID: $($p.ProcessId)) and its children..." -ForegroundColor Gray
+             $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.ProcessId)"
+             foreach ($child in $children) {
+                 Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+             }
+             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # 2. Cleanup leftover specific zombie targets if they are in this workspace
-    # Instead of killing ALL 'node', we check if they are related to nanobot or mcp
     $targets = @("node", "chromium", "playwright")
     foreach ($name in $targets) {
         $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
@@ -54,6 +81,7 @@ function Stop-NanobotProcesses {
 
 Write-Host "--- Initializing Nanobot Environment ---" -ForegroundColor Cyan
 Write-Host "Press CTRL+C at any time to stop the gateway and exit." -ForegroundColor White
+Write-Host "Logging to: $LogFile" -ForegroundColor Gray
 
 try {
     while($true) {
@@ -62,16 +90,20 @@ try {
 
         Write-Host "--- Starting Nanobot Gateway (Port 18790) ---" -ForegroundColor Cyan
         
-        # Start the process and keep a reference to it
-        $process = Start-Process -FilePath $PythonExe -ArgumentList "`"$AppPath\hayes_gateway_launcher.py`"" -Wait -NoNewWindow -PassThru
+        # We use cmd /c to run the command and redirect stderr to stdout 
+        # BEFORE it hits PowerShell. This prevents NativeCommandError (red text)
+        # while still allowing Tee-Object to capture everything.
+        cmd /c "`"$PythonExe`" `"$AppPath\hayes_gateway_launcher.py`" 2>&1" | Tee-Object -FilePath $LogFile -Append
+        
+        $exitCode = $LASTEXITCODE
 
         # Check the exit code
-        if ($process.ExitCode -eq 0) {
+        if ($exitCode -eq 0) {
             Write-Host "`nNanobot shut down gracefully." -ForegroundColor Green
             break
         }
 
-        Write-Host "`nGateway exited unexpectedly with code $($process.ExitCode)." -ForegroundColor Red
+        Write-Host "`nGateway exited unexpectedly with code $exitCode." -ForegroundColor Red
         Write-Host "Restarting in 5 seconds (Press CTRL+C now to stop)..." -ForegroundColor White
         
         Start-Sleep -Seconds 5
@@ -80,10 +112,6 @@ try {
 finally {
     # This block runs even if you press CTRL+C
     Write-Host "`n`n--- Shutdown Signal Received ---" -ForegroundColor Magenta
-    if ($process -and -not $process.HasExited) {
-        Stop-NanobotProcesses -ProcessId $process.Id
-    } else {
-        Stop-NanobotProcesses
-    }
+    Stop-NanobotProcesses
     Write-Host "Nanobot has been stopped. Safe to close this window." -ForegroundColor Green
 }

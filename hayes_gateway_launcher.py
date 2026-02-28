@@ -3,7 +3,13 @@ import sys
 import runpy
 import os
 import json
+import io
 from pathlib import Path
+
+# Force UTF-8 encoding for Windows stdout/stderr to prevent charmap errors
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 1. Fix the Windows 'Event loop is closed' error while supporting subprocesses
 if sys.platform == 'win32':
@@ -31,36 +37,119 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 # ==========================================
-# --- 3. CUSTOM CONFIG LOADING ---
+# --- 3. CUSTOM CONFIG LOADING & PATCH ---
 # ==========================================
-def load_raw_config():
+RAW_CONFIG = {}
+
+try:
+    import nanobot.config.loader
+    _orig_migrate = nanobot.config.loader._migrate_config
+    
+    def _patched_migrate(data):
+        # 1. Capture the original data into our global RAW_CONFIG
+        global RAW_CONFIG
+        RAW_CONFIG = json.loads(json.dumps(data)) # Deep copy for our patches to use
+        
+        # 2. Run the original migration
+        data = _orig_migrate(data)
+        
+        # 3. Strip our custom keys so Pydantic validation doesn't crash Nanobot
+        if "agents" in data:
+            agents = data["agents"]
+            # Strip agents.consolidator
+            agents.pop("consolidator", None)
+            
+            # Strip agents.defaults.compaction and agents.defaults.contextPruning
+            if "defaults" in agents:
+                defaults = agents["defaults"]
+                defaults.pop("compaction", None)
+                defaults.pop("contextPruning", None)
+            
+            # Strip keywords from specialists
+            if "specialists" in agents:
+                for spec in agents["specialists"].values():
+                    if isinstance(spec, dict):
+                        spec.pop("keywords", None)
+        
+        print("[Launcher] Custom config keys intercepted and stripped for compatibility.")
+        return data
+    
+    nanobot.config.loader._migrate_config = _patched_migrate
+except Exception as e:
+    print(f"[Launcher] Warning: Config loader patch failed: {e}")
+
+# Pre-load RAW_CONFIG manually for very early patches (like Heartbeat)
+def get_raw_config_manually():
     config_path = Path.home() / ".nanobot" / "config.json"
     if config_path.exists():
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except: pass
     return {}
 
-RAW_CONFIG = load_raw_config()
+if not RAW_CONFIG:
+    RAW_CONFIG = get_raw_config_manually()
 
 # ==========================================
-# --- 4. PROVIDER LOGGING PATCH ---
+# --- 4. PROVIDER LOGGING & ROUTING PATCH ---
 # ==========================================
 try:
     from loguru import logger
+    import litellm
     from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.providers.custom_provider import CustomProvider
     from nanobot.providers.openai_codex_provider import OpenAICodexProvider
 
     # Patch LiteLLMProvider
     _orig_litellm_chat = LiteLLMProvider.chat
-    async def _patched_litellm_chat(self, *args, **kwargs):
-        model = kwargs.get("model") or self.default_model
-        logger.info("[Logging Patch] LiteLLM request: model={}", model)
-        return await _orig_litellm_chat(self, *args, **kwargs)
+    async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7):
+        target_model = model or self.default_model
+        
+        # THE OLLAMA BYPASS HAMMER
+        if str(target_model).startswith("ollama/"):
+            ollama_cfg = RAW_CONFIG.get("providers", {}).get("ollama", {})
+            target_base = ollama_cfg.get("apiBase") or "http://localhost:11434/v1"
+            target_key = ollama_cfg.get("apiKey") or "ollama"
+            
+            # LiteLLM's 'ollama' provider expects the base URL (no /v1) 
+            # and the bare model name.
+            clean_base = target_base
+            if "/v1" in clean_base:
+                clean_base = clean_base.split("/v1")[0]
+            
+            clean_model = str(target_model).replace("ollama/", "", 1)
+            
+            print(f"[Launcher] Bypass Hammer: Forcing Ollama for {clean_model} via {clean_base}")
+            
+            try:
+                # We replicate nanobot's sanitization logic but force the provider
+                sanitize_empty = getattr(self, "_sanitize_empty_content", lambda x: x)
+                sanitize_msgs = getattr(self, "_sanitize_messages", lambda x: x)
+                
+                clean_msgs = sanitize_msgs(sanitize_empty(messages))
+                
+                response = await litellm.acompletion(
+                    model=f"ollama/{clean_model}", # LiteLLM still likes the prefix even with custom_llm_provider
+                    messages=clean_msgs,
+                    tools=tools,
+                    api_base=clean_base,
+                    api_key=target_key,
+                    max_tokens=max(1, max_tokens),
+                    temperature=temperature,
+                    custom_llm_provider="ollama",
+                    drop_params=True
+                )
+                return self._parse_response(response)
+            except Exception as e:
+                logger.error("[Launcher] Ollama Bypass Failed: {}", e)
+        
+        # Standard Logging
+        logger.info("[Logging Patch] LiteLLM request: model={}", target_model)
+        return await _orig_litellm_chat(self, messages, tools, model, max_tokens, temperature)
+
     LiteLLMProvider.chat = _patched_litellm_chat
+    print("[Launcher] Ollama Bypass Hammer & Logging patches applied.")
 
     # Patch CustomProvider
     _orig_custom_chat = CustomProvider.chat
@@ -166,17 +255,203 @@ try:
 
     # D. MEMORY CONSOLIDATION MODEL PATCH
     try:
-        from nanobot.agent.memory import MemoryStore
+        from nanobot.agent.memory import MemoryStore, _SAVE_MEMORY_TOOL
+        import json
         _orig_consolidate = MemoryStore.consolidate
+
         async def _patched_consolidate(self, session, provider, model, **kwargs):
             config_model = RAW_CONFIG.get("agents", {}).get("consolidator", {}).get("model")
             if config_model:
                 model = config_model
-                print(f"[Launcher] Memory consolidation forced to model: {config_model}")
-            return await _orig_consolidate(self, session, provider, model, **kwargs)
+                print(f"[Launcher] Memory consolidation forced to model: {model}")
+
+            # 1. Prepare messages and prompt (mostly same as original but more explicit)
+            archive_all = kwargs.get("archive_all", False)
+            memory_window = kwargs.get("memory_window", 50)
+            
+            if archive_all:
+                old_messages = session.messages
+                keep_count = 0
+            else:
+                keep_count = memory_window // 2
+                if len(session.messages) <= keep_count: return True
+                old_messages = session.messages[session.last_consolidated:-keep_count]
+                if not old_messages: return True
+
+            lines = []
+            for m in old_messages:
+                if not m.get("content"): continue
+                role = m["role"].upper()
+                content = m["content"]
+                lines.append(f"[{m.get('timestamp', '?')[:16]}] {role}: {content}")
+
+            current_memory = self.read_long_term()
+            
+            # HARDENED PROMPT for ultra-small models (1.5b/3b)
+            prompt = f"""You are a memory consolidation agent. Summarize the conversation and update the long-term memory.
+
+### REQUIRED OUTPUT FORMAT (JSON ONLY):
+{{
+  "history_entry": "A 2-5 sentence summary of key events and decisions.",
+  "memory_update": "A consolidated list of all permanent facts (include existing + new)."
+}}
+
+### CURRENT LONG-TERM MEMORY:
+{current_memory or "(empty)"}
+
+### CONVERSATION TO PROCESS:
+{chr(10).join(lines)}
+
+### FINAL MANDATE:
+Output ONLY the raw JSON object. Do not include any other text.
+"""
+            
+            try:
+                # We use the provider.chat normally
+                response = await provider.chat(
+                    messages=[
+                        {"role": "system", "content": "You are a JSON-only response agent. You MUST provide valid JSON matching the requested schema. No conversational text."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=_SAVE_MEMORY_TOOL,
+                    model=model,
+                )
+
+                # 2. Extract Arguments (with Aggressive Text Fallback)
+                args = None
+                text = response.content or ""
+                if response.has_tool_calls:
+                    args = response.tool_calls[0].arguments
+                    if isinstance(args, str):
+                        try: args = json.loads(args)
+                        except: pass
+                
+                if not args or not isinstance(args, dict):
+                    # FALLBACK: Aggressive JSON search
+                    print(f"[Launcher] Warning: Consolidator failed tool call. Attempting Regex Recovery on: {text[:200]}...")
+                    try:
+                        import re
+                        # 1. Try to find any JSON object
+                        match = re.search(r"\{.*\}", text, re.DOTALL)
+                        if match:
+                            candidate = json.loads(match.group(0))
+                            # 2. Map hallucinated keys back to our required schema
+                            # Small models often rename keys based on content
+                            args = {
+                                "history_entry": candidate.get("history_entry") or candidate.get("summary") or candidate.get("subagent_system", {}).get("name") or "No summary available.",
+                                "memory_update": candidate.get("memory_update") or candidate.get("facts") or candidate.get("long_term_memory") or current_memory
+                            }
+                            print("[Launcher] Successfully recovered and remapped consolidation data.")
+                    except:
+                        pass
+
+                if not args or not isinstance(args, dict):
+                    print(f"[Launcher] Memory consolidation FAILED: Model {model} provided no valid data.")
+                    return False
+
+                # 3. Apply Updates
+                if entry := args.get("history_entry"):
+                    self.append_history(str(entry))
+                if update := args.get("memory_update"):
+                    if update != current_memory:
+                        self.write_long_term(str(update))
+
+                session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
+                print(f"[Launcher] Memory consolidation SUCCESSFUL ({len(old_messages)} messages).")
+                return True
+
+            except Exception as e:
+                print(f"[Launcher] Memory consolidation error: {e}")
+                return False
+
         MemoryStore.consolidate = _patched_consolidate
     except Exception as e:
         print(f"[Launcher] Warning: Could not apply Memory consolidation patch. {e}")
+
+    # G. CONTEXT PRUNING & MEMORY FLUSH PATCH
+    try:
+        from nanobot.agent.loop import AgentLoop
+        from nanobot.bus.events import OutboundMessage
+        from datetime import datetime, timedelta
+
+        _orig_process_message = AgentLoop._process_message
+
+        async def _patched_process_message(self, msg, session_key=None, on_progress=None):
+            # 1. Context Pruning (Lightweight Cleanup)
+            prune_cfg = RAW_CONFIG.get("agents", {}).get("defaults", {}).get("contextPruning", {})
+            if prune_cfg.get("enabled"):
+                key = session_key or msg.session_key
+                session = self.sessions.get_or_create(key)
+                ttl_str = prune_cfg.get("ttl", "6h")
+                # Simple TTL check (e.g., '6h')
+                if ttl_str.endswith("h"):
+                    hours = int(ttl_str[:-1])
+                    cutoff = datetime.now() - timedelta(hours=hours)
+                    # Filter tool results older than TTL, keeping last X assistants
+                    new_msgs = []
+                    assistant_count = 0
+                    for m in reversed(session.messages):
+                        role = m.get("role")
+                        ts_str = m.get("timestamp")
+                        is_old = False
+                        if ts_str:
+                            try:
+                                ts = datetime.fromisoformat(ts_str)
+                                if ts < cutoff:
+                                    is_old = True
+                            except: pass
+                        
+                        if role == "assistant":
+                            assistant_count += 1
+                        
+                        # Keep if not old, OR if it's one of the last X assistants, OR it's a user message
+                        if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3) or role == "user":
+                            new_msgs.append(m)
+                    
+                    if len(new_msgs) < len(session.messages):
+                        print(f"[Launcher] Context Pruning: Trimmed {len(session.messages) - len(new_msgs)} old messages.")
+                        session.messages = list(reversed(new_msgs))
+
+            # 2. Memory Flush (Early Warning)
+            flush_cfg = RAW_CONFIG.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
+            if flush_cfg.get("enabled"):
+                key = session_key or msg.session_key
+                session = self.sessions.get_or_create(key)
+                
+                # We use unconsolidated message count as a proxy for tokens here 
+                # (since exact token counting is expensive/provider-specific)
+                unconsolidated = len(session.messages) - session.last_consolidated
+                # Guide recommends 40,000 tokens, nanobot's window is usually small (e.g. 50-100 messages)
+                # We'll trigger if we are at 80% of the memory window
+                if unconsolidated >= (self.memory_window * 0.8):
+                    print(f"[Launcher] Memory Flush triggered (unconsolidated: {unconsolidated})")
+                    # Run a special "flush" turn
+                    flush_prompt = flush_cfg.get("prompt", "Store durable memories now.")
+                    sys_prompt = flush_cfg.get("systemPrompt", "Session nearing compaction.")
+                    
+                    # Temporarily inject flush instruction
+                    history = session.get_history(max_messages=self.memory_window)
+                    flush_msgs = self.context.build_messages(
+                        history=history,
+                        current_message=f"### SYSTEM NOTIFICATION: {sys_prompt}\n\n{flush_prompt}",
+                        channel=msg.channel, chat_id=msg.chat_id
+                    )
+                    
+                    # Execute flush (ignore tool iterations for simplicity)
+                    res, _, all_msgs = await self._run_agent_loop(flush_msgs)
+                    if res and res != "NO_REPLY":
+                        print(f"[Launcher] Memory Flush captured data.")
+                        self._save_turn(session, all_msgs, 1 + len(history))
+                    
+                    # Force a consolidation immediately after flush
+                    await self._consolidate_memory(session)
+
+            return await _orig_process_message(self, msg, session_key, on_progress)
+
+        AgentLoop._process_message = _patched_process_message
+        print("[Launcher] Context Pruning & Memory Flush patches applied.")
+    except Exception as e:
+        print(f"[Launcher] Error applying Pruning/Flush patches: {e}")
 
     # E. SPECIALIST MODEL ROUTING & SUBAGENT EXECUTION
     # We patch _run_subagent to select the model based on task/label RIGHT BEFORE starting.
