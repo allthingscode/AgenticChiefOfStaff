@@ -42,3 +42,4 @@ workspace/TOOLS.md
 workspace/SOUL.md
 *.bak
 CUSTOMIZATIONS.md
+uv.lock

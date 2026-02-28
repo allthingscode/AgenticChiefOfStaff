@@ -10,6 +10,9 @@ from pathlib import Path
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    # Also force UTF-8 for the entire process environment
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["PYTHONUTF8"] = "1"
 
 # 1. Fix the Windows 'Event loop is closed' error while supporting subprocesses
 if sys.platform == 'win32':
@@ -133,8 +136,9 @@ try:
                 
                 clean_msgs = sanitize_msgs(sanitize_empty(messages))
                 
+                # Create LiteLLM completion
                 response = await litellm.acompletion(
-                    model=f"ollama/{clean_model}", # LiteLLM still likes the prefix even with custom_llm_provider
+                    model=f"ollama/{clean_model}",
                     messages=clean_msgs,
                     tools=tools,
                     api_base=clean_base,
@@ -208,61 +212,12 @@ try:
     from nanobot.agent.subagent import SubagentManager
     from nanobot.agent.tools.spawn import SpawnTool
 
-    MAIN_AGENT_TOOLS = None
-
-    # A. Intercept the main AgentLoop to steal its loaded ToolRegistry
-    _orig_loop_init = AgentLoop.__init__
-    def _patched_loop_init(self, *args, **kwargs):
-        _orig_loop_init(self, *args, **kwargs)
-        global MAIN_AGENT_TOOLS
-        MAIN_AGENT_TOOLS = self.tools
-    AgentLoop.__init__ = _patched_loop_init
-
-    # B. Create a proxy ToolRegistry strictly for subagents
-    class SubagentToolRegistry(ToolRegistry):
-        def get_definitions(self):
-            defs = super().get_definitions()
-            global MAIN_AGENT_TOOLS
-            if MAIN_AGENT_TOOLS:
-                # Pass through any MCP tool definitions from the main agent
-                main_defs = MAIN_AGENT_TOOLS.get_definitions()
-                for d in main_defs:
-                    if d.get("function", {}).get("name", "").startswith("mcp_"):
-                        defs.append(d)
-            return defs
-
-        async def execute(self, name, args):
-            global MAIN_AGENT_TOOLS
-            # Proxy MCP tool execution to the main agent's active connection stack
-            if str(name).startswith("mcp_") and MAIN_AGENT_TOOLS:
-                # THE GOOGLE EMAIL HAMMER: Force primary email for Google Workspace tools
-                if "google-workspace" in str(name) and isinstance(args, dict):
-                    args["user_google_email"] = "allthingscode@gmail.com"
-                    print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
-
-                return await MAIN_AGENT_TOOLS.execute(name, args)
-            return await super().execute(name, args)
-
-    # Force the subagent module to use our proxy registry
-    nanobot.agent.subagent.ToolRegistry = SubagentToolRegistry
-
-    # C. MAIN AGENT TOOL PROXY (For Google Email Hammer)
-    _orig_tool_execute = ToolRegistry.execute
-    async def _patched_tool_execute(self, name, args):
-        # THE GOOGLE EMAIL HAMMER: Force primary email for Google Workspace tools
-        if "google-workspace" in str(name) and isinstance(args, dict):
-            args["user_google_email"] = "allthingscode@gmail.com"
-            print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
-        return await _orig_tool_execute(self, name, args)
-    ToolRegistry.execute = _patched_tool_execute
-
-    # C. SUBAGENT DEFAULT MODEL PATCH
+    # A. SUBAGENT DEFAULT MODEL PATCH
     _orig_subagent_init = SubagentManager.__init__
     def _patched_subagent_init(self, *args, **kwargs):
         config_model = RAW_CONFIG.get("agents", {}).get("subagent", {}).get("model")
         if config_model:
             # SubagentManager.__init__(self, provider, workspace, bus, model=None, ...)
-            # args[0]: provider, args[1]: workspace, args[2]: bus, args[3]: model
             if len(args) >= 4:
                 args = list(args)
                 args[3] = config_model
@@ -271,6 +226,20 @@ try:
             print(f"[Launcher] Subagent default model set from config: {config_model}")
         _orig_subagent_init(self, *args, **kwargs)
     SubagentManager.__init__ = _patched_subagent_init
+
+    # B. MAIN AGENT TOOL PROXY (For Google Email Hammer)
+    _orig_tool_execute = ToolRegistry.execute
+    async def _patched_tool_execute(self, name, args):
+        # THE GOOGLE EMAIL HAMMER: Force primary email for Google Surgical tools
+        if "google-surgical" in str(name) and isinstance(args, dict):
+            # Intercept both 'user_google_email' and 'email' parameters
+            if "user_google_email" in args:
+                args["user_google_email"] = "allthingscode@gmail.com"
+            if "email" in args:
+                args["email"] = "allthingscode@gmail.com"
+            print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
+        return await _orig_tool_execute(self, name, args)
+    ToolRegistry.execute = _patched_tool_execute
 
     # D. MEMORY CONSOLIDATION MODEL PATCH
     try:
@@ -284,7 +253,6 @@ try:
                 model = config_model
                 print(f"[Launcher] Memory consolidation forced to model: {model}")
 
-            # 1. Prepare messages and prompt (mostly same as original but more explicit)
             archive_all = kwargs.get("archive_all", False)
             memory_window = kwargs.get("memory_window", 50)
             
@@ -306,7 +274,6 @@ try:
 
             current_memory = self.read_long_term()
             
-            # HARDENED PROMPT for ultra-small models (1.5b/3b)
             prompt = f"""You are a senior memory consolidation specialist. Your goal is to extract durable, high-value information from the conversation history and merge it into the existing long-term memory.
 
 ### REQUIRED OUTPUT FORMAT (STRICT JSON ONLY):
@@ -328,7 +295,6 @@ try:
 """
             
             try:
-                # We use the provider.chat normally
                 response = await provider.chat(
                     messages=[
                         {"role": "system", "content": "You are a JSON-only response agent. You MUST provide valid JSON matching the requested schema. No conversational text."},
@@ -338,7 +304,6 @@ try:
                     model=model,
                 )
 
-                # 2. Extract Arguments (with Aggressive Text Fallback)
                 args = None
                 text = response.content or ""
                 if response.has_tool_calls:
@@ -348,29 +313,21 @@ try:
                         except: pass
                 
                 if not args or not isinstance(args, dict):
-                    # FALLBACK: Aggressive JSON search
                     print(f"[Launcher] Warning: Consolidator failed tool call. Attempting Regex Recovery on: {text[:200]}...")
                     try:
                         import re
-                        # 1. Try to find any JSON object
                         match = re.search(r"\{.*\}", text, re.DOTALL)
                         if match:
                             candidate = json.loads(match.group(0))
-                            # 2. Map hallucinated keys back to our required schema
-                            # Small models often rename keys based on content
                             args = {
-                                "history_entry": candidate.get("history_entry") or candidate.get("summary") or candidate.get("subagent_system", {}).get("name") or "No summary available.",
-                                "memory_update": candidate.get("memory_update") or candidate.get("facts") or candidate.get("long_term_memory") or current_memory
+                                "history_entry": candidate.get("history_entry") or candidate.get("summary") or "No summary available.",
+                                "memory_update": candidate.get("memory_update") or candidate.get("facts") or current_memory
                             }
-                            print("[Launcher] Successfully recovered and remapped consolidation data.")
-                    except:
-                        pass
+                    except: pass
 
                 if not args or not isinstance(args, dict):
-                    print(f"[Launcher] Memory consolidation FAILED: Model {model} provided no valid data.")
                     return False
 
-                # 3. Apply Updates
                 if entry := args.get("history_entry"):
                     self.append_history(str(entry))
                 if update := args.get("memory_update"):
@@ -378,9 +335,8 @@ try:
                         self.write_long_term(str(update))
 
                 session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
-                print(f"[Launcher] Memory consolidation SUCCESSFUL ({len(old_messages)} messages).")
+                print(f"[Launcher] Memory consolidation SUCCESSFUL.")
                 return True
-
             except Exception as e:
                 print(f"[Launcher] Memory consolidation error: {e}")
                 return False
@@ -398,17 +354,15 @@ try:
         _orig_process_message = AgentLoop._process_message
 
         async def _patched_process_message(self, msg, session_key=None, on_progress=None):
-            # 1. Context Pruning (Lightweight Cleanup)
+            # 1. Context Pruning
             prune_cfg = RAW_CONFIG.get("agents", {}).get("defaults", {}).get("contextPruning", {})
             if prune_cfg.get("enabled"):
                 key = session_key or msg.session_key
                 session = self.sessions.get_or_create(key)
                 ttl_str = prune_cfg.get("ttl", "6h")
-                # Simple TTL check (e.g., '6h')
                 if ttl_str.endswith("h"):
                     hours = int(ttl_str[:-1])
                     cutoff = datetime.now() - timedelta(hours=hours)
-                    # Filter tool results older than TTL, keeping last X assistants
                     new_msgs = []
                     assistant_count = 0
                     for m in reversed(session.messages):
@@ -417,54 +371,34 @@ try:
                         is_old = False
                         if ts_str:
                             try:
-                                ts = datetime.fromisoformat(ts_str)
-                                if ts < cutoff:
+                                if datetime.fromisoformat(ts_str) < cutoff:
                                     is_old = True
                             except: pass
-                        
-                        if role == "assistant":
-                            assistant_count += 1
-                        
-                        # Keep if not old, OR if it's one of the last X assistants, OR it's a user message
+                        if role == "assistant": assistant_count += 1
                         if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3) or role == "user":
                             new_msgs.append(m)
-                    
                     if len(new_msgs) < len(session.messages):
-                        print(f"[Launcher] Context Pruning: Trimmed {len(session.messages) - len(new_msgs)} old messages.")
                         session.messages = list(reversed(new_msgs))
 
-            # 2. Memory Flush (Early Warning)
+            # 2. Memory Flush
             flush_cfg = RAW_CONFIG.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
             if flush_cfg.get("enabled"):
                 key = session_key or msg.session_key
                 session = self.sessions.get_or_create(key)
-                
-                # We use unconsolidated message count as a proxy for tokens here 
-                # (since exact token counting is expensive/provider-specific)
                 unconsolidated = len(session.messages) - session.last_consolidated
-                # Guide recommends 40,000 tokens, nanobot's window is usually small (e.g. 50-100 messages)
-                # We'll trigger if we are at 80% of the memory window
                 if unconsolidated >= (self.memory_window * 0.8):
-                    print(f"[Launcher] Memory Flush triggered (unconsolidated: {unconsolidated})")
-                    # Run a special "flush" turn
+                    print(f"[Launcher] Memory Flush triggered.")
                     flush_prompt = flush_cfg.get("prompt", "Store durable memories now.")
                     sys_prompt = flush_cfg.get("systemPrompt", "Session nearing compaction.")
-                    
-                    # Temporarily inject flush instruction
                     history = session.get_history(max_messages=self.memory_window)
                     flush_msgs = self.context.build_messages(
                         history=history,
                         current_message=f"### SYSTEM NOTIFICATION: {sys_prompt}\n\n{flush_prompt}",
                         channel=msg.channel, chat_id=msg.chat_id
                     )
-                    
-                    # Execute flush (ignore tool iterations for simplicity)
                     res, _, all_msgs = await self._run_agent_loop(flush_msgs)
                     if res and res != "NO_REPLY":
-                        print(f"[Launcher] Memory Flush captured data.")
                         self._save_turn(session, all_msgs, 1 + len(history))
-                    
-                    # Force a consolidation immediately after flush
                     await self._consolidate_memory(session)
 
             return await _orig_process_message(self, msg, session_key, on_progress)
@@ -474,105 +408,131 @@ try:
     except Exception as e:
         print(f"[Launcher] Error applying Pruning/Flush patches: {e}")
 
-    # E. SPECIALIST MODEL ROUTING & SUBAGENT EXECUTION
-    # We patch _run_subagent to select the model based on task/label RIGHT BEFORE starting.
-    # This avoids the race condition where the model was reset before the task started.
+    # H. TELEGRAM TOPICS (THREADS) PATCH
+    try:
+        from nanobot.channels.telegram import TelegramChannel, _split_message, _markdown_to_telegram_html
+        from nanobot.bus.events import OutboundMessage, InboundMessage
+        from telegram import ReplyParameters
+
+        # 1. Intercept incoming messages
+        _orig_on_message = TelegramChannel._on_message
+        async def _patched_on_message(self, update, context):
+            if update.message and hasattr(update.message, 'message_thread_id') and update.message.message_thread_id:
+                msg = update.message
+                orig_hm = self._handle_message
+                async def temp_hm(*args, **kwargs):
+                    chat_id = kwargs.get("chat_id") or (args[1] if len(args) > 1 else None)
+                    metadata = dict(kwargs.get("metadata") or (args[4] if len(args) > 4 else {}))
+                    metadata["message_thread_id"] = msg.message_thread_id
+                    metadata["session_key_override"] = f"telegram:{chat_id}:{msg.message_thread_id}"
+                    kwargs["metadata"] = metadata
+                    kwargs["session_key"] = metadata["session_key_override"]
+                    return await orig_hm(*args, **kwargs)
+                self._handle_message = temp_hm
+                try:
+                    return await _orig_on_message(self, update, context)
+                finally:
+                    self._handle_message = orig_hm
+            return await _orig_on_message(self, update, context)
+        TelegramChannel._on_message = _patched_on_message
+
+        # 2. Complete rewrite of send to handle message_thread_id WITHOUT monkey-patching bot
+        async def _thread_aware_send(self, msg: OutboundMessage) -> None:
+            if not self._app: return
+            self._stop_typing(msg.chat_id)
+            try: chat_id = int(msg.chat_id)
+            except: return
+
+            thread_id = msg.metadata.get("message_thread_id")
+            reply_params = None
+            if self.config.reply_to_message:
+                if reply_to_id := msg.metadata.get("message_id"):
+                    reply_params = ReplyParameters(message_id=reply_to_id, allow_sending_without_reply=True)
+
+            # Send media
+            for media_path in (msg.media or []):
+                try:
+                    mtype = self._get_media_type(media_path)
+                    sender = {"photo": self._app.bot.send_photo, "voice": self._app.bot.send_voice, "audio": self._app.bot.send_audio}.get(mtype, self._app.bot.send_document)
+                    param = "photo" if mtype == "photo" else mtype if mtype in ("voice", "audio") else "document"
+                    with open(media_path, 'rb') as f:
+                        kwargs = {param: f, "chat_id": chat_id, "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await sender(**kwargs)
+                except Exception as e:
+                    logger.error("Failed to send media: {}", e)
+
+            # Send text
+            if msg.content and msg.content != "[empty message]":
+                for chunk in _split_message(msg.content):
+                    try:
+                        html = _markdown_to_telegram_html(chunk)
+                        kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await self._app.bot.send_message(**kwargs)
+                    except Exception as e:
+                        kwargs = {"chat_id": chat_id, "text": chunk, "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await self._app.bot.send_message(**kwargs)
+
+        TelegramChannel.send = _thread_aware_send
+        print("[Launcher] Telegram Topics (Threads) support enabled.")
+    except Exception as e:
+        print(f"[Launcher] Error applying Telegram Topics patch: {e}")
+
+    # I. SPECIALIST MODEL ROUTING
     _orig_run_subagent = SubagentManager._run_subagent
     async def _patched_run_subagent(self, task_id, task, label, origin):
         specialists = RAW_CONFIG.get("agents", {}).get("specialists", {})
         selected_model = None
-        
-        # Use label if task is too long for keyword matching
-        search_text = (label or "") + " " + task
-        task_lower = search_text.lower()
-        
-        # 1. Dynamic keyword matching from config
+        task_lower = ((label or "") + " " + task).lower()
         for name, spec in specialists.items():
-            kws = spec.get("keywords", [])
-            if any(kw.lower() in task_lower for kw in kws):
+            if any(kw.lower() in task_lower for kw in spec.get("keywords", [])):
                 selected_model = spec.get("model")
-                if selected_model:
-                    print(f"[Launcher] Subagent [{task_id}] Specialist Match: {name} -> {selected_model}")
-                    break
-        
-        # 2. Hardcoded fallbacks
+                if selected_model: break
         if not selected_model:
-            if any(kw in task_lower for kw in ["research", "find", "search", "documentation"]):
-                if "researcher" in specialists:
-                    selected_model = specialists["researcher"].get("model")
-                    print(f"[Launcher] Subagent [{task_id}] Specialist: researcher -> {selected_model}")
-            elif any(kw in task_lower for kw in ["architect", "design", "structure", "refactor"]):
-                if "architect" in specialists:
-                    selected_model = specialists["architect"].get("model")
-                    print(f"[Launcher] Subagent [{task_id}] Specialist: architect -> {selected_model}")
-
-        # Override self.model for THIS execution
-        original_instance_model = self.model
-        if selected_model:
-            self.model = selected_model
-        
-        try:
-            return await _orig_run_subagent(self, task_id, task, label, origin)
-        finally:
-            self.model = original_instance_model
-            
+            if any(kw in task_lower for kw in ["research", "find", "search"]):
+                selected_model = specialists.get("researcher", {}).get("model")
+            elif any(kw in task_lower for kw in ["architect", "design", "structure"]):
+                selected_model = specialists.get("architect", {}).get("model")
+        orig_model = self.model
+        if selected_model: self.model = selected_model
+        try: return await _orig_run_subagent(self, task_id, task, label, origin)
+        finally: self.model = orig_model
     SubagentManager._run_subagent = _patched_run_subagent
 
-    # F. Inject the instruction into the subagent's system prompt
     _orig_build_prompt = SubagentManager._build_subagent_prompt
     def _patched_build_prompt(self, task):
-        prompt = _orig_build_prompt(self, task)
-        prompt += (
-            "\n\n## CRITICAL OVERRIDE\n"
-            "You have access to advanced MCP tools (e.g., 'mcp_google-ai-search_search_ai'). "
-            "You MUST prioritize these tools over the basic web_search whenever possible."
-        )
-        return prompt
+        reset_instr = "\n\n## CRITICAL OVERRIDE\n- The 'google-workspace' MCP server is DEPRECATED. Do NOT use tools starting with 'mcp_google-workspace_'.\n- Use ONLY 'mcp_google-surgical_' tools for Tasks and Calendar.\n- You MUST prioritize MCP tools (e.g. 'mcp_google-ai-search') over basic web_search."
+        return _orig_build_prompt(self, task) + reset_instr
     SubagentManager._build_subagent_prompt = _patched_build_prompt
-
     print("[Launcher] Subagent MCP & Specialist patches applied.")
 except Exception as e:
     print(f"[Launcher] Error applying Subagent patches: {e}")
-# ==========================================
 
 # ==========================================
-# --- 7. PRE-START CLEANUP (Sanity Check) ---
+# --- 7. PRE-START CLEANUP ---
 # ==========================================
 def pre_start_cleanup():
-    """Clear stale MCP state or temporary auth files to prevent 'Missing code verifier' errors."""
     try:
-        # 1. Clear common temporary auth files for Google MCP
         mcp_dir = Path.home() / ".google_workspace_mcp"
         if mcp_dir.exists():
-            # We DON'T delete the 'credentials' folder (which has tokens), 
-            # but we delete any temporary JSON files or pickles outside of it.
+            # Clear only session-level JSON files, NOT the credentials folder
             for item in mcp_dir.glob("*.json"):
-                if "credentials" not in str(item):
-                    item.unlink()
-                    print(f"[Launcher] Cleaned up stale auth state: {item.name}")
-        
-        # 2. Clear common workspace temp files
+                if "credentials" not in str(item): item.unlink()
+
         workspace_dir = Path.home() / ".nanobot" / "workspace"
         if workspace_dir.exists():
-            for item in workspace_dir.glob("*.tmp"):
-                item.unlink()
-    except Exception as e:
-        print(f"[Launcher] Warning: Pre-start cleanup skipped: {e}")
+            for item in workspace_dir.glob("*.tmp"): item.unlink()
+    except: pass
 
 if __name__ == "__main__":
-    # Execute cleanup before starting
     pre_start_cleanup()
-
-    # Mimic the CLI arguments: 'nanobot gateway'
     sys.argv = ["nanobot", "gateway"]
-    
     print(f"[Launcher] Starting nanobot with Windows fix...")
-    
     try:
         runpy.run_module("nanobot", run_name="__main__", alter_sys=True)
-    except KeyboardInterrupt:
-        print("\n[Launcher] Shutdown signal received. Closing gracefully...")
-        sys.exit(0)
+    except KeyboardInterrupt: sys.exit(0)
     except Exception as e:
         print(f"\n[Launcher] Caught error: {e}")
         sys.exit(1)
