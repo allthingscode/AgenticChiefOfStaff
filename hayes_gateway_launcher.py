@@ -110,7 +110,7 @@ try:
 
     # Patch LiteLLMProvider
     _orig_litellm_chat = LiteLLMProvider.chat
-    async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7):
+    async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7, reasoning_effort=None, **kwargs):
         target_model = model or self.default_model
         
         # THE OLLAMA BYPASS HAMMER
@@ -137,24 +137,28 @@ try:
                 clean_msgs = sanitize_msgs(sanitize_empty(messages))
                 
                 # Create LiteLLM completion
-                response = await litellm.acompletion(
-                    model=f"ollama/{clean_model}",
-                    messages=clean_msgs,
-                    tools=tools,
-                    api_base=clean_base,
-                    api_key=target_key,
-                    max_tokens=max(1, max_tokens),
-                    temperature=temperature,
-                    custom_llm_provider="ollama",
-                    drop_params=True
-                )
+                acompletion_kwargs = {
+                    "model": f"ollama/{clean_model}",
+                    "messages": clean_msgs,
+                    "tools": tools,
+                    "api_base": clean_base,
+                    "api_key": target_key,
+                    "max_tokens": max(1, max_tokens),
+                    "temperature": temperature,
+                    "custom_llm_provider": "ollama",
+                    "drop_params": True
+                }
+                if reasoning_effort:
+                    acompletion_kwargs["reasoning_effort"] = reasoning_effort
+
+                response = await litellm.acompletion(**acompletion_kwargs)
                 return self._parse_response(response)
             except Exception as e:
                 logger.error("[Launcher] Ollama Bypass Failed: {}", e)
         
         # Standard Logging
         logger.info("[Logging Patch] LiteLLM request: model={}", target_model)
-        return await _orig_litellm_chat(self, messages, tools, model, max_tokens, temperature)
+        return await _orig_litellm_chat(self, messages, tools=tools, model=model, max_tokens=max_tokens, temperature=temperature, reasoning_effort=reasoning_effort, **kwargs)
 
     LiteLLMProvider.chat = _patched_litellm_chat
     print("[Launcher] Ollama Bypass Hammer & Logging patches applied.")
@@ -502,9 +506,9 @@ try:
     SubagentManager._run_subagent = _patched_run_subagent
 
     _orig_build_prompt = SubagentManager._build_subagent_prompt
-    def _patched_build_prompt(self, task):
+    def _patched_build_prompt(self):
         reset_instr = "\n\n## CRITICAL OVERRIDE\n- The 'google-workspace' MCP server is DEPRECATED. Do NOT use tools starting with 'mcp_google-workspace_'.\n- Use ONLY 'mcp_google-surgical_' tools for Tasks and Calendar.\n- You MUST prioritize MCP tools (e.g. 'mcp_google-ai-search') over basic web_search."
-        return _orig_build_prompt(self, task) + reset_instr
+        return _orig_build_prompt(self) + reset_instr
     SubagentManager._build_subagent_prompt = _patched_build_prompt
     print("[Launcher] Subagent MCP & Specialist patches applied.")
 except Exception as e:
