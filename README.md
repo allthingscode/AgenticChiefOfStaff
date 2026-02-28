@@ -3,7 +3,7 @@
   <h1>🦅 Nanobot: Strategic Edition</h1>
   <p>A high-reliability agent system optimized for executive briefings and persistent memory.</p>
 
-  ### [🚀 See What Makes This Edition Special →](./STRATEGIC_EDITION.md)
+  ### [🚀 See What Makes This Edition Special →](./strategery/STRATEGIC_EDITION.md)
 </div>
 
 ---
@@ -29,7 +29,8 @@ Create a `config.json` in `~/.nanobot/` and define your `strategic_edition` sett
   "strategic_edition": {
     "user_email": "your-email@example.com",
     "storage_root": "D:/Nanobot_Storage",
-    "app_root": "C:/Path/To/Nanobot"
+    "app_root": "C:/Path/To/Nanobot",
+    "config_root": "D:/Nanobot_Storage"
   }
 }
 ```
@@ -43,7 +44,7 @@ Use the provided PowerShell script for the best experience on Windows:
 ## 🧪 Testing
 Run the test suite to verify your environment:
 ```powershell
-pytest tests/unit/test_strategic_main.py
+pytest strategery/tests/
 ```
 
 ## 📜 License
