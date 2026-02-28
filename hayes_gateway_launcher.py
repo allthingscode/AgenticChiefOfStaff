@@ -235,11 +235,26 @@ try:
             global MAIN_AGENT_TOOLS
             # Proxy MCP tool execution to the main agent's active connection stack
             if str(name).startswith("mcp_") and MAIN_AGENT_TOOLS:
+                # THE GOOGLE EMAIL HAMMER: Force primary email for Google Workspace tools
+                if "google-workspace" in str(name) and isinstance(args, dict):
+                    args["user_google_email"] = "allthingscode@gmail.com"
+                    print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
+
                 return await MAIN_AGENT_TOOLS.execute(name, args)
             return await super().execute(name, args)
 
     # Force the subagent module to use our proxy registry
     nanobot.agent.subagent.ToolRegistry = SubagentToolRegistry
+
+    # C. MAIN AGENT TOOL PROXY (For Google Email Hammer)
+    _orig_tool_execute = ToolRegistry.execute
+    async def _patched_tool_execute(self, name, args):
+        # THE GOOGLE EMAIL HAMMER: Force primary email for Google Workspace tools
+        if "google-workspace" in str(name) and isinstance(args, dict):
+            args["user_google_email"] = "allthingscode@gmail.com"
+            print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
+        return await _orig_tool_execute(self, name, args)
+    ToolRegistry.execute = _patched_tool_execute
 
     # C. SUBAGENT DEFAULT MODEL PATCH
     _orig_subagent_init = SubagentManager.__init__
@@ -520,8 +535,35 @@ except Exception as e:
     print(f"[Launcher] Error applying Subagent patches: {e}")
 # ==========================================
 
+# ==========================================
+# --- 7. PRE-START CLEANUP (Sanity Check) ---
+# ==========================================
+def pre_start_cleanup():
+    """Clear stale MCP state or temporary auth files to prevent 'Missing code verifier' errors."""
+    try:
+        # 1. Clear common temporary auth files for Google MCP
+        mcp_dir = Path.home() / ".google_workspace_mcp"
+        if mcp_dir.exists():
+            # We DON'T delete the 'credentials' folder (which has tokens), 
+            # but we delete any temporary JSON files or pickles outside of it.
+            for item in mcp_dir.glob("*.json"):
+                if "credentials" not in str(item):
+                    item.unlink()
+                    print(f"[Launcher] Cleaned up stale auth state: {item.name}")
+        
+        # 2. Clear common workspace temp files
+        workspace_dir = Path.home() / ".nanobot" / "workspace"
+        if workspace_dir.exists():
+            for item in workspace_dir.glob("*.tmp"):
+                item.unlink()
+    except Exception as e:
+        print(f"[Launcher] Warning: Pre-start cleanup skipped: {e}")
+
 if __name__ == "__main__":
-    # 7. Mimic the CLI arguments: 'nanobot gateway'
+    # Execute cleanup before starting
+    pre_start_cleanup()
+
+    # Mimic the CLI arguments: 'nanobot gateway'
     sys.argv = ["nanobot", "gateway"]
     
     print(f"[Launcher] Starting nanobot with Windows fix...")
