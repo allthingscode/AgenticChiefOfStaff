@@ -1,47 +1,50 @@
-.assets
+# --- Python & Environment ---
 .env
-*.pyc
-dist/
-build/
-docs/
-*.egg-info/
-*.egg
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzz
 .venv/
 venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+
+# --- Project Infrastructure ---
 nanoClaw/
 nanoClaw_Backup/
-__pycache__/
 poetry.lock
-.pytest_cache/
+uv.lock
+package-lock.json
 botpy.log
-secrets/
-config.json
-workspace/AGENTS.md
-workspace/USER.md
-GEMINI.md
-start_nanobot.ps1
-list_gemini_models.py
-AGENT.md
-GEMINI.md
-GEMINI_TODO.md
-.gemini
-hayes_tasks/
+.gemini/
+.assets/
 
-# Nanobot-specific ignored files
+# --- Strategic Edition (Local & Private) ---
+# Agent Instructions & Utilities
+GEMINI.md
+strategery/GEMINI.md
+strategery/list_gemini_models.py
+strategery/tasks/
+
+# Legacy Hayes & Personal
+AGENT.md
+GEMINI_TODO.md
+hayes_tasks/
+CUSTOMIZATIONS.md
+
+# --- Nanobot Data & Config (Persistent) ---
+config.json
+secrets/
+workspace/
+# Specific deep ignores
 /workspace/memory/MEMORY.md
 /workspace/memory/HISTORY.md
 /workspace/sessions/
-workspace/HEARTBEAT.md
-workspace/TOOLS.md
-workspace/SOUL.md
 *.bak
-CUSTOMIZATIONS.md
 
-# Personal Tasks
-strategery/tasks/
+# --- Obsolete/Cleaned Root Scripts ---
+list_gemini_models.py
+start_nanobot.ps1
