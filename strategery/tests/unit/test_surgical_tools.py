@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from google.oauth2.credentials import Credentials
 
 # Add project root to sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -25,23 +26,55 @@ def mock_creds_data():
         "scopes": ["scope1"]
     }
 
-def test_google_surgical_get_service(mock_creds_data):
+def test_google_surgical_get_service_refreshes_expired(mock_creds_data):
+    """Verify get_service refreshes credentials when expired."""
+    with patch("pathlib.Path.exists", return_value=True):
+        m = mock_open(read_data=json.dumps(mock_creds_data))
+        with patch("builtins.open", m):
+            # Create a real creds object that is EXPIRED
+            real_creds = MagicMock(spec=Credentials)
+            real_creds.expired = True
+            real_creds.refresh_token = "test-refresh"
+            real_creds.token = "new-token"
+            
+            with patch("strategery.strategic_google_surgical.Credentials", return_value=real_creds):
+                # We MUST mock build in the google_tool namespace to prevent real discovery
+                with patch("strategery.strategic_google_surgical.build") as mock_build:
+                    with patch("google.auth.transport.requests.Request"):
+                        google_tool.get_service("tasks")
+                        
+                        # Verify refresh was called
+                        real_creds.refresh.assert_called_once()
+                        # Verify it attempted to write the new token back to disk (open for 'w')
+                        m.assert_any_call(google_tool.CREDS_PATH, "w")
+
+def test_google_surgical_get_service_success(mock_creds_data):
     """Verify get_service initializes correctly with credentials."""
     with patch("pathlib.Path.exists", return_value=True):
         with patch("builtins.open", mock_open(read_data=json.dumps(mock_creds_data))):
-            # We use a MagicMock for the Credentials INSTANCE, but we must
-            # mock the CLASS in the tool's namespace.
             mock_creds = MagicMock()
             mock_creds.expired = False
             
-            # Patch the Credentials CLASS in the google_tool module
             with patch("strategery.strategic_google_surgical.Credentials", return_value=mock_creds):
-                # We must patch 'build' in the google_tool namespace to avoid 
-                # its real implementation trying to parse our mock data.
                 with patch("strategery.strategic_google_surgical.build") as mock_build:
                     google_tool.get_service("tasks")
-                    
                     mock_build.assert_called_with("tasks", "v1", credentials=mock_creds)
+
+def test_google_calendar_list_events():
+    """Verify list_calendar_events correctly formats the timeMin parameter."""
+    mock_service = MagicMock()
+    mock_list_req = MagicMock()
+    mock_service.events.return_value.list.return_value = mock_list_req
+    
+    with patch("strategery.strategic_google_surgical.get_service", return_value=mock_service):
+        google_tool.list_calendar_events("primary", 5)
+        
+        # Verify the timeMin parameter is an ISO string ending in 'Z'
+        _, kwargs = mock_service.events.return_value.list.call_args
+        assert kwargs["calendarId"] == "primary"
+        assert kwargs["maxResults"] == 5
+        assert kwargs["timeMin"].endswith("Z")
+        assert "T" in kwargs["timeMin"]
 
 def test_google_surgical_list_tasks():
     """Verify list_tasks calls the correct API method."""
