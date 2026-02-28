@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Use relative imports based on the strategery test structure
-from strategery.tests.mocks.config_mock import get_mock_config_json
+from strategery.tests.mocks.mock_config import get_mock_config_json
 
 @pytest.fixture(autouse=True)
 def global_config_patch():
@@ -12,7 +12,7 @@ def global_config_patch():
 
 @pytest.fixture
 def drive_service():
-    from strategery.tests.mocks.drive_mock import get_mock_drive_service
+    from strategery.tests.mocks.mock_google_drive import get_mock_drive_service
     mock_svc = get_mock_drive_service()
     with patch("googleapiclient.discovery.build", return_value=mock_svc):
         yield mock_svc
