@@ -374,7 +374,15 @@ try:
                         self._save_turn(session, all_msgs, 1 + len(history))
                     await self._consolidate_memory(session)
 
-            return await _orig_process_message(self, msg, session_key, on_progress)
+            try:
+                return await _orig_process_message(self, msg, session_key, on_progress)
+            finally:
+                # CRITICAL: Strip non-serializable cached datetime objects before the 
+                # session is potentially saved to disk by the caller.
+                key = session_key or msg.session_key
+                session = self.sessions.get_or_create(key)
+                for m in session.messages:
+                    m.pop("_parsed_ts", None)
 
         AgentLoop._process_message = _patched_process_message
         print("[Launcher] Context Pruning & Memory Flush patches applied.")
