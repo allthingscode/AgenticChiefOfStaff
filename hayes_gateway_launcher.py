@@ -64,12 +64,16 @@ try:
                 defaults = agents["defaults"]
                 defaults.pop("compaction", None)
                 defaults.pop("contextPruning", None)
+                defaults.pop("memorySearch", None)
             
             # Strip keywords from specialists
             if "specialists" in agents:
                 for spec in agents["specialists"].values():
                     if isinstance(spec, dict):
                         spec.pop("keywords", None)
+        
+        # Strip root-level memory key
+        data.pop("memory", None)
         
         print("[Launcher] Custom config keys intercepted and stripped for compatibility.")
         return data
@@ -288,22 +292,24 @@ try:
             current_memory = self.read_long_term()
             
             # HARDENED PROMPT for ultra-small models (1.5b/3b)
-            prompt = f"""You are a memory consolidation agent. Summarize the conversation and update the long-term memory.
+            prompt = f"""You are a senior memory consolidation specialist. Your goal is to extract durable, high-value information from the conversation history and merge it into the existing long-term memory.
 
-### REQUIRED OUTPUT FORMAT (JSON ONLY):
+### REQUIRED OUTPUT FORMAT (STRICT JSON ONLY):
 {{
-  "history_entry": "A 2-5 sentence summary of key events and decisions.",
-  "memory_update": "A consolidated list of all permanent facts (include existing + new)."
+  "history_entry": "A concise, 1-2 sentence summary of key actions or decisions in this segment.",
+  "memory_update": "The complete, updated block of long-term memory. You MUST preserve all existing facts while adding new insights. Format as a clean, bulleted list of facts, preferences, and project states."
 }}
 
 ### CURRENT LONG-TERM MEMORY:
 {current_memory or "(empty)"}
 
-### CONVERSATION TO PROCESS:
+### NEW CONVERSATION SEGMENT:
 {chr(10).join(lines)}
 
 ### FINAL MANDATE:
-Output ONLY the raw JSON object. Do not include any other text.
+- Do NOT repeat yourself.
+- Do NOT provide conversational filler.
+- Output ONLY the raw JSON object. Any text outside the JSON will be considered a failure.
 """
             
             try:

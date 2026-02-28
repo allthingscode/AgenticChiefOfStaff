@@ -20,4 +20,35 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Pushing updated '$currentBranch' to 'origin' (your fork)..." -ForegroundColor Cyan
 git push origin $currentBranch
 
-Write-Host "Sync complete! You are now up to date with the latest from HKUDS/nanobot." -ForegroundColor Green
+# ==========================================
+# --- CUSTOMIZATION AUDIT REPORT (Hayes) ---
+# ==========================================
+Write-Host "`nChecking customization health..." -ForegroundColor Cyan
+
+# Define the "Risk" files to check for changes upstream
+$riskyFiles = @(
+    "nanobot/agent/loop.py",
+    "nanobot/agent/memory.py",
+    "nanobot/config/loader.py",
+    "nanobot/config/schema.py",
+    "nanobot/providers/litellm_provider.py",
+    "nanobot/heartbeat/service.py"
+)
+
+Write-Host "--------------------------------------------------------" -ForegroundColor White
+Write-Host "   Hayes Customization Audit Report (Post-Merge)        " -ForegroundColor Cyan
+Write-Host "--------------------------------------------------------" -ForegroundColor White
+
+foreach ($file in $riskyFiles) {
+    # Check if the file changed in the merge
+    $changes = git diff --name-only ORIG_HEAD HEAD | Select-String -Pattern [regex]::Escape($file)
+    if ($changes) {
+        Write-Host "[!] ALERT: $file was updated upstream." -ForegroundColor Red
+        Write-Host "    -> Action: Verify that 'hayes_gateway_launcher.py' patches are still compatible." -ForegroundColor Yellow
+    } else {
+        Write-Host "[OK] $file (No changes upstream)" -ForegroundColor Gray
+    }
+}
+
+Write-Host "--------------------------------------------------------" -ForegroundColor White
+Write-Host "Sync and Audit complete! Review any ALERTs above." -ForegroundColor Green

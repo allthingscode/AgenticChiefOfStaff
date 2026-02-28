@@ -30,6 +30,8 @@ list_gemini_models.py
 AGENT.md
 GEMINI.md
 GEMINI_TODO.md
+.gemini
+hayes_tasks/
 
 # Nanobot-specific ignored files
 /workspace/memory/MEMORY.md
@@ -39,3 +41,4 @@ workspace/HEARTBEAT.md
 workspace/TOOLS.md
 workspace/SOUL.md
 *.bak
+CUSTOMIZATIONS.md
