@@ -34,10 +34,11 @@ if sys.platform == 'win32':
                 raise
     _ProactorBasePipeTransport.__del__ = _patched_del
 
-# 2. Add current directory to the path so it can see the 'nanobot' folder
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# 2. Add project root to the path so it can see the 'nanobot' folder
+# The project root is one level up from the 'strategery' folder where this script is located.
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # ==========================================
 # --- 3. CUSTOM CONFIG LOADING & PATCH ---
@@ -111,65 +112,18 @@ if not RAW_CONFIG:
 # ==========================================
 try:
     from loguru import logger
-    import litellm
     from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.providers.custom_provider import CustomProvider
     from nanobot.providers.openai_codex_provider import OpenAICodexProvider
 
-    # Patch LiteLLMProvider
+    # Patch LiteLLMProvider for simple logging
     _orig_litellm_chat = LiteLLMProvider.chat
     async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7, reasoning_effort=None, **kwargs):
         target_model = model or self.default_model
-        
-        # THE OLLAMA BYPASS HAMMER
-        if str(target_model).startswith("ollama/"):
-            ollama_cfg = RAW_CONFIG.get("providers", {}).get("ollama", {})
-            target_base = ollama_cfg.get("apiBase") or "http://localhost:11434/v1"
-            target_key = ollama_cfg.get("apiKey") or "ollama"
-            
-            # LiteLLM's 'ollama' provider expects the base URL (no /v1) 
-            # and the bare model name.
-            clean_base = target_base
-            if "/v1" in clean_base:
-                clean_base = clean_base.split("/v1")[0]
-            
-            clean_model = str(target_model).replace("ollama/", "", 1)
-            
-            print(f"[Launcher] Bypass Hammer: Forcing Ollama for {clean_model} via {clean_base}")
-            
-            try:
-                # We replicate nanobot's sanitization logic but force the provider
-                sanitize_empty = getattr(self, "_sanitize_empty_content", lambda x: x)
-                sanitize_msgs = getattr(self, "_sanitize_messages", lambda x: x)
-                
-                clean_msgs = sanitize_msgs(sanitize_empty(messages))
-                
-                # Create LiteLLM completion
-                acompletion_kwargs = {
-                    "model": f"ollama/{clean_model}",
-                    "messages": clean_msgs,
-                    "tools": tools,
-                    "api_base": clean_base,
-                    "api_key": target_key,
-                    "max_tokens": max(1, max_tokens),
-                    "temperature": temperature,
-                    "custom_llm_provider": "ollama",
-                    "drop_params": True
-                }
-                if reasoning_effort:
-                    acompletion_kwargs["reasoning_effort"] = reasoning_effort
-
-                response = await litellm.acompletion(**acompletion_kwargs)
-                return self._parse_response(response)
-            except Exception as e:
-                logger.error("[Launcher] Ollama Bypass Failed: {}", e)
-        
-        # Standard Logging
         logger.info("[Logging Patch] LiteLLM request: model={}", target_model)
         return await _orig_litellm_chat(self, messages, tools=tools, model=model, max_tokens=max_tokens, temperature=temperature, reasoning_effort=reasoning_effort, **kwargs)
 
     LiteLLMProvider.chat = _patched_litellm_chat
-    print("[Launcher] Ollama Bypass Hammer & Logging patches applied.")
 
     # Patch CustomProvider
     _orig_custom_chat = CustomProvider.chat
@@ -187,7 +141,9 @@ try:
         return await _orig_codex_chat(self, *args, **kwargs)
     OpenAICodexProvider.chat = _patched_codex_chat
 
-    print("[Launcher] Provider logging patches applied.")
+    print("[Launcher] Provider logging patches applied (Ollama Bypass removed).")
+except Exception as e:
+    print(f"[Launcher] Warning: Could not apply logging patches. {e}")
 except Exception as e:
     print(f"[Launcher] Warning: Could not apply logging patches. {e}")
 
