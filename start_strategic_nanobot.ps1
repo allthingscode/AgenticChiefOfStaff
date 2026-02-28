@@ -55,7 +55,7 @@ function Stop-NanobotProcesses {
         }
     } else {
         # Search for any process running our launcher if no PID was provided
-        $launcherProcs = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%strategic_launcher.py%'"
+        $launcherProcs = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%strategery/strategic_launcher.py%'"
         foreach ($p in $launcherProcs) {
              Write-Host "Stopping Nanobot Gateway (PID: $($p.ProcessId)) and its children..." -ForegroundColor Gray
              $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.ProcessId)"
@@ -106,7 +106,7 @@ try {
         # We use cmd /c to run the command and redirect stderr to stdout 
         # BEFORE it hits PowerShell. This prevents NativeCommandError (red text)
         # while still allowing Tee-Object to capture everything.
-        cmd /c "`"$PythonExe`" `"$AppPath\strategic_launcher.py`" 2>&1" | Tee-Object -FilePath $LogFile -Append
+        cmd /c "`"$PythonExe`" `"$AppPath\strategery/strategic_launcher.py`" 2>&1" | Tee-Object -FilePath $LogFile -Append
         
         $exitCode = $LASTEXITCODE
 
