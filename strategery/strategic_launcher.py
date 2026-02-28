@@ -7,7 +7,7 @@ import io
 from pathlib import Path
 
 # Force UTF-8 encoding for Windows stdout/stderr to prevent charmap errors
-if sys.platform == 'win32':
+if sys.platform == 'win32' and __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
     # Also force UTF-8 for the entire process environment
@@ -155,12 +155,13 @@ try:
     
     _orig_hb_init = HeartbeatService.__init__
     def _patched_hb_init(self, *args, **kwargs):
-        # The 'model' is usually the 3rd positional argument or in kwargs
+        # The 'model' is usually the 2nd positional argument or in kwargs
+        # HeartbeatService(bus, model, interval=60)
         config_model = RAW_CONFIG.get("agents", {}).get("heartbeat", {}).get("model")
         if config_model:
-            if len(args) >= 3:
+            if len(args) >= 2:
                 args = list(args)
-                args[2] = config_model # Replace positional model
+                args[1] = config_model # Replace positional model (index 1 is model)
             else:
                 kwargs["model"] = config_model
             print(f"[Launcher] Heartbeat forced to model: {config_model}")
