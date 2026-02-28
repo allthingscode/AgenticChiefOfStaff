@@ -421,6 +421,34 @@ try:
         # 1. Intercept incoming messages
         _orig_on_message = TelegramChannel._on_message
         async def _patched_on_message(self, update, context):
+            # --- HAYES MEDIA REDIRECTION PATCH ---
+            # Monkey-patch the download_to_drive method of the file object before it's called
+            if update.message:
+                media_file = None
+                if update.message.photo: media_file = update.message.photo[-1]
+                elif update.message.voice: media_file = update.message.voice
+                elif update.message.audio: media_file = update.message.audio
+                elif update.message.document: media_file = update.message.document
+                
+                if media_file:
+                    _orig_get_file = context.bot.get_file
+                    async def _patched_get_file(file_id, *args, **kwargs):
+                        file = await _orig_get_file(file_id, *args, **kwargs)
+                        _orig_download = file.download_to_drive
+                        async def _patched_download(custom_path=None, *args, **kwargs):
+                            if custom_path and ".nanobot\\media" in str(custom_path):
+                                from nanobot.utils.helpers import ensure_dir
+                                # Re-route to D:\Nanobot_Storage\media via the workspace config
+                                workspace = Path(getattr(self.config, "workspace_path", Path.home() / ".nanobot" / "workspace"))
+                                media_dir = ensure_dir(workspace / "media")
+                                filename = Path(custom_path).name
+                                custom_path = str(media_dir / filename)
+                                print(f"[Launcher] Telegram Media Redirection: {custom_path}")
+                            return await _orig_download(custom_path=custom_path, *args, **kwargs)
+                        file.download_to_drive = _patched_download
+                        return file
+                    context.bot.get_file = _patched_get_file
+
             if update.message and hasattr(update.message, 'message_thread_id') and update.message.message_thread_id:
                 msg = update.message
                 orig_hm = self._handle_message
@@ -507,7 +535,14 @@ try:
 
     _orig_build_prompt = SubagentManager._build_subagent_prompt
     def _patched_build_prompt(self):
-        reset_instr = "\n\n## CRITICAL OVERRIDE\n- The 'google-workspace' MCP server is DEPRECATED. Do NOT use tools starting with 'mcp_google-workspace_'.\n- Use ONLY 'mcp_google-surgical_' tools for Tasks and Calendar.\n- You MUST prioritize MCP tools (e.g. 'mcp_google-ai-search') over basic web_search."
+        reset_instr = """
+
+## CRITICAL OVERRIDE & DESIGN MANDATES
+1. **Tool Deprecation:** The standard `mcp_google-workspace_` tools are DEPRECATED. They are unstable and do not target the correct mailbox. DO NOT use them.
+2. **Surgical Tools:** Use ONLY `mcp_google-surgical_` tools for Tasks and Calendar. Use `mcp_email-reporter_` for all outbound briefings. These custom wrappers provide precision and use the correct user credentials.
+3. **Prioritize Advanced Search:** Always prioritize `mcp_google-ai-search` over the base `web_search`.
+4. **Specialist Selection:** If you have been assigned to this task with `gemini-1.5-pro` (check the logs if available), it is because this task requires high-depth reasoning (Research, Architecture, or Planning). Focus on thoroughness.
+"""
         return _orig_build_prompt(self) + reset_instr
     SubagentManager._build_subagent_prompt = _patched_build_prompt
     print("[Launcher] Subagent MCP & Specialist patches applied.")

@@ -1,3 +1,8 @@
+"""
+HAYES SURGICAL OVERRIDE: Google Tasks & Calendar
+Reasoning: The standard 'google-workspace' MCP is unstable and doesn't handle multiple accounts/surgical scopes well.
+This script provides direct, credential-locked access to 'allthingscode@gmail.com' for mission-critical scheduling.
+"""
 import json
 import sys
 import os

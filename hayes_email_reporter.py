@@ -1,3 +1,9 @@
+"""
+HAYES SURGICAL OVERRIDE: Email Report Delivery
+Reasoning: Standard channel-based email in Nanobot is for user interaction, 
+this script is a dedicated MCP wrapper for automated, high-reliability delivery 
+to 'allthingscode@gmail.com' for briefings.
+"""
 import base64
 from email.message import EmailMessage
 import json
