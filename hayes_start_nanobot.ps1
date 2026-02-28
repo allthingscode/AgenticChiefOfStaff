@@ -1,10 +1,23 @@
-# --- Configuration ---
+# --- Configuration Loader ---
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$AppPath = "C:\Users\HayesChiefOfStaff\Documents\nanobot"
+$ConfigPath = Join-Path $env:USERPROFILE ".nanobot\config.json"
+$Config = if (Test-Path $ConfigPath) { Get-Content $ConfigPath | ConvertFrom-Json } else { @{} }
+$Strategic = if ($Config.hayes_strategic) { $Config.hayes_strategic } else { @{} }
+
+# Detect paths with defaults
+$AppPath = if ($Strategic.app_root) { $Strategic.app_root } else { (Get-Item .).FullName }
 $VenvName = "nanoClaw"
 $PythonExe = Join-Path $AppPath "$VenvName\Scripts\python.exe"
-$LogDir = "D:\Nanobot_Storage\logs"
+$StorageRoot = if ($Strategic.storage_root) { $Strategic.storage_root } else { "D:\Nanobot_Storage" }
+$LogDir = Join-Path $StorageRoot "logs"
 $MCPDataPath = "$env:LOCALAPPDATA\google-ai-mode-mcp\Data\chrome_profile"
+
+# --- Initialization ---
+if (-not (Test-Path $PythonExe)) {
+    Write-Host "Error: Virtual environment not found at $PythonExe" -ForegroundColor Red
+    Write-Host "Please ensure you have created a venv named '$VenvName' in '$AppPath'." -ForegroundColor Yellow
+    exit 1
+}
 
 # Ensure Log Directory exists
 if (-not (Test-Path $LogDir)) {

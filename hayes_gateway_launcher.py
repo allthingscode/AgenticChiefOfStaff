@@ -44,6 +44,20 @@ if current_dir not in sys.path:
 # ==========================================
 RAW_CONFIG = {}
 
+# Detect config path
+def get_hayes_config():
+    # Priority: System config, local fallback
+    home_config = Path.home() / ".nanobot" / "config.json"
+    if home_config.exists():
+        with open(home_config, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+HAYES_CONFIG = get_hayes_config()
+STRATEGIC = HAYES_CONFIG.get("hayes_strategic", {})
+USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
+STORAGE_ROOT = Path(STRATEGIC.get("storage_root", "D:/Nanobot_Storage"))
+
 try:
     import nanobot.config.loader
     _orig_migrate = nanobot.config.loader._migrate_config
@@ -59,6 +73,9 @@ try:
         # 3. Strip our custom keys so Pydantic validation doesn't crash Nanobot
         if "agents" in data:
             agents = data["agents"]
+            # Strip custom strategic keys
+            data.pop("hayes_strategic", None)
+            
             # Strip agents.consolidator
             agents.pop("consolidator", None)
             
@@ -86,17 +103,8 @@ except Exception as e:
     print(f"[Launcher] Warning: Config loader patch failed: {e}")
 
 # Pre-load RAW_CONFIG manually for very early patches (like Heartbeat)
-def get_raw_config_manually():
-    config_path = Path.home() / ".nanobot" / "config.json"
-    if config_path.exists():
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except: pass
-    return {}
-
 if not RAW_CONFIG:
-    RAW_CONFIG = get_raw_config_manually()
+    RAW_CONFIG = HAYES_CONFIG
 
 # ==========================================
 # --- 4. PROVIDER LOGGING & ROUTING PATCH ---
@@ -238,10 +246,10 @@ try:
         if "google-surgical" in str(name) and isinstance(args, dict):
             # Intercept both 'user_google_email' and 'email' parameters
             if "user_google_email" in args:
-                args["user_google_email"] = "allthingscode@gmail.com"
+                args["user_google_email"] = USER_EMAIL
             if "email" in args:
-                args["email"] = "allthingscode@gmail.com"
-            print(f"[Launcher] Google Hammer: Forced email to allthingscode@gmail.com for {name}")
+                args["email"] = USER_EMAIL
+            print(f"[Launcher] Google Hammer: Forced email to {USER_EMAIL} for {name}")
         return await _orig_tool_execute(self, name, args)
     ToolRegistry.execute = _patched_tool_execute
 

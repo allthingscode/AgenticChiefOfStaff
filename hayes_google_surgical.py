@@ -1,7 +1,7 @@
 """
 HAYES SURGICAL OVERRIDE: Google Tasks & Calendar
 Reasoning: The standard 'google-workspace' MCP is unstable and doesn't handle multiple accounts/surgical scopes well.
-This script provides direct, credential-locked access to 'allthingscode@gmail.com' for mission-critical scheduling.
+This script provides direct, credential-locked access to the configured user email for mission-critical scheduling.
 """
 import json
 import sys
@@ -13,14 +13,37 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from fastmcp import FastMCP
 
+# Detect config path
+def get_config():
+    # Priority: System config, local fallback
+    home_config = Path.home() / ".nanobot" / "config.json"
+    if home_config.exists():
+        with open(home_config, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+CONFIG = get_config()
+STRATEGIC = CONFIG.get("hayes_strategic", {})
+USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
+CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
+
 # 1. Credentials Setup (Restricted to Tasks:Write, Calendar:Read-Only)
-CREDS_PATH = Path.home() / ".google_workspace_mcp" / "credentials" / "allthingscode@gmail.com.json"
+# We use a subfolder in config_root for surgical credentials
+CREDS_DIR = CONFIG_ROOT / "google_surgical" / "credentials"
+CREDS_PATH = CREDS_DIR / f"{USER_EMAIL}.json"
 
 def get_service(service_name):
     if not CREDS_PATH.exists():
-        raise Exception(f"Credentials not found at {CREDS_PATH}")
+        # Fallback to a generic name if specific one doesn't exist
+        fallback_path = CREDS_DIR / "default.json"
+        if fallback_path.exists():
+            path = fallback_path
+        else:
+            raise Exception(f"Credentials not found at {CREDS_PATH}")
+    else:
+        path = CREDS_PATH
         
-    with open(CREDS_PATH, "r") as f:
+    with open(path, "r") as f:
         data = json.load(f)
     
     creds = Credentials(
@@ -35,7 +58,7 @@ def get_service(service_name):
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         data["token"] = creds.token
-        with open(CREDS_PATH, "w") as f:
+        with open(path, "w") as f:
             json.dump(data, f, indent=4)
             
     return build(service_name, "v1" if service_name == "tasks" else "v3", credentials=creds)
