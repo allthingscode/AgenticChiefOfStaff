@@ -2,13 +2,13 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ConfigPath = Join-Path $env:USERPROFILE ".nanobot\config.json"
 $Config = if (Test-Path $ConfigPath) { Get-Content $ConfigPath | ConvertFrom-Json } else { @{} }
-$Strategic = if ($Config.hayes_strategic) { $Config.hayes_strategic } else { @{} }
+$Strategic = if ($Config.strategic_edition) { $Config.strategic_edition } else { @{} }
 
 # Detect paths with defaults
 $AppPath = if ($Strategic.app_root) { $Strategic.app_root } else { (Get-Item .).FullName }
 $VenvName = "nanoClaw"
 $PythonExe = Join-Path $AppPath "$VenvName\Scripts\python.exe"
-$StorageRoot = if ($Strategic.storage_root) { $Strategic.storage_root } else { "D:\Nanobot_Storage" }
+$StorageRoot = if ($Strategic.storage_root) { $Strategic.storage_root } else { Join-Path $AppPath "storage" }
 $LogDir = Join-Path $StorageRoot "logs"
 $MCPDataPath = "$env:LOCALAPPDATA\google-ai-mode-mcp\Data\chrome_profile"
 
@@ -55,7 +55,7 @@ function Stop-NanobotProcesses {
         }
     } else {
         # Search for any process running our launcher if no PID was provided
-        $launcherProcs = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%hayes_gateway_launcher.py%'"
+        $launcherProcs = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%strategic_launcher.py%'"
         foreach ($p in $launcherProcs) {
              Write-Host "Stopping Nanobot Gateway (PID: $($p.ProcessId)) and its children..." -ForegroundColor Gray
              $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.ProcessId)"
@@ -92,7 +92,7 @@ function Stop-NanobotProcesses {
     }
 }
 
-Write-Host "--- Initializing Nanobot Environment ---" -ForegroundColor Cyan
+Write-Host "--- Initializing Nanobot Strategic Edition ---" -ForegroundColor Cyan
 Write-Host "Press CTRL+C at any time to stop the gateway and exit." -ForegroundColor White
 Write-Host "Logging to: $LogFile" -ForegroundColor Gray
 
@@ -106,7 +106,7 @@ try {
         # We use cmd /c to run the command and redirect stderr to stdout 
         # BEFORE it hits PowerShell. This prevents NativeCommandError (red text)
         # while still allowing Tee-Object to capture everything.
-        cmd /c "`"$PythonExe`" `"$AppPath\hayes_gateway_launcher.py`" 2>&1" | Tee-Object -FilePath $LogFile -Append
+        cmd /c "`"$PythonExe`" `"$AppPath\strategic_launcher.py`" 2>&1" | Tee-Object -FilePath $LogFile -Append
         
         $exitCode = $LASTEXITCODE
 

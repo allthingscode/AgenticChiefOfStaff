@@ -1,0 +1,184 @@
+**IMPORTANT: Always run these article through your agent plan mode functionality to ensure the recommendation are tuned to YOUR system. 
+
+Your agent knows your name on Monday. By Wednesday, it's asking again.
+You've told it your preferences three times. You've watched it save something to memory, then draw a complete blank the next day. You start to wonder if the whole "memory" feature is just broken.
+You're not alone. Over the past month, thousands of @openclaw  users have hit this exact wall. The good news? It's fixable. And you don't need to be a developer to do it.
+This guide explains why your agent forgets, then walks you through the fixes - starting with the ones that take less than five minutes.
+What's Actually Going Wrong
+Before you can fix the problem, it helps to understand what's happening behind the scenes. There are three reasons your agent forgets, and each one has a different solution.
+Reason 1: Your Agent Never Saved It in the First Place
+When you tell your agent something important - your name, a project decision, a preference - it doesn't automatically write that down. The AI model behind your agent makes a judgment call in real time about whether something is "worth remembering."
+Sometimes it saves. Sometimes it doesn't. There's no clear pattern.
+Think of it like hiring an assistant who decides on their own which meeting notes to keep and which to throw in the trash. Some critical details just slip through the cracks because the assistant didn't think they mattered.
+Reason 2: Your Agent Saved It But Never Looked It Up
+Even when your agent does save something to its memory files, there's no guarantee it will check those files later. OpenClaw gives agents a search tool for their own memory, but the agent has to choose to use it.
+In practice, when you ask about something that's stored in memory, the agent often just answers from whatever it currently has in front of it - without checking its notes.
+It's like your assistant saved a document to Google Drive, but when you ask for it, they answer off the top of their head instead of opening the file.
+Reason 3: Your Agent's Short-Term Memory Got Wiped
+This is the big one.
+Your agent has a limited amount of space for everything it's thinking about right now - the current conversation, your instructions, its memory files. When that space fills up during a long session, OpenClaw does something called "compaction." It summarizes older parts of the conversation to make room for new ones.
+The problem? Anything that was only in the active conversation - and hadn't been saved to a permanent file yet - gets destroyed during compaction. Your agent literally forgets things mid-conversation because the system made room by throwing out context.
+Even worse, your agent's main memory file loads at the start of a session but can get swept up in compaction during a long one. The agent's own memory gets summarized away.
+Imagine a desk that can only hold so many papers. When the stack gets too tall, someone comes by and tosses the oldest papers - without checking if any of them were important.
+If this kind of deep-dive is your thing, we're building a community around it. Join the Build with AI waitlist - for more guides like this.
+The Quick Fixes (Under 5 Minutes Each)
+These are configuration changes - settings you adjust in your @openclaw  setup. You don't need to write code. You just need to find your settings file and update a few values.
+Where to find your settings: Your OpenClaw configuration lives in a file called openclaw.json. On most setups, it's at ~/.openclaw/openclaw.json. If you're not sure where yours is, just ask your agent: "Where is my openclaw.json file?" It'll tell you the exact path. Open it in any text editor - even Notes or TextEdit works.
+Fix 1: Turn On Memory Flush (The Single Most Important Change)
+Memory flush tells your agent to save its most important notes right before compaction wipes the slate. Without it, your agent gets no warning before its memory is cleared.
+What to do: Find your configuration file (openclaw.json) and add or update the compaction section to enable memory flush. Set the threshold to 40,000 tokens so the flush triggers early - well before anything important gets lost.
+You'll also want to customize what gets saved. Tell it to focus on decisions, project status, lessons learned, and blockers. The default is too vague and misses important details.
+Here's the recommended configuration — based on the OpenClaw docs with a customized prompt. Copy this into the agents.defaults section of your openclaw.json:
+json
+{
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "reserveTokensFloor": 20000,
+        "memoryFlush": {
+          "enabled": true,
+          "softThresholdTokens": 4000,
+          "systemPrompt": "Session nearing compaction. Store durable memories now.",
+          "prompt": "Write any lasting notes to memory/YYYY-MM-DD.md. Focus on: key decisions made, current project status, lessons learned, and active blockers. Reply with NO_REPLY if nothing to store."
+        }
+      }
+    }
+  }
+}
+A couple things worth noting. The softThresholdTokens value controls how early the flush triggers before your context window fills up. The docs default it to 4,000, but many experienced users (including the popular guide by @KSimback) recommend raising it to 40,000 so the flush fires earlier and catches more context. The prompt field is where you tell the agent what to save - customize it to match what matters in your workflow (e.g., "Focus on decisions, state changes, lessons, and blockers").
+What this does: Right before your agent's context is about to be compacted, it gets one chance to write down everything important. Think of it as a fire alarm that gives your assistant 30 seconds to grab the critical files before the office resets.
+Fix 2: Turn On Context Pruning
+Context pruning controls how old messages are cleaned up. Without it, everything piles up until compaction hits all at once, which is when you lose the most.
+What to do: Enable context pruning with a time-based approach. Add this to the agent section of your openclaw.json:
+json
+{
+  "agent": {
+    "contextPruning": {
+      "mode": "cache-ttl",
+      "ttl": "6h",
+      "keepLastAssistants": 3
+    }
+  }
+}
+The "cache-ttl" mode tells OpenClaw to automatically clean up old tool outputs on a timer instead of letting them pile up until a catastrophic compaction. The "ttl" value is how long outputs stick around before cleanup-  we set it to "6h" (six hours), which gives you a full working session before anything gets trimmed.
+One important detail from the docs: pruning only trims tool results (like file reads and search outputs). It never touches your actual messages or the agent's responses. It's a lightweight cleanup layer that runs before each request - separate from full compaction.
+What this does: Instead of one big memory wipe, your agent gradually lets go of bulky old tool outputs while keeping recent context fresh. You stop having to repeat yourself after every flush.
+
+Fix 3: Turn On Hybrid Search
+When your agent searches its own memory, it uses something called "vector search" - matching concepts rather than exact words. This is decent for general topics but terrible for specific things like error codes, project names, or people's names.
+What to do: Enable hybrid search in your memory settings. Add this to the agents.defaults section of your openclaw.json:
+json
+{
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "query": {
+          "hybrid": {
+            "enabled": true,
+            "vectorWeight": 0.7,
+            "textWeight": 0.3
+          }
+        }
+      }
+    }
+  }
+}
+The vectorWeight and textWeight values control the balance between conceptual matching and exact keyword matching. The docs normalize these to 100%, so 0.7/0.3 means 70% conceptual, 30% keyword. This is the recommended starting point.
+If you want even better results and your agent has been running for a while, the docs also support two optional add-ons you can enable inside the same hybrid block. MMR re-ranking ("mmr": { "enabled": true, "lambda": 0.7 }) removes near-duplicate results so you get diverse answers instead of five versions of the same note. Temporal decay ("temporalDecay": { "enabled": true, "halfLifeDays": 30 }) boosts recent notes so yesterday's update outranks a six-month-old entry on the same topic. Both are off by default - add them when you're ready.
+What this does: When you ask "What did we decide about the landing page redesign?", your agent can now find notes that mention "landing page" by exact match, not just notes that are conceptually similar. This dramatically improves recall for specific facts.
+
+Fix 4: Index Your Past Conversations
+By default, your agent can only search its memory files - not your conversation history. That means everything you discussed in previous sessions is effectively invisible.
+What to do: Enable session memory indexing in your configuration. Add this to the agents.defaults section of your openclaw.json:
+json
+{
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "experimental": {
+          "sessionMemory": true
+        },
+        "sources": ["memory", "sessions"]
+      }
+    }
+  }
+}
+The sources array is the key part. By default, your agent only searches "memory" (your MEMORY.md and daily note files). Adding "sessions" tells it to also search past conversation transcripts. The experimental.sessionMemory flag enables the indexing engine that chunks and stores those transcripts.
+A heads-up from the docs: session indexing runs in the background and updates are debounced, so results can be slightly stale until the background sync finishes. Session logs are stored on disk at ~/.openclaw/agents/<agentId>/sessions/*.jsonl - any process with filesystem access can read them, so treat disk access as your trust boundary.
+What this does: Questions like "What did we work on last Tuesday?" or "What was that tool you recommended last week?" become answerable. Your agent can look back through past sessions instead of starting from zero every time.
+Going Further: When the Quick Fixes Aren't Enough
+The four fixes above will solve memory issues for most people. But if you're running long projects, managing multiple agents, or need your agent to remember months of context, you may want one of these more robust solutions.
+Option A: QMD - A Better Search Engine for Your Agent's Brain
+QMD is a free, open-source tool that replaces OpenClaw's built-in search with something significantly more capable. It was created by Tobi, the CEO of Shopify, and it's quickly becoming the go-to upgrade for serious OpenClaw users.
+What it does: QMD combines three search techniques - keyword matching, conceptual matching, and a re-ranking step that puts the most relevant results first. The result is noticeably better recall.
+The bonus feature: QMD can index files outside of your agent's memory folder. If you use a note-taking app like Obsidian, you can point QMD at your notes and make them searchable by your agent. One knowledge base, accessible everywhere.
+How to set it up: Install the QMD CLI (bun install -g https://github.com/tobi/qmd), then add this to your openclaw.json:
+json
+{
+  "memory": {
+    "backend": "qmd",
+    "qmd": {
+      "includeDefaultMemory": true,
+      "update": {
+        "interval": "5m",
+        "debounceMs": 15000
+      },
+      "limits": {
+        "maxResults": 6,
+        "timeoutMs": 4000
+      },
+      "paths": [
+        { "name": "docs", "path": "~/notes", "pattern": "**/*.md" }
+      ]
+    }
+  }
+}
+The paths array is where you point QMD at external folders - like an Obsidian vault or project docs. Everything in those folders becomes searchable by your agent. If QMD ever fails or the binary is missing, OpenClaw automatically falls back to its built-in search so nothing breaks.
+Who it's for: Anyone who wants better search quality and doesn't mind a short setup process. Your agent can actually walk you through the installation - just share the QMD GitHub page with it and ask for help.
+Option B: @mem0ai  - Memory That Can't Be Erased
+@mem0ai  is a plugin that stores your agent's memories completely outside of the conversation window. This means compaction - the thing that wipes your agent's context - physically cannot touch your memories.
+How it works: Two things happen automatically on every turn. First, Mem0 detects important information and saves it without waiting for the AI to decide if it's worth saving. Second, before your agent responds, Mem0 searches its memory bank and injects anything relevant into the conversation.
+What it solves: @mem0ai  directly fixes Reason 1 (memory never saved) and Reason 3 (compaction destroys memory). It's the closest thing to "set it and forget it" for memory.
+How to set it up: Run this single command:
+openclaw plugins install @mem0/openclaw-mem0
+
+{
+  "openclaw-mem0": {
+    "enabled": true,
+    "config": {
+      "apiKey": "${MEM0_API_KEY}",
+      "userId": "your-user-id"
+    }
+  }
+}
+Then add your Mem0 API key (free from app.mem0.ai) to your plugin configuration. That's it - no JSON config files to edit for the memory part.
+Who it's for: Anyone who wants memory to just work without thinking about it. Installation takes about 30 seconds.
+Option C: @cognee_  - For Complex Relationships
+If you need your agent to understand relationships between things - "Alice owns the auth module," "the Q3 budget depends on the client renewal," "this API connects to that database" - you need something beyond search.
+@cognee_  builds a knowledge graph: a web of connections between people, projects, concepts, and facts. Instead of matching text, it traverses relationships.
+Who it's for: This is the most powerful option but also the most involved to set up. It's best suited for teams, enterprise work, or anyone managing complex, interconnected projects. Most individual users won't need it.
+What To Do Right Now
+If you only do one thing after reading this, turn on memory flush. It's the single highest-impact change, and it takes under two minutes. Everything else builds on top of it.
+Here's the priority order:
+Enable memory flush - Stops the biggest source of memory loss
+Enable hybrid search - Makes your agent actually find what it saved
+Enable context pruning - Smooths out memory management so you stop repeating yourself
+Enable session indexing - Makes past conversations searchable
+Install Mem0 or QMD - Only if the four basics above aren't enough
+
+(Pro tip: If you're non-technical go with QMD ... its really solid)
+Don't try to do all of this at once. Start with memory flush, use your agent for a day or two, and see if the forgetting problem improves. For most people, it will.
+And one more thing that no configuration can replace: tell your agent what to remember. At the end of an important conversation, say something like "Save the key decisions from this session to memory." Until the tools get smarter, a direct instruction is still more reliable than hoping the AI decides to save on its own.
+Your agent isn't broken. It just needs a proper setup. Now go give it one.
+
+
+
+
+Opinion from Gemini:
+Yes, implementing these changes is highly recommended if your local nanobot is built on the OpenClaw framework. Local agents are notoriously aggressive about compacting memory to save context space, and giving the system a structured way to flush and search its notes will make a massive difference in its day-to-day utility.
+Here is how you should approach the recommendations:
+Locating the Config: The guide assumes the configuration file is at ~/.openclaw/openclaw.json. Just keep in mind that the config does not live in the Documents folder, so you will need to pinpoint the exact correct path on the Alienware m17 before applying any of these JSON snippets.
+The Core Fixes (1 & 2): Setting up the Memory Flush and Context Pruning are essentially mandatory to stop catastrophic mid-session context wipes. Setting that soft threshold to 40,000 tokens is a very safe floor to ensure durable memories are written to disk before the window fills up.
+The Search Engine Upgrade (Option A): The article pitches QMD as a fallback for non-technical users, but it actually requires a CLI installation and background process management. Executing a bun install and configuring a custom search backend is incredibly straightforward for a backend software engineer accustomed to wrangling a massive PHP monolith. It is highly recommended to skip the basic hybrid search (Fix 3) and jump straight to setting up QMD, especially since it allows you to index other local project directories and documentation outside of the agent's default memory folder.
+Session Indexing (Fix 4): Turning this on is a great idea, but as the article notes, treat the ~/.openclaw/agents/<agentId>/sessions/*.jsonl disk access as your trust boundary.
+

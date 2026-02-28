@@ -1,5 +1,5 @@
 """
-HAYES SURGICAL OVERRIDE: Email Report Delivery
+STRATEGIC SURGICAL OVERRIDE: Email Report Delivery
 Reasoning: Standard channel-based email in Nanobot is for user interaction, 
 this script is a dedicated MCP wrapper for automated, high-reliability delivery 
 to the configured user email for briefings.
@@ -26,7 +26,7 @@ def get_config():
     return {}
 
 CONFIG = get_config()
-STRATEGIC = CONFIG.get("hayes_strategic", {})
+STRATEGIC = CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
 CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
 

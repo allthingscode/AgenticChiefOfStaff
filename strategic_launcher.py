@@ -45,7 +45,7 @@ if current_dir not in sys.path:
 RAW_CONFIG = {}
 
 # Detect config path
-def get_hayes_config():
+def get_strategic_config():
     # Priority: System config, local fallback
     home_config = Path.home() / ".nanobot" / "config.json"
     if home_config.exists():
@@ -53,10 +53,10 @@ def get_hayes_config():
             return json.load(f)
     return {}
 
-HAYES_CONFIG = get_hayes_config()
-STRATEGIC = HAYES_CONFIG.get("hayes_strategic", {})
+STRATEGIC_CONFIG = get_strategic_config()
+STRATEGIC = STRATEGIC_CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
-STORAGE_ROOT = Path(STRATEGIC.get("storage_root", "D:/Nanobot_Storage"))
+STORAGE_ROOT = Path(STRATEGIC.get("storage_root", "./storage"))
 
 try:
     import nanobot.config.loader
@@ -74,7 +74,7 @@ try:
         if "agents" in data:
             agents = data["agents"]
             # Strip custom strategic keys
-            data.pop("hayes_strategic", None)
+            data.pop("strategic_edition", None)
             
             # Strip agents.consolidator
             agents.pop("consolidator", None)
@@ -104,7 +104,7 @@ except Exception as e:
 
 # Pre-load RAW_CONFIG manually for very early patches (like Heartbeat)
 if not RAW_CONFIG:
-    RAW_CONFIG = HAYES_CONFIG
+    RAW_CONFIG = STRATEGIC_CONFIG
 
 # ==========================================
 # --- 4. PROVIDER LOGGING & ROUTING PATCH ---
@@ -429,7 +429,7 @@ try:
         # 1. Intercept incoming messages
         _orig_on_message = TelegramChannel._on_message
         async def _patched_on_message(self, update, context):
-            # --- HAYES MEDIA REDIRECTION PATCH ---
+            # --- STRATEGIC EDITION MEDIA REDIRECTION PATCH ---
             # Monkey-patch the download_to_drive method of the file object before it's called
             if update.message:
                 media_file = None
@@ -446,7 +446,7 @@ try:
                         async def _patched_download(custom_path=None, *args, **kwargs):
                             if custom_path and ".nanobot\\media" in str(custom_path):
                                 from nanobot.utils.helpers import ensure_dir
-                                # Re-route to D:\Nanobot_Storage\media via the workspace config
+                                # Re-route to configured storage media via the workspace config
                                 workspace = Path(getattr(self.config, "workspace_path", Path.home() / ".nanobot" / "workspace"))
                                 media_dir = ensure_dir(workspace / "media")
                                 filename = Path(custom_path).name

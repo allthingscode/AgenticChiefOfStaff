@@ -1,5 +1,5 @@
 """
-HAYES SURGICAL OVERRIDE: Google Tasks & Calendar
+STRATEGIC SURGICAL OVERRIDE: Google Tasks & Calendar
 Reasoning: The standard 'google-workspace' MCP is unstable and doesn't handle multiple accounts/surgical scopes well.
 This script provides direct, credential-locked access to the configured user email for mission-critical scheduling.
 """
@@ -23,7 +23,7 @@ def get_config():
     return {}
 
 CONFIG = get_config()
-STRATEGIC = CONFIG.get("hayes_strategic", {})
+STRATEGIC = CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
 CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
 
