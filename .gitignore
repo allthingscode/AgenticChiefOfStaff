@@ -13,8 +13,9 @@ package-lock.json
 .gemini/
 
 # --- Strategic Edition (Local & Private) ---
-strategery/private/
+strategery/private
 GEMINI_TODO.md
+
 
 # --- Standard Safety ---
 *.bak
