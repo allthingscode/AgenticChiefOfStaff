@@ -1,28 +1,34 @@
-# --- Core Agent ---
+# ==========================================
+# --- STRATEGIC EDITION: DEPENDENCIES ---
+# ==========================================
+
+# --- Core Agent & LLM Protocols ---
+litellm
 google-genai
 python-telegram-bot
-psutil
-pandas
-json-repair
-oauth-cli-kit
-pydantic
-pydantic-settings
-loguru
-typer
-
-# --- Infrastructure & Protocols ---
 mcp
-litellm
+fastmcp
 aiohttp
 websockets
-prompt_toolkit
+json-repair
 
-# --- Google APIs ---
+# --- Precision Tools (Google Surgical) ---
 google-api-python-client
+google-auth
 google-auth-httplib2
 google-auth-oauthlib
+oauth-cli-kit
 
-# --- Testing ---
+# --- Utilities & System ---
+psutil
+pandas
+loguru
+typer
+pydantic
+pydantic-settings
+prompt_toolkit
+
+# --- Testing & Quality ---
 pytest
 pytest-asyncio
 pytest-cov
