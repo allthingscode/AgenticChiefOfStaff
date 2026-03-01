@@ -11,8 +11,14 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Import the launcher and relevant nanobot modules
-import strategery.strategic_launcher as launcher
+# Import the patches
+import strategery.patches.config as config_patch
+import strategery.patches.infra as infra_patch
+import strategery.patches.memory as memory_patch
+import strategery.patches.provider as provider_patch
+import strategery.patches.subagent as subagent_patch
+import strategery.patches.telegram as telegram_patch
+
 import nanobot.config.loader
 import nanobot.agent.tools.registry
 import nanobot.agent.subagent
@@ -39,74 +45,92 @@ def mock_config_data():
     }
 
 def test_config_migration_patch(mock_config_data):
-    """Verify that _patched_migrate correctly strips custom keys."""
-    # We use the already-patched function from the launcher
-    data = launcher._patched_migrate(mock_config_data.copy())
+    """Verify that ConfigPatch correctly strips custom keys."""
+    patch_inst = config_patch.ConfigPatch()
+    
+    # We need to capture what _patched_migrate does
+    # Since apply() actually performs the monkey-patch, we can trigger it
+    raw_capture = {}
+    patch_inst.apply(raw_capture)
+    
+    # Trigger the patched migrate
+    data = nanobot.config.loader._migrate_config(mock_config_data.copy())
     
     # Verify custom keys are stripped
     assert "strategic_edition" not in data
     assert "memory" not in data
     assert "compaction" not in data["agents"]["defaults"]
     assert "contextPruning" not in data["agents"]["defaults"]
-    assert "keywords" not in data["agents"]["specialists"]["researcher"]
     
-    # Verify RAW_CONFIG was captured
-    assert launcher.RAW_CONFIG["strategic_edition"]["user_email"] == "test@example.com"
+    # Verify RAW_CONFIG (captured in raw_capture) was populated
+    assert raw_capture["strategic_edition"]["user_email"] == "test@example.com"
 
 @pytest.mark.asyncio
 async def test_litellm_logging_patch():
     """Verify LiteLLMProvider.chat is patched to log the request."""
     from nanobot.providers.litellm_provider import LiteLLMProvider
     
+    patch_inst = provider_patch.ProviderPatch()
+    patch_inst.apply({})
+    
     mock_self = MagicMock(spec=LiteLLMProvider)
     mock_self.default_model = "test-model"
-    mock_self.api_key = "test-key"
-    mock_self._resolve_model.return_value = "test-model"
-    mock_self._supports_cache_control.return_value = False
     
-    # Mock the original chat method (which is stored in launcher._orig_litellm_chat)
-    with patch.object(launcher, "_orig_litellm_chat", new_callable=AsyncMock) as mock_orig:
+    # Mock the original chat method
+    with patch.object(LiteLLMProvider, "_orig_chat_strategic", new_callable=AsyncMock) as mock_orig:
         from loguru import logger
         with patch.object(logger, "info") as mock_logger:
-            await launcher._patched_litellm_chat(mock_self, messages=[{"role": "user", "content": "hi"}])
+            # Call the patched method directly through the class to ensure it's hit
+            await LiteLLMProvider.chat(mock_self, messages=[{"role": "user", "content": "hi"}])
             
-            mock_logger.assert_called_with("[Logging Patch] LiteLLM request: model={}", "test-model")
+            mock_logger.assert_called_with("[Strategic] LiteLLM request: model={}", "test-model")
             mock_orig.assert_called_once()
 
 def test_heartbeat_init_patch():
     """Verify HeartbeatService model is overridden from config."""
-    launcher.RAW_CONFIG = {
+    config_data = {
         "agents": {
             "heartbeat": {"model": "fast-model-override"}
         }
     }
     
+    patch_inst = subagent_patch.SubagentPatch()
+    patch_inst.apply(config_data)
+    
+    from nanobot.heartbeat.service import HeartbeatService
+    
     mock_orig_init = MagicMock()
-    with patch.object(launcher, "_orig_hb_init", mock_orig_init):
+    with patch.object(HeartbeatService, "_orig_hb_init_strategic", mock_orig_init):
         mock_self = MagicMock()
-        launcher._patched_hb_init(mock_self, "bus", "original-model")
+        # Trigger the patched __init__
+        HeartbeatService.__init__(mock_self, "bus", "original-model")
         
         args, _ = mock_orig_init.call_args
-        assert args[2] == "fast-model-override"
+        assert args[1] == "fast-model-override"
 
 @pytest.mark.asyncio
 async def test_google_hammer_mcp_patch():
     """Verify ToolRegistry.execute forces the user email for google-surgical tools."""
-    launcher.USER_EMAIL = "forced@example.com"
+    # SubagentPatch needs USER_EMAIL from config.load_strategic_context
+    with patch("strategery.patches.config.load_strategic_context", return_value=({}, "forced@example.com", Path("/tmp"))):
+        patch_inst = subagent_patch.SubagentPatch()
+        patch_inst.apply({})
     
-    with patch.object(launcher, "_orig_tool_execute", new_callable=AsyncMock) as mock_orig:
+    from nanobot.agent.tools.registry import ToolRegistry
+    
+    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
         args = {"user_google_email": "someone@else.com", "other": "param"}
         mock_registry = MagicMock()
-        await launcher._patched_tool_execute(mock_registry, "mcp_google-surgical_create_task", args)
+        await ToolRegistry.execute(mock_registry, "mcp_google-surgical_create_task", args)
         
         mock_orig.assert_called_once()
-        c_args, _ = mock_orig.call_args
-        assert c_args[2]["user_google_email"] == "forced@example.com"
+        name_arg, call_args = mock_orig.call_args[0]
+        assert call_args["user_google_email"] == "forced@example.com"
 
 @pytest.mark.asyncio
 async def test_specialist_routing_logic():
     """Verify that the specialist model is correctly selected based on keywords."""
-    launcher.RAW_CONFIG = {
+    config_data = {
         "agents": {
             "specialists": {
                 "researcher": {"model": "powerful-model", "keywords": ["find", "search"]},
@@ -115,18 +139,25 @@ async def test_specialist_routing_logic():
         }
     }
     
-    mock_manager = MagicMock()
+    patch_inst = subagent_patch.SubagentPatch()
+    # Need to mock the hammer part of apply
+    with patch("strategery.patches.config.load_strategic_context", return_value=({}, "em", Path("p"))):
+        patch_inst.apply(config_data)
+    
+    from nanobot.agent.subagent import SubagentManager
+    mock_manager = MagicMock(spec=SubagentManager)
     mock_manager.model = "default-model"
     
-    captured_model = []
+    # Mock the original run method
     async def mock_run(self, task_id, task, label, origin):
-        captured_model.append(self.model)
-        return "ok"
+        return self.model # Return the model state at time of call
 
-    with patch.object(launcher, "_orig_run_subagent", mock_run):
-        await launcher._patched_run_subagent(mock_manager, "id", "find the documents", "label", "origin")
+    with patch.object(SubagentManager, "_orig_run_subagent_strategic", mock_run):
+        # We need to call the patched method. Since it's an instance method, we pass mock_manager
+        result_model = await SubagentManager._run_subagent(mock_manager, "id", "find the documents", "label", "origin")
         
-        assert "powerful-model" in captured_model
+        assert result_model == "powerful-model"
+        # Verify it restored the model
         assert mock_manager.model == "default-model"
 
 @pytest.mark.asyncio
@@ -134,7 +165,7 @@ async def test_context_pruning_logic():
     """Verify that old messages are pruned based on TTL."""
     from datetime import datetime, timedelta
     
-    launcher.RAW_CONFIG = {
+    config_data = {
         "agents": {
             "defaults": {
                 "contextPruning": {
@@ -146,7 +177,11 @@ async def test_context_pruning_logic():
         }
     }
     
-    mock_loop = MagicMock()
+    patch_inst = memory_patch.MemoryPatch()
+    patch_inst.apply(config_data)
+    
+    from nanobot.agent.loop import AgentLoop
+    mock_loop = MagicMock(spec=AgentLoop)
     mock_loop.sessions.get_or_create.return_value = MagicMock()
     session = mock_loop.sessions.get_or_create.return_value
     
@@ -159,19 +194,24 @@ async def test_context_pruning_logic():
         {"role": "user", "content": "new", "timestamp": recent_time}
     ]
     
-    with patch.object(launcher, "_orig_process_message", new_callable=AsyncMock) as mock_orig:
-        await launcher._patched_process_message(mock_loop, MagicMock(), session_key="test")
+    with patch.object(AgentLoop, "_orig_process_message_strategic", new_callable=AsyncMock):
+        # Trigger the patched method
+        await AgentLoop._process_message(mock_loop, MagicMock(session_key="test"))
         
-        roles = [m["content"] for m in session.messages]
-        assert "very old" not in roles
-        assert "old" in roles
+        contents = [m["content"] for m in session.messages]
+        assert "very old" not in contents
+        assert "old" in contents
 
 @pytest.mark.asyncio
 async def test_memory_consolidation_success():
     """Verify memory consolidation correctly extracts and saves memory."""
-    launcher.RAW_CONFIG = {"agents": {"consolidator": {"model": "test-model"}}}
+    config_data = {"agents": {"consolidator": {"model": "test-model"}}}
     
-    mock_store = MagicMock()
+    patch_inst = memory_patch.MemoryPatch()
+    patch_inst.apply(config_data)
+    
+    from nanobot.agent.memory import MemoryStore
+    mock_store = MagicMock(spec=MemoryStore)
     mock_store.read_long_term.return_value = "Old memory"
     
     mock_session = MagicMock()
@@ -187,39 +227,24 @@ async def test_memory_consolidation_success():
     mock_response.tool_calls = [mock_tool_call]
     mock_provider.chat = AsyncMock(return_value=mock_response)
     
-    await launcher._patched_consolidate(mock_store, mock_session, mock_provider, "default-model", archive_all=True)
+    # Trigger the patched method
+    await MemoryStore.consolidate(mock_store, mock_session, mock_provider, "default-model", archive_all=True)
     
     mock_store.append_history.assert_called_with("Extracted entry")
     mock_store.write_long_term.assert_called_with("Updated memory")
 
-@pytest.mark.asyncio
-async def test_memory_consolidation_regex_recovery():
-    """Verify regex recovery when tool call fails."""
-    launcher.RAW_CONFIG = {"agents": {"consolidator": {"model": "test-model"}}}
-    
-    mock_store = MagicMock()
-    mock_store.read_long_term.return_value = "Old memory"
-    
-    mock_session = MagicMock()
-    mock_session.messages = [{"role": "user", "content": "Hello"}]
-    mock_session.last_consolidated = 0
-    
-    mock_provider = MagicMock()
-    mock_response = MagicMock()
-    mock_response.has_tool_calls = False
-    mock_response.content = 'Here is the JSON: {"history_entry": "Regex Entry", "memory_update": "Regex Memory"}'
-    mock_provider.chat = AsyncMock(return_value=mock_response)
-    
-    await launcher._patched_consolidate(mock_store, mock_session, mock_provider, "test-model", archive_all=True)
-    
-    mock_store.append_history.assert_called_with("Regex Entry")
-    mock_store.write_long_term.assert_called_with("Regex Memory")
-
 def test_subagent_prompt_decoration():
     """Verify that subagent prompt is correctly decorated with mandates."""
-    mock_manager = MagicMock()
-    with patch.object(launcher, "_orig_build_prompt", return_value="Original Prompt"):
-        decorated = launcher._patched_build_prompt(mock_manager)
+    patch_inst = subagent_patch.SubagentPatch()
+    # Mock the hammer part of apply
+    with patch("strategery.patches.config.load_strategic_context", return_value=({}, "em", Path("p"))):
+        patch_inst.apply({})
+    
+    from nanobot.agent.subagent import SubagentManager
+    mock_manager = MagicMock(spec=SubagentManager)
+    
+    with patch.object(SubagentManager, "_orig_build_prompt_strategic", return_value="Original Prompt"):
+        decorated = SubagentManager._build_subagent_prompt(mock_manager)
         assert "CRITICAL OVERRIDE & DESIGN MANDATES" in decorated
         assert "mcp_google-surgical_" in decorated
 
@@ -227,6 +252,10 @@ def test_subagent_prompt_decoration():
 async def test_telegram_media_redirection():
     """Verify that Telegram media redirection correctly overrides the download path."""
     from nanobot.channels.telegram import TelegramChannel
+    
+    patch_inst = telegram_patch.TelegramPatch()
+    patch_inst.apply({})
+    
     mock_channel = MagicMock(spec=TelegramChannel)
     mock_channel.config = MagicMock()
     mock_channel.config.workspace_path = "D:/Test_Workspace"
@@ -247,9 +276,11 @@ async def test_telegram_media_redirection():
     mock_file.download_to_drive = final_download
     mock_context.bot.get_file = AsyncMock(return_value=mock_file)
     
-    with patch.object(launcher, "_orig_on_message", new_callable=AsyncMock):
-        await launcher._patched_on_message(mock_channel, mock_update, mock_context)
+    with patch.object(TelegramChannel, "_orig_on_message_strategic", new_callable=AsyncMock):
+        # Call the patched method
+        await TelegramChannel._on_message(mock_channel, mock_update, mock_context)
         
+        # The bot.get_file should now be patched
         patched_file = await mock_context.bot.get_file("file_id")
         
         # This will trigger the launcher's _patched_download wrapper

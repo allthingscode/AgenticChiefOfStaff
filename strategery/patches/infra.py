@@ -15,8 +15,14 @@ class InfraPatch(BasePatch):
     def apply(self, config: dict) -> bool:
         # 1. Force UTF-8 encoding for Windows stdout/stderr
         if sys.platform == 'win32':
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+            # Only wrap if not already utf-8 to avoid breaking pytest/capture
+            if getattr(sys.stdout, 'encoding', '').lower() != 'utf-8':
+                try:
+                    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+                    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+                except (AttributeError, io.UnsupportedOperation):
+                    pass # Already wrapped or doesn't support buffering
+            
             os.environ["PYTHONIOENCODING"] = "utf-8"
             os.environ["PYTHONUTF8"] = "1"
 
