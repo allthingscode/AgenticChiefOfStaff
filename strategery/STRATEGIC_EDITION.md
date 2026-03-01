@@ -1,37 +1,31 @@
-# 🦅 Nanobot: Strategic Edition
+# Nanobot Strategic Edition
 
-This is a customized distribution of Nanobot, optimized for high-reliability agentic workflows and executive-level briefings. It is designed to be fully compatible with the upstream repository while providing advanced features through a zero-pollution architecture.
+## **Overview**
+The Strategic Edition is a modular, high-performance extension of the Nanobot Core, specifically designed for deep integration with senior-level productivity workflows. It focuses on **Zero Core Pollution**, **Semantic Recall**, and **Surgical Tooling**.
 
-## 🚀 Key Differences
+## **Latest Version: 2026-03-01 (Stabilized)**
 
-### 1. Zero Core Pollution
-Unlike standard forks, this edition does not modify a single file in the `nanobot/` or `bridge/` core directories. All customizations are injected at runtime via the `strategic_launcher.py`. This ensures you can pull updates from the upstream repository without resolving complex merge conflicts.
+### **1. Semantic Memory (RAG)**
+- **Vector Database:** Uses **ChromaDB** as a local-first singleton for long-term durable recall.
+- **Modern Embeddings:** Integrated with the modern `google-genai` library using **`models/gemini-embedding-001`** (3072 dimensions).
+- **Proactive Warmup:** Initialized at startup to eliminate the 3-second "Cold Start" delay on first message.
 
-### 2. Surgical Tool Overrides
-Standard AI tools are often unstable or lack precision. We have replaced generic integrations with **Strategic Surgical Overrides**:
-- **`strategic_google_surgical.py`:** A dedicated MCP server for Google Tasks and Calendar, locked to specific user credentials for maximum security and reliability.
-- **`strategic_email_reporter.py`:** A specialized briefing delivery system that ensures reports are sent directly to the configured user email with proper formatting.
+### **2. "Clean History" Consolidation**
+- **Bloat Prevention:** Retired the linear `HISTORY.md` file in favor of the Vector Store.
+- **Surgical Ingestion:** Summaries and memory updates are automatically vectorized during consolidation.
+- **Daily Journals:** Chronological journals (e.g., `2026-03-01.md`) provide human-readable snapshots without context window bloat.
 
-### 3. Advanced Memory & Context Management
-- **Persistent Agentic Memory:** Enhanced memory consolidation logic that ensures your agent "remembers" key decisions across sessions.
-- **Context Pruning:** Automatic pruning of stale conversation history to optimize model performance and costs.
-- **Ollama Bypass Hammer:** A specialized patch that allows seamless local model integration for privacy-sensitive tasks.
+### **3. Advanced Telegram Integration**
+- **Topic/Thread Awareness:** Full support for Telegram Topics (sessions map correctly to thread IDs).
+- **Duplicate Fix:** Fixed the logic bug that caused double-processing in threaded sessions.
+- **Media Redirection:** Automatically redirects all media (photos, voice, documents) to your local `D:/Nanobot_Storage/workspace/media` directory.
 
-### 4. Enterprise-Grade Stability
-- **Windows Process Management:** Custom PowerShell wrappers (`start_strategic_nanobot.ps1`) to handle zombie process cleanup and automatic restarts.
-- **UTF-8 Hardening:** Global encoding overrides to prevent common character encoding errors in Windows environments.
+### **4. Infrastructure & Resilience**
+- **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read with `utf-8-sig` on Windows.
+- **Signal Handling:** Hardened signal and loop retrieval for multi-threaded environments.
+- **Modular Patching:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core.
 
-## 🛠️ Architecture
-
-The "secret sauce" is the `strategic_launcher.py`. It uses runtime monkey-patching to inject these advanced features into the core engine without modifying a single line of original code.
-
-### File Naming Convention
-- **`strategic_*.py`**: Custom extensions and overrides.
-- **`strategic_*.ps1`**: Infrastructure and orchestration scripts.
-- **`tests/test_strategic_*.py`**: Validation suite for custom logic.
-
-## 🏁 Getting Started
-
-1. Configure your settings in `~/.nanobot/config.json` under the `strategic_edition` block.
-2. Ensure your virtual environment (`nanoClaw`) is ready.
-3. Launch the system using `./start_strategic_nanobot.ps1`.
+## **TODO: Next Horizon**
+- [ ] **Knowledge Graph:** Implement relationship-based memory beyond basic semantic similarity.
+- [ ] **Cross-Device Sync:** Explore cloud-syncing for the ChromaDB database.
+- [ ] **Surgical UI:** Add a slim dashboard for managing "Gold Standard" facts in `MEMORY.md`.

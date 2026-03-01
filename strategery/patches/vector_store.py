@@ -17,10 +17,13 @@ class StrategicVectorStore:
         return cls._instance
 
     def __init__(self, storage_root=None, provider=None):
-        if self._initialized:
+        if getattr(self, "_initialized", False):
             return
             
-        self.storage_path = Path(storage_root or "D:/Nanobot_Storage") / "workspace" / "memory" / "chroma"
+        # MANDATE: Storage root MUST be provided or resolved to home
+        root = Path(storage_root or Path.home() / ".nanobot")
+        self.storage_path = root / "workspace" / "memory" / "chroma"
+        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         
         self.provider = provider

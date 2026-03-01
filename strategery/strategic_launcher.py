@@ -35,6 +35,17 @@ def pre_start_cleanup():
 
 if __name__ == "__main__":
     pre_start_cleanup()
+
+    # Performance Optimization: Proactively warmup the Vector Store
+    try:
+        from strategery.patches.vector_store import StrategicVectorStore
+        # This warms up the ChromaDB connection in the background
+        # so the first message doesn't hit a 3-second delay.
+        print("[Launcher] Warming up Strategic Vector Store...")
+        # Note: We don't need a provider yet just to init the client/collection
+        StrategicVectorStore(storage_root=STORAGE_ROOT)
+    except Exception as e:
+        print(f"[Launcher] Vector Store warmup warning: {e}")
     
     sys.argv = ["nanobot", "gateway"]
     print(f"[Launcher] Starting nanobot Gateway...")
