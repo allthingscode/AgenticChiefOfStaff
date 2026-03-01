@@ -19,12 +19,19 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "   Customization Audit Report (Post-Merge)        " -ForegroundColor Cyan
 Write-Host "--------------------------------------------------" -ForegroundColor Gray
 
-$customFiles = @("strategic_launcher.py", "strategic_google_surgical.py", "strategic_email_reporter.py")
+$customFiles = @(
+    "strategery/strategic_launcher.py", 
+    "strategery/strategic_google_surgical.py", 
+    "strategery/strategic_email_reporter.py",
+    "strategery/patches/",
+    "strategic_sync_upstream.ps1",
+    "start_strategic_nanobot.ps1"
+)
 foreach ($f in $customFiles) {
     if (Test-Path $f) {
-        Write-Host "  [OK] Custom file preserved: $f" -ForegroundColor Green
+        Write-Host "  [OK] Custom component preserved: $f" -ForegroundColor Green
     } else {
-        Write-Host "  [WARNING] Custom file missing: $f" -ForegroundColor Yellow
+        Write-Host "  [WARNING] Custom component missing: $f" -ForegroundColor Yellow
     }
 }
 
