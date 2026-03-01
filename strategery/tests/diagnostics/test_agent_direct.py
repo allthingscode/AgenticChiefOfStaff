@@ -1,7 +1,5 @@
-
 import asyncio
 import sys
-import os
 from pathlib import Path
 
 # Add project root to the Python path to allow importing nanobot correctly
@@ -14,6 +12,7 @@ import strategery.strategic_launcher
 from nanobot.config.loader import load_config
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.queue import MessageBus
+from nanobot.bus.events import InboundMessage
 from loguru import logger
 
 # Ensure logs are written for verification, but disable console output to keep the test clean
@@ -41,14 +40,14 @@ def _make_provider(config):
 
 async def main():
     """
-    Runs a single prompt through the AgentLoop and prints the response.
-    This bypasses the CLI for testing purposes.
+    Runs a prompt and WAITS for all subagents to complete and report results.
     """
     if len(sys.argv) < 2:
-        print("Usage: python run_test.py \"<prompt>\"", file=sys.stderr)
+        print("Usage: python test_agent_direct.py \"<prompt>\"", file=sys.stderr)
         sys.exit(1)
 
     prompt = sys.argv[1]
+    session_key = "cli-test:direct"
 
     try:
         config = load_config()
@@ -69,9 +68,39 @@ async def main():
             restrict_to_workspace=config.tools.restrict_to_workspace,
         )
 
-        response = await agent_loop.process_direct(prompt, session_key="cli-test:direct")
+        # 1. Process the initial prompt
+        print(f"--- Initial Prompt: {prompt} ---")
+        response = await agent_loop.process_direct(prompt, session_key=session_key)
         if response:
-            print(response)
+            print(f"Agent: {response}\n")
+
+        # 2. Wait for subagents to finish and report back
+        max_wait = 300 # 5 minutes max for complex architect tasks
+        start_time = asyncio.get_event_loop().time()
+        
+        while True:
+            running_count = agent_loop.subagents.get_running_count()
+            
+            # Check if we have any pending messages on the bus (subagent results)
+            try:
+                # Poll the bus for 1 second
+                msg = await asyncio.wait_for(bus.consume_inbound(), timeout=1.0)
+                if msg:
+                    print(f"--- System Event: {msg.sender_id} reported back ---")
+                    # Process the system message (subagent result)
+                    resp = await agent_loop._process_message(msg, session_key=session_key)
+                    if resp:
+                        print(f"Agent Final Notification: {resp.content}\n")
+            except asyncio.TimeoutError:
+                # No new messages, check if we're done
+                if running_count == 0:
+                    break
+            
+            if asyncio.get_event_loop().time() - start_time > max_wait:
+                print("Error: Timeout waiting for subagent results.", file=sys.stderr)
+                sys.exit(1)
+
+        print("--- Diagnostic Complete: All subagents reported success ---")
 
     except Exception as e:
         logger.error(f"An error occurred during test execution: {e}")

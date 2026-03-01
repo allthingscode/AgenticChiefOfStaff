@@ -28,10 +28,13 @@ def get_config():
 CONFIG = get_config()
 STRATEGIC = CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
-CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
+
+# Use storage_root if available, fallback to ~/.nanobot
+_default_root = str(Path.home() / ".nanobot")
+STORAGE_ROOT = Path(STRATEGIC.get("storage_root", _default_root))
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-SECRETS_DIR = CONFIG_ROOT / "secrets"
+SECRETS_DIR = STORAGE_ROOT / "secrets"
 TOKEN_PATH = SECRETS_DIR / "token.json"
 CREDS_PATH = SECRETS_DIR / "credentials.json"
 

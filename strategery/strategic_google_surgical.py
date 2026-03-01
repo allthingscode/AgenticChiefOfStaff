@@ -25,14 +25,17 @@ def get_config():
 CONFIG = get_config()
 STRATEGIC = CONFIG.get("strategic_edition", {})
 USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
-CONFIG_ROOT = Path(STRATEGIC.get("config_root", str(Path.home() / ".nanobot")))
+
+# Use storage_root if available, fallback to ~/.nanobot
+_default_root = str(Path.home() / ".nanobot")
+STORAGE_ROOT = Path(STRATEGIC.get("storage_root", _default_root))
 
 # Performance Optimization: In-memory service singleton cache
 _SERVICE_CACHE = {}
 
 # 1. Credentials Setup (Restricted to Tasks:Write, Calendar:Read-Only)
-# We use a subfolder in config_root for surgical credentials
-CREDS_DIR = CONFIG_ROOT / "google_surgical" / "credentials"
+# We use a subfolder in storage_root for surgical credentials
+CREDS_DIR = STORAGE_ROOT / "google_surgical" / "credentials"
 CREDS_PATH = CREDS_DIR / f"{USER_EMAIL}.json"
 
 def get_service(service_name):
@@ -134,10 +137,15 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":
         # Run as MCP Server
         mcp.run()
+    elif len(sys.argv) > 1 and sys.argv[1] == "check_creds":
+        # Manual credential check
+        print(f"Checking credentials for {USER_EMAIL}...")
+        print(f"CREDS_PATH: {CREDS_PATH}")
+        try:
+            get_service("tasks")
+            print("[PASS] Credentials valid and service initialized.")
+        except Exception as e:
+            print(f"[FAIL] Credential check failed: {e}")
     else:
         # Keep old CLI behavior for manual testing
-        print("Running in CLI mode. Use 'mcp_wrapper' to run as MCP server.")
-        if len(sys.argv) > 1:
-            cmd = sys.argv[1]
-            # ... simple CLI dispatcher for debugging if needed ...
-            print(f"Command '{cmd}' not implemented in CLI mode. Use MCP.")
+        print("Running in CLI mode. Use 'mcp_wrapper' to run as MCP server or 'check_creds' to verify.")
