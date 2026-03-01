@@ -29,8 +29,12 @@ if sys.platform == 'win32':
     def _patched_del(self):
         try:
             _orig_del(self)
-        except RuntimeError as e:
-            if str(e) != 'Event loop is closed':
+        except (RuntimeError, ValueError) as e:
+            # Silence common Windows shutdown noise
+            _msg = str(e)
+            if 'Event loop is closed' in _msg or 'I/O operation on closed pipe' in _msg:
+                pass
+            else:
                 raise
     _ProactorBasePipeTransport.__del__ = _patched_del
 
@@ -97,6 +101,21 @@ except Exception as e:
 # --- 3. CUSTOM CONFIG LOADING ---
 # ==========================================
 RAW_CONFIG = {}
+USER_EMAIL = "admin@example.com"
+STORAGE_ROOT = Path.home() / ".nanobot" / "storage"
+
+try:
+    # Priority: System config, local fallback
+    home_config = Path.home() / ".nanobot" / "config.json"
+    if home_config.exists():
+        with open(home_config, "r", encoding="utf-8-sig") as f:
+            _raw = json.load(f)
+            RAW_CONFIG = _raw
+            _strat = _raw.get("strategic_edition", {})
+            USER_EMAIL = _strat.get("user_email", USER_EMAIL)
+            if _s_root := _strat.get("storage_root"):
+                STORAGE_ROOT = Path(_s_root)
+except: pass
 
 # ==========================================
 # --- 4. PROVIDER LOGGING & ROUTING PATCH ---
@@ -249,19 +268,50 @@ try:
                     ttl_str = prune_cfg.get("ttl", "6h")
                     hours = int(ttl_str[:-1]) if ttl_str.endswith("h") else 6
                     cutoff = datetime.now() - timedelta(hours=hours)
+                    
                     new_msgs = []
                     assistant_count = 0
+                    needed_tool_ids = set()
+                    
+                    # Pass 1: Identification (Reverse to find newest first)
                     for m in reversed(session.messages):
+                        role = m.get("role")
+                        
+                        # Cache/parse timestamp
                         if "_parsed_ts" not in m and m.get("timestamp"):
                             try: m["_parsed_ts"] = datetime.fromisoformat(m["timestamp"])
                             except: m["_parsed_ts"] = None
                         
                         is_old = m.get("_parsed_ts") and m["_parsed_ts"] < cutoff
-                        if m.get("role") == "assistant": assistant_count += 1
-                        if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3) or m.get("role") == "user":
+                        
+                        keep = False
+                        if role == "user":
+                            keep = True
+                        elif role == "assistant":
+                            assistant_count += 1
+                            if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3):
+                                keep = True
+                                # If we keep an assistant call with tools, we MUST keep the responses
+                                for tc in (m.get("tool_calls") or []):
+                                    if tid := tc.get("id"): needed_tool_ids.add(tid)
+                        elif role == "tool":
+                            # We'll decide in Pass 2 based on needed_tool_ids
+                            pass
+                        
+                        if keep:
                             new_msgs.append(m)
-                    if len(new_msgs) < len(session.messages):
-                        session.messages = list(reversed(new_msgs))
+                    
+                    # Pass 2: Tool Resolution (Forward to maintain order)
+                    final_msgs = []
+                    for m in session.messages:
+                        role = m.get("role")
+                        if m in new_msgs:
+                            final_msgs.append(m)
+                        elif role == "tool" and m.get("tool_call_id") in needed_tool_ids:
+                            final_msgs.append(m)
+                    
+                    if len(final_msgs) < len(session.messages):
+                        session.messages = final_msgs
 
                 # 2. Memory Flush
                 flush_cfg = RAW_CONFIG.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
