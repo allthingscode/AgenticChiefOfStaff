@@ -244,7 +244,93 @@ try:
                     model = config_model
                     print(f"[Launcher] Memory consolidation forced to model: {model}")
 
-                return await self._orig_consolidate_strategic(session, provider, model, **kwargs)
+                archive_all = kwargs.get("archive_all", False)
+                memory_window = kwargs.get("memory_window", 50)
+
+                if archive_all:
+                    old_messages = session.messages
+                    keep_count = 0
+                else:
+                    keep_count = memory_window // 2
+                    if len(session.messages) <= keep_count: return True
+                    old_messages = session.messages[session.last_consolidated:-keep_count]
+                    if not old_messages: return True
+
+                lines = []
+                for m in old_messages:
+                    if not m.get("content"): continue
+                    role = m["role"].upper()
+                    content = m["content"]
+                    lines.append(f"[{m.get('timestamp', '?')[:16]}] {role}: {content}")
+
+                current_memory = self.read_long_term()
+
+                prompt = f"""You are a senior memory consolidation specialist. Your goal is to extract durable, high-value information from the conversation history and merge it into the existing long-term memory.
+
+### REQUIRED OUTPUT FORMAT (STRICT JSON ONLY):
+{{
+  "history_entry": "A concise, 1-2 sentence summary of key actions or decisions in this segment.",
+  "memory_update": "The complete, updated block of long-term memory. You MUST preserve all existing facts while adding new insights. Format as a clean, bulleted list of facts, preferences, and project states."
+}}
+
+### CURRENT LONG-TERM MEMORY:
+{current_memory or "(empty)"}
+
+### NEW CONVERSATION SEGMENT:
+{chr(10).join(lines)}
+
+### FINAL MANDATE:
+- Do NOT repeat yourself.
+- Do NOT provide conversational filler.
+- Output ONLY the raw JSON object. Any text outside the JSON will be considered a failure.
+"""
+
+                try:
+                    response = await provider.chat(
+                        messages=[
+                            {"role": "system", "content": "You are a JSON-only response agent. You MUST provide valid JSON matching the requested schema. No conversational text."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        tools=_SAVE_MEMORY_TOOL,
+                        model=model,
+                    )
+
+                    args = None
+                    text = response.content or ""
+                    if response.has_tool_calls:
+                        args = response.tool_calls[0].arguments
+                        if isinstance(args, str):
+                            try: args = json.loads(args)
+                            except: pass
+
+                    if not args or not isinstance(args, dict):
+                        print(f"[Launcher] Warning: Consolidator failed tool call. Attempting Regex Recovery on: {text[:200]}...")
+                        try:
+                            import re
+                            match = re.search(r"\{.*\}", text, re.DOTALL)
+                            if match:
+                                candidate = json.loads(match.group(0))
+                                args = {
+                                    "history_entry": candidate.get("history_entry") or candidate.get("summary") or "No summary available.",
+                                    "memory_update": candidate.get("memory_update") or candidate.get("facts") or current_memory
+                                }
+                        except: pass
+
+                    if not args or not isinstance(args, dict):
+                        return False
+
+                    if entry := args.get("history_entry"):
+                        self.append_history(str(entry))
+                    if update := args.get("memory_update"):
+                        if update != current_memory:
+                            self.write_long_term(str(update))
+
+                    session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
+                    print(f"[Launcher] Memory consolidation SUCCESSFUL.")
+                    return True
+                except Exception as e:
+                    print(f"[Launcher] Memory consolidation error: {e}")
+                    return False
 
             MemoryStore.consolidate = _patched_consolidate
     except Exception as e:
@@ -348,7 +434,10 @@ try:
 
     # H. TELEGRAM PATCHES
     try:
-        from nanobot.channels.telegram import TelegramChannel
+        from nanobot.channels.telegram import TelegramChannel, _split_message, _markdown_to_telegram_html
+        from nanobot.bus.events import OutboundMessage
+        from telegram import ReplyParameters
+
         if not hasattr(TelegramChannel, "_orig_on_message_strategic"):
             TelegramChannel._orig_on_message_strategic = TelegramChannel._on_message
             async def _strategic_on_message(self, update, context):
@@ -373,8 +462,71 @@ try:
                             file.download_to_drive = _patched_download
                             return file
                         context.bot.get_file = _patched_get_file
+
+                # STRATEGIC EDITION: Handle Telegram Topics (threads)
+                if update.message and hasattr(update.message, 'message_thread_id') and update.message.message_thread_id:
+                    msg = update.message
+                    orig_hm = self._handle_message
+                    async def temp_hm(*args, **kwargs):
+                        chat_id = kwargs.get("chat_id") or (args[1] if len(args) > 1 else None)
+                        metadata = dict(kwargs.get("metadata") or (args[4] if len(args) > 4 else {}))
+                        metadata["message_thread_id"] = msg.message_thread_id
+                        # Force session key to be thread-specific
+                        metadata["session_key_override"] = f"telegram:{chat_id}:{msg.message_thread_id}"
+                        kwargs["metadata"] = metadata
+                        kwargs["session_key"] = metadata["session_key_override"]
+                        return await orig_hm(*args, **kwargs)
+                    self._handle_message = temp_hm
+                    try:
+                        return await self._orig_on_message_strategic(update, context)
+                    finally:
+                        self._handle_message = orig_hm
+
                 return await self._orig_on_message_strategic(update, context)
             TelegramChannel._on_message = _strategic_on_message
+
+        # Complete rewrite of send to handle message_thread_id WITHOUT monkey-patching bot
+        async def _thread_aware_send(self, msg: OutboundMessage) -> None:
+            if not self._app: return
+            self._stop_typing(msg.chat_id)
+            try: chat_id = int(msg.chat_id)
+            except: return
+
+            thread_id = msg.metadata.get("message_thread_id")
+            reply_params = None
+            if self.config.reply_to_message:
+                if reply_to_id := msg.metadata.get("message_id"):
+                    reply_params = ReplyParameters(message_id=reply_to_id, allow_sending_without_reply=True)
+
+            # Send media
+            for media_path in (msg.media or []):
+                try:
+                    from nanobot.channels.telegram import _get_media_type
+                    mtype = _get_media_type(media_path)
+                    sender = {"photo": self._app.bot.send_photo, "voice": self._app.bot.send_voice, "audio": self._app.bot.send_audio}.get(mtype, self._app.bot.send_document)
+                    param = "photo" if mtype == "photo" else mtype if mtype in ("voice", "audio") else "document"
+                    with open(media_path, 'rb') as f:
+                        kwargs = {param: f, "chat_id": chat_id, "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await sender(**kwargs)
+                except Exception as e:
+                    logger.error("Failed to send media: {}", e)
+
+            # Send text
+            if msg.content and msg.content != "[empty message]":
+                for chunk in _split_message(msg.content):
+                    try:
+                        html = _markdown_to_telegram_html(chunk)
+                        kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await self._app.bot.send_message(**kwargs)
+                    except Exception as e:
+                        kwargs = {"chat_id": chat_id, "text": chunk, "reply_parameters": reply_params}
+                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                        await self._app.bot.send_message(**kwargs)
+
+        TelegramChannel.send = _thread_aware_send
+
     except Exception as e:
         print(f"[Launcher] Error applying Telegram patches: {e}")
 
@@ -454,6 +606,12 @@ except Exception as e:
 # ==========================================
 def pre_start_cleanup():
     try:
+        mcp_dir = Path.home() / ".google_workspace_mcp"
+        if mcp_dir.exists():
+            # Clear only session-level JSON files, NOT the credentials folder
+            for item in mcp_dir.glob("*.json"):
+                if "credentials" not in str(item): item.unlink()
+
         workspace_dir = Path.home() / ".nanobot" / "workspace"
         if workspace_dir.exists():
             for item in workspace_dir.glob("*.tmp"): item.unlink()
