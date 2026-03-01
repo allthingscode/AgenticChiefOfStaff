@@ -8,7 +8,6 @@ __pycache__/
 
 # --- Project Infrastructure ---
 nanoClaw/
-uv.lock
 package-lock.json
 .gemini/
 
@@ -18,3 +17,4 @@ strategery/private
 
 # --- Standard Safety ---
 *.bak
+uv.lock
