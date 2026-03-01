@@ -1,6 +1,27 @@
 import sys
 from . import BasePatch
 
+def strategic_select_specialist_model(task, label, specialists_config):
+    """
+    Core specialist selection logic:
+    1. Check for keyword matches in label or task.
+    2. Apply default 'researcher' or 'architect' based on broader intent keywords.
+    """
+    task_lower = ((label or "") + " " + task).lower()
+    
+    # 1. Exact specialist match
+    for name, spec in specialists_config.items():
+        if any(kw.lower() in task_lower for kw in spec.get("keywords", [])):
+            return spec.get("model")
+            
+    # 2. Broader category match
+    if any(kw in task_lower for kw in ["research", "find", "search", "analyze", "report", "audit"]): 
+        return specialists_config.get("researcher", {}).get("model")
+    elif any(kw in task_lower for kw in ["architect", "design", "structure", "plan", "refactor", "implement"]): 
+        return specialists_config.get("architect", {}).get("model")
+        
+    return None
+
 class SubagentPatch(BasePatch):
     """Handles specialist routing, subagent model forcing, and tool proxies (Google Hammer)."""
     
@@ -51,17 +72,7 @@ class SubagentPatch(BasePatch):
             SubagentManager._orig_run_subagent_strategic = SubagentManager._run_subagent
             async def _patched_run_subagent(self, task_id, task, label, origin):
                 specialists = config_data.get("agents", {}).get("specialists", {})
-                selected_model = None
-                task_lower = ((label or "") + " " + task).lower()
-                for name, spec in specialists.items():
-                    if any(kw.lower() in task_lower for kw in spec.get("keywords", [])):
-                        selected_model = spec.get("model"); break
-                
-                if not selected_model:
-                    if any(kw in task_lower for kw in ["research", "find", "search", "analyze", "report", "audit"]): 
-                        selected_model = specialists.get("researcher", {}).get("model")
-                    elif any(kw in task_lower for kw in ["architect", "design", "structure", "plan", "refactor", "implement"]): 
-                        selected_model = specialists.get("architect", {}).get("model")
+                selected_model = strategic_select_specialist_model(task, label, specialists)
                 
                 orig_model = self.model
                 if selected_model: 

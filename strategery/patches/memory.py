@@ -2,6 +2,95 @@ import json
 from datetime import datetime, timedelta
 from . import BasePatch
 
+def strategic_prune_context(messages, ttl_hours, keep_last_assistants):
+    """
+    Prunes a list of messages based on TTL and mandatory retention of recent assistant turns.
+    Returns: A new list of pruned messages.
+    """
+    cutoff = datetime.now() - timedelta(hours=ttl_hours)
+    
+    new_msgs = []
+    assistant_count = 0
+    needed_tool_ids = set()
+    
+    # Pass 1: Identification (Reverse to find newest first)
+    for m in reversed(messages):
+        role = m.get("role")
+        
+        # Ensure timestamp is parsed
+        if "_parsed_ts" not in m and m.get("timestamp"):
+            try: m["_parsed_ts"] = datetime.fromisoformat(m["timestamp"])
+            except: m["_parsed_ts"] = None
+        
+        is_old = m.get("_parsed_ts") and m["_parsed_ts"] < cutoff
+        
+        keep = False
+        if role == "user":
+            keep = True
+        elif role == "assistant":
+            assistant_count += 1
+            if not is_old or assistant_count <= keep_last_assistants:
+                keep = True
+                for tc in (m.get("tool_calls") or []):
+                    if tid := tc.get("id"): needed_tool_ids.add(tid)
+        
+        if keep:
+            new_msgs.append(m)
+            
+    # Pass 2: Tool Resolution (Forward to preserve order)
+    final_msgs = []
+    for m in messages:
+        role = m.get("role")
+        if m in new_msgs:
+            final_msgs.append(m)
+        elif role == "tool" and m.get("tool_call_id") in needed_tool_ids:
+            final_msgs.append(m)
+            
+    # Cleanup temporary metadata
+    for m in final_msgs:
+        m.pop("_parsed_ts", None)
+        
+    return final_msgs
+
+def strategic_format_consolidation_messages(messages):
+    """Formats a list of messages into a string for the consolidator prompt."""
+    lines = []
+    for m in messages:
+        if not m.get("content"): continue
+        role = m["role"].upper()
+        content = m["content"]
+        lines.append(f"[{m.get('timestamp', '?')[:16]}] {role}: {content}")
+    return "\n".join(lines)
+
+def strategic_parse_consolidation_response(content, has_tool_calls, tool_arguments, current_memory):
+    """
+    Parses the LLM response (from tool calls or raw text) and applies regex recovery.
+    Returns: A dict with 'history_entry' and 'memory_update' or None if invalid.
+    """
+    args = None
+    if has_tool_calls:
+        args = tool_arguments
+        if isinstance(args, str):
+            try: args = json.loads(args)
+            except: pass
+
+    # Regex Recovery if tool call failed or we have raw text
+    if not args or not isinstance(args, dict):
+        try:
+            import re
+            match = re.search(r"\{.*\}", str(content), re.DOTALL)
+            if match:
+                candidate = json.loads(match.group(0))
+                args = {
+                    "history_entry": candidate.get("history_entry") or candidate.get("summary") or "No summary available.",
+                    "memory_update": candidate.get("memory_update") or candidate.get("facts") or current_memory
+                }
+        except: pass
+
+    if args and isinstance(args, dict) and ("history_entry" in args or "memory_update" in args):
+        return args
+    return None
+
 class MemoryPatch(BasePatch):
     """Handles memory consolidation, context pruning, and memory flush patches."""
     
@@ -42,13 +131,7 @@ class MemoryPatch(BasePatch):
                     old_messages = session.messages[session.last_consolidated:-keep_count]
                     if not old_messages: return True
 
-                lines = []
-                for m in old_messages:
-                    if not m.get("content"): continue
-                    role = m["role"].upper()
-                    content = m["content"]
-                    lines.append(f"[{m.get('timestamp', '?')[:16]}] {role}: {content}")
-
+                lines_str = strategic_format_consolidation_messages(old_messages)
                 current_memory = self.read_long_term()
 
                 prompt = f"""You are a senior memory consolidation specialist. Your goal is to extract durable, high-value information from the conversation history and merge it into the existing long-term memory.
@@ -63,7 +146,7 @@ class MemoryPatch(BasePatch):
 {current_memory or "(empty)"}
 
 ### NEW CONVERSATION SEGMENT:
-{chr(10).join(lines)}
+{lines_str}
 
 ### FINAL MANDATE:
 - Do NOT repeat yourself.
@@ -80,28 +163,11 @@ class MemoryPatch(BasePatch):
                         model=model,
                     )
 
-                    args = None
-                    text = response.content or ""
-                    if response.has_tool_calls:
-                        args = response.tool_calls[0].arguments
-                        if isinstance(args, str):
-                            try: args = json.loads(args)
-                            except: pass
+                    tool_args = response.tool_calls[0].arguments if response.has_tool_calls else None
+                    args = strategic_parse_consolidation_response(response.content, response.has_tool_calls, tool_args, current_memory)
 
-                    if not args or not isinstance(args, dict):
-                        print(f"[Launcher] Warning: Consolidator failed tool call. Attempting Regex Recovery on: {text[:200]}...")
-                        try:
-                            import re
-                            match = re.search(r"\{.*\}", text, re.DOTALL)
-                            if match:
-                                candidate = json.loads(match.group(0))
-                                args = {
-                                    "history_entry": candidate.get("history_entry") or candidate.get("summary") or "No summary available.",
-                                    "memory_update": candidate.get("memory_update") or candidate.get("facts") or current_memory
-                                }
-                        except: pass
-
-                    if not args or not isinstance(args, dict):
+                    if not args:
+                        print(f"[Launcher] Warning: Consolidator failed to parse response.")
                         return False
 
                     if entry := args.get("history_entry"):
@@ -133,45 +199,9 @@ class MemoryPatch(BasePatch):
                     session = self.sessions.get_or_create(key)
                     ttl_str = prune_cfg.get("ttl", "6h")
                     hours = int(ttl_str[:-1]) if ttl_str.endswith("h") else 6
-                    cutoff = datetime.now() - timedelta(hours=hours)
+                    keep_last = prune_cfg.get("keepLastAssistants", 3)
                     
-                    new_msgs = []
-                    assistant_count = 0
-                    needed_tool_ids = set()
-                    
-                    # Pass 1: Identification
-                    for m in reversed(session.messages):
-                        role = m.get("role")
-                        if "_parsed_ts" not in m and m.get("timestamp"):
-                            try: m["_parsed_ts"] = datetime.fromisoformat(m["timestamp"])
-                            except: m["_parsed_ts"] = None
-                        
-                        is_old = m.get("_parsed_ts") and m["_parsed_ts"] < cutoff
-                        
-                        keep = False
-                        if role == "user":
-                            keep = True
-                        elif role == "assistant":
-                            assistant_count += 1
-                            if not is_old or assistant_count <= prune_cfg.get("keepLastAssistants", 3):
-                                keep = True
-                                for tc in (m.get("tool_calls") or []):
-                                    if tid := tc.get("id"): needed_tool_ids.add(tid)
-                        
-                        if keep:
-                            new_msgs.append(m)
-                    
-                    # Pass 2: Tool Resolution
-                    final_msgs = []
-                    for m in session.messages:
-                        role = m.get("role")
-                        if m in new_msgs:
-                            final_msgs.append(m)
-                        elif role == "tool" and m.get("tool_call_id") in needed_tool_ids:
-                            final_msgs.append(m)
-                    
-                    if len(final_msgs) < len(session.messages):
-                        session.messages = final_msgs
+                    session.messages = strategic_prune_context(session.messages, hours, keep_last)
 
                 # 2. Memory Flush
                 flush_cfg = config_data.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})

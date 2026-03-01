@@ -1,7 +1,35 @@
 import json
 import os
+import builtins
 from pathlib import Path
+from functools import wraps
 from . import BasePatch
+
+def strategic_migrate_config(data, config_data_capture=None):
+    """
+    Strategic migration logic: 
+    1. Captures raw config.
+    2. Runs original migration (via caller).
+    3. Strips custom keys for Pydantic.
+    """
+    if data and isinstance(data, dict) and config_data_capture is not None:
+        config_data_capture.clear()
+        config_data_capture.update(json.loads(json.dumps(data)))
+    
+    # Surgical strip of custom keys
+    def _strip_recursively(obj):
+        if not isinstance(obj, dict): return
+        obj.pop("strategic_edition", None)
+        obj.pop("memory", None)
+        obj.pop("keywords", None)
+        obj.pop("compaction", None)
+        obj.pop("contextPruning", None)
+        obj.pop("memorySearch", None)
+        for v in obj.values():
+            if isinstance(v, (dict, list)): _strip_recursively(v)
+    
+    _strip_recursively(data)
+    return data
 
 class ConfigPatch(BasePatch):
     """Handles global configuration overrides, BOM handling, and RAW_CONFIG management."""
@@ -11,9 +39,6 @@ class ConfigPatch(BasePatch):
         return "Configuration & Schema Overrides"
 
     def apply(self, config_data: dict) -> bool:
-        # Note: config_data here is a reference to the global RAW_CONFIG 
-        # that we will populate if it's empty, or update if it's not.
-        
         try:
             import nanobot.config.loader
             from nanobot.config.schema import Config
@@ -21,50 +46,29 @@ class ConfigPatch(BasePatch):
             # 1. Force the Config schema to ignore extra fields at runtime
             Config.model_config["extra"] = "ignore"
             
-            # 2. Patch load_config to use utf-8-sig
-            if not hasattr(nanobot.config.loader, "_orig_load_config_strategic"):
-                nanobot.config.loader._orig_load_config_strategic = nanobot.config.loader.load_config
+            # 2. Global BOM-Safe 'open' wrapper for JSON files
+            if not hasattr(builtins, "_orig_open_strategic"):
+                builtins._orig_open_strategic = builtins.open
                 
-                def _strategic_load_config(config_path=None):
-                    path = config_path or nanobot.config.loader.get_config_path()
-                    if path.exists():
-                        try:
-                            with open(path, "r", encoding="utf-8-sig") as f:
-                                data = json.load(f)
-                            return Config.model_validate(nanobot.config.loader._migrate_config(data))
-                        except Exception as e:
-                            print(f"[Launcher] Warning: Failed to load config: {e}")
-                    return Config()
+                @wraps(builtins._orig_open_strategic)
+                def _strategic_open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
+                    if 'r' in mode and (encoding is None or encoding == 'utf-8'):
+                        f_str = str(file).lower()
+                        if f_str.endswith('.json') or f_str.endswith('.jsonl'):
+                            encoding = 'utf-8-sig'
+                    return builtins._orig_open_strategic(file, mode, buffering, encoding, errors, newline, closefd, opener)
                 
-                nanobot.config.loader.load_config = _strategic_load_config
+                builtins.open = _strategic_open
 
-            # 3. Patch _migrate_config to capture RAW_CONFIG
+            # 3. Patch _migrate_config
             if not hasattr(nanobot.config.loader, "_orig_migrate_strategic"):
                 nanobot.config.loader._orig_migrate_strategic = nanobot.config.loader._migrate_config
                 
                 def _patched_migrate(data):
-                    # Update the provided config_data (which should be RAW_CONFIG)
-                    config_data.clear()
-                    config_data.update(json.loads(json.dumps(data)))
-                    
-                    # Run the original migration
+                    # Run original migration first
                     data = nanobot.config.loader._orig_migrate_strategic(data)
-                    
-                    # Strip custom keys for Pydantic
-                    if "agents" in data:
-                        agents = data["agents"]
-                        data.pop("strategic_edition", None)
-                        agents.pop("consolidator", None)
-                        if "defaults" in agents:
-                            defaults = agents["defaults"]
-                            defaults.pop("compaction", None)
-                            defaults.pop("contextPruning", None)
-                            defaults.pop("memorySearch", None)
-                        if "specialists" in agents:
-                            for spec in agents["specialists"].values():
-                                if isinstance(spec, dict): spec.pop("keywords", None)
-                    data.pop("memory", None)
-                    return data
+                    # Then apply strategic stripping/capture
+                    return strategic_migrate_config(data, config_data)
                 
                 nanobot.config.loader._migrate_config = _patched_migrate
                 

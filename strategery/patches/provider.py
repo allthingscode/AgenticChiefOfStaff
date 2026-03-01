@@ -1,6 +1,10 @@
 from loguru import logger
 from . import BasePatch
 
+def strategic_log_provider_request(provider_name, model):
+    """Logs the provider request in a standardized strategic format."""
+    logger.info("[Strategic] {} request: model={}", provider_name, model)
+
 class ProviderPatch(BasePatch):
     """Handles logging and routing patches for LLM providers."""
     
@@ -24,7 +28,7 @@ class ProviderPatch(BasePatch):
             LiteLLMProvider._orig_chat_strategic = LiteLLMProvider.chat
             async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7, reasoning_effort=None, **kwargs):
                 target_model = model or self.default_model
-                logger.info("[Strategic] LiteLLM request: model={}", target_model)
+                strategic_log_provider_request("LiteLLM", target_model)
                 return await self._orig_chat_strategic(messages, tools=tools, model=model, max_tokens=max_tokens, temperature=temperature, reasoning_effort=reasoning_effort, **kwargs)
             LiteLLMProvider.chat = _patched_litellm_chat
 
@@ -34,7 +38,7 @@ class ProviderPatch(BasePatch):
             CustomProvider._orig_chat_strategic = CustomProvider.chat
             async def _patched_custom_chat(self, *args, **kwargs):
                 model = kwargs.get("model") or self.default_model
-                logger.info("[Strategic] CustomProvider request: model={}", model)
+                strategic_log_provider_request("CustomProvider", model)
                 return await self._orig_chat_strategic(*args, **kwargs)
             CustomProvider.chat = _patched_custom_chat
 
@@ -44,6 +48,6 @@ class ProviderPatch(BasePatch):
             OpenAICodexProvider._orig_chat_strategic = OpenAICodexProvider.chat
             async def _patched_codex_chat(self, *args, **kwargs):
                 model = kwargs.get("model") or self.default_model
-                logger.info("[Strategic] Codex request: model={}", model)
+                strategic_log_provider_request("Codex", model)
                 return await self._orig_chat_strategic(*args, **kwargs)
             OpenAICodexProvider.chat = _patched_codex_chat
