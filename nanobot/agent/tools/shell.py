@@ -69,17 +69,6 @@ class ExecTool(Tool):
         if guard_error:
             return guard_error
         
-        # On Windows, 'date' and 'time' without arguments are interactive in cmd.exe.
-        # We rewrite them to use /t to be non-interactive and avoid timeouts.
-        import sys
-        if sys.platform == "win32":
-            # Very basic surgical rewrite for the most common hang culprits
-            cmd_lower = command.strip().lower()
-            if cmd_lower == "date":
-                command = "date /t"
-            elif cmd_lower == "time":
-                command = "time /t"
-        
         env = os.environ.copy()
         if self.path_append:
             env["PATH"] = env.get("PATH", "") + os.pathsep + self.path_append

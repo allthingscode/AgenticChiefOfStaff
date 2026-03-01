@@ -203,17 +203,25 @@ try:
         _orig_subagent_init(self, *args, **kwargs)
     SubagentManager.__init__ = _patched_subagent_init
 
-    # B. MAIN AGENT TOOL PROXY (For Google Email Hammer)
+    # B. MAIN AGENT TOOL PROXY (For Google Email Hammer & Windows Shell Fix)
     _orig_tool_execute = ToolRegistry.execute
     async def _patched_tool_execute(self, name, args):
         # THE GOOGLE EMAIL HAMMER: Force primary email for Google Surgical tools
         if "google-surgical" in str(name) and isinstance(args, dict):
-            # Intercept both 'user_google_email' and 'email' parameters
-            if "user_google_email" in args:
-                args["user_google_email"] = USER_EMAIL
-            if "email" in args:
-                args["email"] = USER_EMAIL
+            if "user_google_email" in args: args["user_google_email"] = USER_EMAIL
+            if "email" in args: args["email"] = USER_EMAIL
             print(f"[Launcher] Google Hammer: Forced email to {USER_EMAIL} for {name}")
+        
+        # THE WINDOWS SHELL FIX: Rewrite interactive 'date'/'time' to be non-interactive
+        if name == "exec" and sys.platform == "win32" and isinstance(args, dict):
+            cmd = args.get("command", "").strip().lower()
+            if cmd == "date":
+                args["command"] = "date /t"
+                print(f"[Launcher] Windows Shell Fix: Rewrote 'date' to 'date /t'")
+            elif cmd == "time":
+                args["command"] = "time /t"
+                print(f"[Launcher] Windows Shell Fix: Rewrote 'time' to 'time /t'")
+
         return await _orig_tool_execute(self, name, args)
     ToolRegistry.execute = _patched_tool_execute
 
