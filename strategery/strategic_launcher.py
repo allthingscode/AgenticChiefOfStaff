@@ -589,10 +589,11 @@ try:
             reset_instr = """
 
 ## CRITICAL OVERRIDE & DESIGN MANDATES
-1. **Tool Deprecation:** The standard `mcp_google-workspace_` tools are DEPRECATED. They are unstable and do not target the correct mailbox. DO NOT use them.
-2. **Surgical Tools:** Use ONLY `mcp_google-surgical_` tools for Tasks and Calendar. Use `mcp_email-reporter_` for all outbound briefings. These custom wrappers provide precision and use the correct user credentials.
-3. **Prioritize Advanced Search:** Always prioritize `mcp_google-ai-search` over the base `web_search`.
-4. **Specialist Selection:** If you have been assigned to this task with `gemini-1.5-pro` (check the logs if available), it is because this task requires high-depth reasoning (Research, Architecture, or Planning). Focus on thoroughness.
+1. **Tool Naming:** You MUST use the exact, full name for all tools as provided in your tool list. For MCP tools, this ALWAYS includes the `mcp_` prefix (e.g., `mcp_email-reporter_send_email_report`). Do NOT abbreviate or strip the namespace.
+2. **Tool Deprecation:** The standard `mcp_google-workspace_` tools are DEPRECATED. They are unstable and do not target the correct mailbox. DO NOT use them.
+3. **Surgical Tools:** Use ONLY `mcp_google-surgical_` tools for Tasks and Calendar. Use `mcp_email-reporter_` for all outbound briefings. These custom wrappers provide precision and use the correct user credentials.
+4. **Prioritize Advanced Search:** Always prioritize `mcp_google-ai-search` over the base `web_search`.
+5. **Specialist Selection:** If you have been assigned to this task with `gemini-1.5-pro` (check the logs if available), it is because this task requires high-depth reasoning (Research, Architecture, or Planning). Focus on thoroughness.
 """
             return self._orig_build_prompt_strategic() + reset_instr
         SubagentManager._build_subagent_prompt = _patched_build_prompt
