@@ -1,15 +1,18 @@
 
 import asyncio
 import sys
+import os
 from pathlib import Path
 
-# Add project root to the Python path to allow importing nanobot
-project_root = Path(__file__).resolve().parent.parent.parent
+# Add project root to the Python path to allow importing nanobot correctly
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# CRITICAL: Import the strategic launcher's patching logic first
+import strategery.strategic_launcher
 
 from nanobot.config.loader import load_config
 from nanobot.agent.loop import AgentLoop
-from nanobot.providers.litellm_provider import LiteLLMProvider
 from nanobot.bus.queue import MessageBus
 from loguru import logger
 
@@ -52,13 +55,6 @@ async def main():
         bus = MessageBus()
         provider = _make_provider(config)
 
-        # Manually define the routing config to ensure the test environment is correct
-        llm_routing_config = {
-            "powerful_model": "gemini-1.5-pro",
-            "fast_model": "gemini-1.5-flash",
-            "local_model": "ollama/llama3.1:8b"
-        }
-
         agent_loop = AgentLoop(
             bus=bus,
             provider=provider,
@@ -71,7 +67,6 @@ async def main():
             brave_api_key=config.tools.web.search.api_key or None,
             exec_config=config.tools.exec,
             restrict_to_workspace=config.tools.restrict_to_workspace,
-            llm_routing_config=llm_routing_config,
         )
 
         response = await agent_loop.process_direct(prompt, session_key="cli-test:direct")
