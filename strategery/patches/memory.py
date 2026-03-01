@@ -170,14 +170,39 @@ class MemoryPatch(BasePatch):
                         print(f"[Launcher] Warning: Consolidator failed to parse response.")
                         return False
 
-                    if entry := args.get("history_entry"):
-                        self.append_history(str(entry))
-                    if update := args.get("memory_update"):
-                        if update != current_memory:
+                    # STRATEGIC EDITION: Vector Store + Daily Journal (Retiring HISTORY.md bloat)
+                    try:
+                        from .vector_store import StrategicVectorStore
+                        from pathlib import Path
+                        import asyncio
+                        vec_store = StrategicVectorStore(provider=provider)
+                        
+                        entry = args.get("history_entry", "No summary available.")
+                        update = args.get("memory_update", current_memory)
+                        
+                        # 1. Push to Vector Store (Searchable Recall)
+                        asyncio.create_task(vec_store.add_entry(str(entry), {"type": "history_summary", "source": "consolidation"}))
+                        
+                        # 2. Write to Daily Journal (Human-Readable Log)
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        journal_path = Path("D:/Nanobot_Storage/workspace/memory") / f"{today}.md"
+                        journal_path.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        with open(journal_path, "a", encoding="utf-8-sig") as f:
+                            ts = datetime.now().strftime("%H:%M:%S")
+                            f.write(f"\n### CONSOLIDATION [{ts}]\n{entry}\n")
+                        
+                        # 3. Update Long-Term Memory (Gold Standard Facts)
+                        if update and update != current_memory:
                             self.write_long_term(str(update))
+                            # Also index the updated memory block for semantic coverage
+                            asyncio.create_task(vec_store.add_entry(f"UPDATED CORE MEMORY:\n{update}", {"type": "memory_fact_sheet"}))
+
+                        print(f"[Launcher] Strategic Consolidation complete: Vector Store + Journal updated.")
+                    except Exception as ve:
+                        print(f"[Launcher] Strategic Memory persistence error: {ve}")
 
                     session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
-                    print(f"[Launcher] Memory consolidation SUCCESSFUL.")
                     return True
                 except Exception as e:
                     print(f"[Launcher] Memory consolidation error: {e}")
@@ -203,7 +228,35 @@ class MemoryPatch(BasePatch):
                     
                     session.messages = strategic_prune_context(session.messages, hours, keep_last)
 
-                # 2. Memory Flush
+                # 2. Semantic Retrieval (RAG)
+                rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
+                if rag_cfg.get("enabled", True) and msg.content and msg.content != "[empty message]":
+                    try:
+                        from .vector_store import StrategicVectorStore
+                        vec_store = StrategicVectorStore(provider=self.provider)
+                        results = await vec_store.query(msg.content, n_results=3)
+                        
+                        if results:
+                            key = session_key or msg.session_key
+                            session = self.sessions.get_or_create(key)
+                            
+                            # Format retrieved context
+                            context_lines = []
+                            for r in results:
+                                context_lines.append(f"- {r['content']}")
+                            
+                            mem_block = "### STRATEGIC MEMORY (RETRIEVED):\n" + "\n".join(context_lines)
+                            
+                            # Inject as a system-like hint before the current message
+                            # We don't want to pollute the permanent history, 
+                            # so we'll see if we can find a clean injection point.
+                            # For now, we prepend to the current message content temporarily.
+                            msg.content = mem_block + "\n\n" + msg.content
+                            print(f"[Launcher] RAG: Injected {len(results)} relevant facts.")
+                    except Exception as re:
+                        print(f"[Launcher] Semantic Retrieval error: {re}")
+
+                # 3. Memory Flush
                 flush_cfg = config_data.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
                 if flush_cfg.get("enabled"):
                     key = session_key or msg.session_key

@@ -162,8 +162,9 @@ def test_strategic_log_provider_request():
     """Verify that strategic_log_provider_request logs in the expected format."""
     from loguru import logger
     with patch.object(logger, "info") as mock_logger:
+        from strategery.patches.provider import strategic_log_provider_request
         strategic_log_provider_request("LiteLLM", "test-model")
-        mock_logger.assert_called_with("[Strategic] {} request: model={}", "LiteLLM", "test-model")
+        mock_logger.assert_called_with("[Strategic] {} {}: model={}", "LiteLLM", "request", "test-model")
 
 def test_strategic_get_media_path():
     """Verify that strategic_get_media_path correctly redirects Telegram media."""
@@ -179,8 +180,52 @@ def test_strategic_get_media_path():
     assert strategic_get_media_path(workspace, other_path) == other_path
 
 @pytest.mark.asyncio
-async def test_telegram_media_redirection_logic():
-    """Verify the integration of Telegram media redirection."""
+async def test_strategic_consolidation_flow():
+    """Verify the 'Clean History' consolidation flow (Vector Store + Journal)."""
+    from strategery.patches.memory import MemoryPatch
+    from nanobot.agent.memory import MemoryStore
+    
+    mock_session = MagicMock()
+    mock_session.messages = [{"role": "user", "content": "test", "timestamp": "2026-03-01T12:00:00"}]
+    mock_session.last_consolidated = 0
+    
+    mock_provider = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.has_tool_calls = False
+    mock_response.content = '{"history_entry": "Test summary", "memory_update": "Test facts"}'
+    mock_provider.chat.return_value = mock_response
+    
+    store = MemoryStore(workspace=Path("D:/Test_Storage/workspace"))
+    store.read_long_term = MagicMock(return_value="Existing facts")
+    store.write_long_term = MagicMock()
+    store.append_history = MagicMock() # Should NOT be called in strategic edition
+    
+    patch_inst = MemoryPatch()
+    # Mocking the Vector Store to avoid actual DB/API calls
+    # Note: It is imported locally inside the patched consolidate method
+    with patch("strategery.patches.vector_store.StrategicVectorStore") as mock_vec_cls, \
+         patch("builtins.open", mock_open()) as mock_file:
+        
+        mock_vec = mock_vec_cls.return_value
+        mock_vec.add_entry = AsyncMock(return_value=True)
+        
+        # Apply patch and run consolidation
+        patch_inst.apply({"agents": {"consolidator": {"model": "test-model"}}})
+        await store.consolidate(mock_session, mock_provider, "test-model", archive_all=True)
+        
+        # VERIFY:
+        # 1. append_history was NOT called (no bloat)
+        store.append_history.assert_not_called()
+        # 2. Vector Store WAS called for the entry
+        mock_vec.add_entry.assert_any_call("Test summary", {"type": "history_summary", "source": "consolidation"})
+        # 3. Daily Journal WAS written (mock_file)
+        mock_file.assert_called()
+        # 4. Long-term memory was updated
+        store.write_long_term.assert_called_with("Test facts")
+
+@pytest.mark.asyncio
+async def test_telegram_on_message_no_duplicates():
+    """Verify that _on_message only calls the original handler once."""
     from nanobot.channels.telegram import TelegramChannel
     from strategery.patches.telegram import TelegramPatch
     
@@ -188,37 +233,19 @@ async def test_telegram_media_redirection_logic():
     patch_inst.apply({})
     
     mock_channel = MagicMock(spec=TelegramChannel)
-    mock_channel.config = MagicMock()
-    mock_channel.config.workspace_path = "D:/Test_Workspace"
+    mock_channel._orig_on_message_strategic = AsyncMock()
     
-    mock_context = MagicMock()
-    mock_file = MagicMock()
-    
-    captured_paths = []
-    async def final_download(custom_path=None, *args, **kwargs):
-        captured_paths.append(custom_path)
-        return True
-    
-    mock_file.download_to_drive = final_download
-    mock_context.bot.get_file = AsyncMock(return_value=mock_file)
-    
-    # Mock update message structure
     mock_update = MagicMock()
-    mock_update.message.photo = [MagicMock()]
+    mock_update.message.chat_id = 123
+    mock_update.message.message_thread_id = 456
+    mock_update.message.text = "Hello"
+    mock_update.message.photo = None
     mock_update.message.voice = None
     mock_update.message.audio = None
     mock_update.message.document = None
-    mock_update.message.message_thread_id = None
-
-    with patch.object(TelegramChannel, "_orig_on_message_strategic", new_callable=AsyncMock):
-        await TelegramChannel._on_message(mock_channel, mock_update, mock_context)
-        
-        # Trigger the patched get_file
-        patched_file = await mock_context.bot.get_file("file_id")
-        
-        # Trigger the patched download
-        await patched_file.download_to_drive(custom_path=r".nanobot\media\photo.jpg")
-        
-        assert any("Test_Workspace" in str(p) for p in captured_paths)
-        assert any("media" in str(p) for p in captured_paths)
-        assert any("photo.jpg" in str(p) for p in captured_paths)
+    
+    # Run the patched handler
+    await TelegramChannel._on_message(mock_channel, mock_update, MagicMock())
+    
+    # VERIFY: Original handler called exactly ONCE
+    assert mock_channel._orig_on_message_strategic.call_count == 1

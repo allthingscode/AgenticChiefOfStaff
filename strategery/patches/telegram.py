@@ -142,12 +142,13 @@ class TelegramPatch(BasePatch):
                         return await self._orig_on_message_strategic(update, context)
                     finally:
                         self._handle_message = orig_hm
-
-                try:
-                    return await self._orig_on_message_strategic(update, context)
-                except Exception as e:
-                    logger.error("[Strategic] Telegram: Error in original _on_message: {}", e)
-                    raise
+                else:
+                    # Fallback for standard messages (non-thread)
+                    try:
+                        return await self._orig_on_message_strategic(update, context)
+                    except Exception as e:
+                        logger.error("[Strategic] Telegram: Error in original _on_message: {}", e)
+                        raise
             
             TelegramChannel._on_message = _strategic_on_message
 
