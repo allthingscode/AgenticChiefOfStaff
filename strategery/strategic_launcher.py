@@ -549,37 +549,13 @@ try:
                 self.model = selected_model
                 print(f"[Strategic] Specialist Router: Assigned {selected_model} for task '{label}'")
             
-            from contextlib import AsyncExitStack
-            from nanobot.agent.tools.mcp import connect_mcp_servers
-            
-            async with AsyncExitStack() as stack:
-                _orig_reg_init = nanobot.agent.tools.registry.ToolRegistry.__init__
-                mcp_connected = False
-                
-                def _patched_reg_init(reg_self, *args, **kwargs):
-                    _orig_reg_init(reg_self, *args, **kwargs)
-                    nonlocal mcp_connected
-                    if not mcp_connected and hasattr(self, "_mcp_configs"):
-                        mcp_connected = True
-                        print(f"[Strategic] Subagent [{task_id}] connecting to MCP servers...")
-                        # We are in a sync constructor, but connect_mcp_servers is async.
-                        # Since this is run inside _run_subagent which IS an async function,
-                        # and we want to wait for MCP before the loop starts, we can
-                        # just call it in the caller or use a better hook.
-                        # For now, let's try to just await it in the caller.
-                        pass
-
-                nanobot.agent.tools.registry.ToolRegistry.__init__ = _patched_reg_init
-                try:
-                    # Instead of patching __init__ to do async work, we'll patch the caller 
-                    # or just manually inject after the registry is created.
-                    # Let's try a different approach: patch the LLM provider's chat
-                    # to connect MCP once before the first call.
-                    
-                    return await self._orig_run_subagent_strategic(task_id, task, label, origin)
-                finally:
-                    nanobot.agent.tools.registry.ToolRegistry.__init__ = _orig_reg_init
-                    self.model = orig_model
+            try:
+                # STRATEGIC FIX: We no longer dynamically patch ToolRegistry.__init__ here.
+                # Dynamic global patching in an async context is unsafe and leads to 
+                # 'maximum recursion depth exceeded' when concurrent subagents are spawned.
+                return await self._orig_run_subagent_strategic(task_id, task, label, origin)
+            finally:
+                self.model = orig_model
 
         SubagentManager._run_subagent = _patched_run_subagent
 
