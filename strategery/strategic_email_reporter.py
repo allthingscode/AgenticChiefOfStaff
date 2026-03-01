@@ -21,7 +21,7 @@ def get_config():
     # Priority: System config, local fallback
     home_config = Path.home() / ".nanobot" / "config.json"
     if home_config.exists():
-        with open(home_config, "r", encoding="utf-8") as f:
+        with open(home_config, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     return {}
 
