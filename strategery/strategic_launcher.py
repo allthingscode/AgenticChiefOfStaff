@@ -61,6 +61,13 @@ STORAGE_ROOT = Path(STRATEGIC.get("storage_root", "./storage"))
 
 try:
     import nanobot.config.loader
+    from nanobot.config.schema import Config
+    from pydantic import ConfigDict
+    
+    # Force the Config schema to ignore extra fields at runtime
+    # This prevents 'nanobot status' and other core tools from crashing on custom keys.
+    Config.model_config["extra"] = "ignore"
+    
     _orig_migrate = nanobot.config.loader._migrate_config
     
     def _patched_migrate(data):
