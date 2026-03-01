@@ -58,8 +58,10 @@ class SubagentPatch(BasePatch):
                         selected_model = spec.get("model"); break
                 
                 if not selected_model:
-                    if any(kw in task_lower for kw in ["research", "find", "search"]): selected_model = specialists.get("researcher", {}).get("model")
-                    elif any(kw in task_lower for kw in ["architect", "design", "structure"]): selected_model = specialists.get("architect", {}).get("model")
+                    if any(kw in task_lower for kw in ["research", "find", "search", "analyze", "report", "audit"]): 
+                        selected_model = specialists.get("researcher", {}).get("model")
+                    elif any(kw in task_lower for kw in ["architect", "design", "structure", "plan", "refactor", "implement"]): 
+                        selected_model = specialists.get("architect", {}).get("model")
                 
                 orig_model = self.model
                 if selected_model: 
