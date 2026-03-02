@@ -1,9 +1,11 @@
 import os
 import asyncio
 from pathlib import Path
-from loguru import logger
+from typing import List, Dict, Any, Optional
+from strategery.strategic_logger import strategic_logger
+from .vsa import VectorStoreInterface
 
-class StrategicVectorStore:
+class StrategicVectorStore(VectorStoreInterface):
     """
     Local-first vector store using ChromaDB.
     Handles semantic indexing and retrieval for Nanobot Strategic Edition.
@@ -18,6 +20,9 @@ class StrategicVectorStore:
 
     def __init__(self, storage_root=None, provider=None):
         if getattr(self, "_initialized", False):
+            # Allow updating the provider even if already initialized (e.g., if re-initialized with a different provider instance)
+            if provider:
+                self.provider = provider
             return
             
         # MANDATE: Storage root MUST be provided or resolved to home
@@ -32,24 +37,28 @@ class StrategicVectorStore:
         self._collection = None
         self._initialized = True
         
-        logger.info("[Strategic] Vector Store initialized at {}", self.storage_path)
+        strategic_logger.info(f"Vector Store initialized at {self.storage_path}")
 
     async def _get_collection(self):
         if self._collection is None:
-            import chromadb
-            from chromadb.config import Settings
-            
-            self._client = chromadb.PersistentClient(
-                path=str(self.storage_path),
-                settings=Settings(anonymized_telemetry=False)
-            )
-            self._collection = self._client.get_or_create_collection(name=self.collection_name)
+            try:
+                import chromadb
+                from chromadb.config import Settings
+                
+                self._client = chromadb.PersistentClient(
+                    path=str(self.storage_path),
+                    settings=Settings(anonymized_telemetry=False)
+                )
+                self._collection = self._client.get_or_create_collection(name=self.collection_name)
+            except Exception as e:
+                strategic_logger.error(f"Error initializing ChromaDB client: {e}", exc_info=True)
+                raise
         return self._collection
 
-    async def add_entry(self, text, metadata=None):
+    async def add_entry(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Vectorizes and adds a single entry to the store."""
         if not self.provider or not hasattr(self.provider, "embed"):
-            logger.error("[Strategic] Vector Store: No embedding provider available.")
+            strategic_logger.error("Vector Store: No embedding provider available.")
             return False
 
         try:
@@ -65,13 +74,13 @@ class StrategicVectorStore:
                 documents=[text],
                 metadatas=[metadata or {}]
             )
-            logger.debug("[Strategic] Vector Store: Added entry {}", doc_id)
+            strategic_logger.debug(f"Vector Store: Added entry {doc_id}")
             return True
         except Exception as e:
-            logger.error("[Strategic] Vector Store error during add: {}", e)
+            strategic_logger.error(f"Vector Store error during add: {e}")
             return False
 
-    async def query(self, text, n_results=3):
+    async def query(self, text: str, n_results: int = 3) -> List[Dict[str, Any]]:
         """Queries the store for semantically similar entries."""
         if not self.provider or not hasattr(self.provider, "embed"):
             return []
@@ -87,14 +96,25 @@ class StrategicVectorStore:
             
             # Format results into list of dicts
             formatted = []
-            if results and results['documents']:
+            if results and results['documents'] and len(results['documents']) > 0:
                 for i in range(len(results['documents'][0])):
                     formatted.append({
                         "content": results['documents'][0][i],
                         "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
-                        "distance": results['distances'][0][i] if results['distances'] else 0
+                        "distance": results['distances'][0][i] if (results.get('distances') and len(results['distances']) > 0) else 0
                     })
             return formatted
         except Exception as e:
-            logger.error("[Strategic] Vector Store error during query: {}", e)
+            strategic_logger.error(f"Vector Store error during query: {e}")
             return []
+
+    async def close(self) -> None:
+        """Gracefully closes any database connections."""
+        if self._client:
+            # ChromaDB's PersistentClient doesn't have an explicit close(), 
+            # but we can clear our references to ensure GC can happen if needed.
+            # Some versions use a heartbeat/telemetry that might need to be stopped.
+            strategic_logger.info("Closing Vector Store connection...")
+            self._collection = None
+            self._client = None
+            strategic_logger.debug("Vector Store connection references cleared.")

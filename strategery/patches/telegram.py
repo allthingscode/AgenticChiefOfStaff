@@ -1,7 +1,7 @@
 from pathlib import Path
-from loguru import logger
 from functools import wraps
 from . import BasePatch
+from strategery.strategic_logger import strategic_logger
 
 def strategic_get_media_path(base_workspace, original_path):
     """Calculates the strategic redirection path for Telegram media."""
@@ -50,7 +50,7 @@ class TelegramPatch(BasePatch):
             self._patch_telegram_channel(TelegramChannel, config_data)
             return True
         except Exception as e:
-            print(f"[Launcher] Telegram patch error: {e}")
+            strategic_logger.error(f"Telegram patch error: {e}")
             return False
 
     def _patch_telegram_channel(self, TelegramChannel, config_data):
@@ -66,9 +66,9 @@ class TelegramPatch(BasePatch):
             TelegramChannel._orig_start_strategic = TelegramChannel.start
             
             async def _strategic_start(self):
-                print(f"[Launcher] Telegram: Starting strategic channel (disable_commands={disable_commands})...")
+                strategic_logger.info(f"Telegram: Starting strategic channel (disable_commands={disable_commands})...")
                 if disable_commands:
-                    print("[Launcher] Telegram: Disabling default bot commands...")
+                    strategic_logger.debug("Telegram: Disabling default bot commands...")
                     # We patch the CommandHandler class temporarily during start!
                     _orig_init = CommandHandler.__init__
                     def _patched_init(handler_self, command, callback, *args, **kwargs):
@@ -79,19 +79,17 @@ class TelegramPatch(BasePatch):
                     
                     CommandHandler.__init__ = _patched_init
                     try:
-                        print("[Launcher] Telegram: Calling original start (with command suppression)...")
                         return await self._orig_start_strategic()
                     except Exception as e:
-                        print(f"[Launcher] Telegram: FATAL during start (with suppression): {e}")
+                        strategic_logger.error(f"Telegram: FATAL during start (with suppression): {e}")
                         raise
                     finally:
                         CommandHandler.__init__ = _orig_init
                 else:
                     try:
-                        print("[Launcher] Telegram: Calling original start...")
                         return await self._orig_start_strategic()
                     except Exception as e:
-                        print(f"[Launcher] Telegram: FATAL during start: {e}")
+                        strategic_logger.error(f"Telegram: FATAL during start: {e}")
                         raise
             
             TelegramChannel.start = _strategic_start
@@ -100,9 +98,8 @@ class TelegramPatch(BasePatch):
             TelegramChannel._orig_on_message_strategic = TelegramChannel._on_message
             
             async def _strategic_on_message(self, update, context):
-                logger.debug("[Strategic] Telegram: Received update {}", update.update_id)
+                strategic_logger.debug(f"Telegram: Received update {update.update_id}")
                 if update.message:
-                    logger.debug("[Strategic] Telegram: Message text: {}", update.message.text[:50] if update.message.text else "[no text]")
                     # Media Redirection
                     media_file = None
                     if update.message.photo: media_file = update.message.photo[-1]
@@ -119,24 +116,26 @@ class TelegramPatch(BasePatch):
                                 workspace = getattr(self.config, "workspace_path", None)
                                 new_path = strategic_get_media_path(workspace, custom_path)
                                 if new_path != custom_path:
-                                    print(f"[Launcher] Telegram Media Redirection: {new_path}")
+                                    strategic_logger.info(f"Telegram Media Redirection: {new_path}")
                                 return await _orig_download(custom_path=new_path, *args, **kwargs)
                             file.download_to_drive = _patched_download
                             return file
                         context.bot.get_file = _patched_get_file
 
                 # STRATEGIC EDITION: Handle Telegram Topics (threads)
-                if thread_meta := strategic_detect_thread_metadata(update.message, update.message.chat_id if update.message else None):
-                    msg = update.message
-                    logger.debug("[Strategic] Telegram: Thread ID detected: {}", thread_meta["message_thread_id"])
+                thread_meta = strategic_detect_thread_metadata(update.message, update.message.chat_id if update.message else None)
+                if thread_meta:
+                    strategic_logger.debug(f"Telegram: Thread ID detected: {thread_meta['message_thread_id']}")
+                    
+                    # Instead of patching self._handle_message, we just call orig_on_message
+                    # and ensure the session_key is passed correctly.
+                    # This relies on core TelegramChannel._on_message using self._handle_message.
                     orig_hm = self._handle_message
-                    async def temp_hm(*args, **kwargs):
-                        chat_id = kwargs.get("chat_id") or (args[1] if len(args) > 1 else None)
-                        metadata = dict(kwargs.get("metadata") or (args[4] if len(args) > 4 else {}))
+                    async def temp_hm(msg, chat_id, text=None, session_key=None, metadata=None):
+                        metadata = dict(metadata or {})
                         metadata.update(thread_meta)
-                        kwargs["metadata"] = metadata
-                        kwargs["session_key"] = thread_meta["session_key_override"]
-                        return await orig_hm(*args, **kwargs)
+                        return await orig_hm(msg, chat_id, text=text, session_key=thread_meta["session_key_override"], metadata=metadata)
+                    
                     self._handle_message = temp_hm
                     try:
                         return await self._orig_on_message_strategic(update, context)
@@ -147,7 +146,7 @@ class TelegramPatch(BasePatch):
                     try:
                         return await self._orig_on_message_strategic(update, context)
                     except Exception as e:
-                        logger.error("[Strategic] Telegram: Error in original _on_message: {}", e)
+                        strategic_logger.error(f"Telegram: Error in original _on_message: {e}")
                         raise
             
             TelegramChannel._on_message = _strategic_on_message
@@ -174,7 +173,7 @@ class TelegramPatch(BasePatch):
                         if thread_id: kwargs["message_thread_id"] = int(thread_id)
                         await sender(**kwargs)
                 except Exception as e:
-                    logger.error("Failed to send media: {}", e)
+                    strategic_logger.error(f"Failed to send media: {e}")
 
             # Send text
             if msg.content and msg.content != "[empty message]":

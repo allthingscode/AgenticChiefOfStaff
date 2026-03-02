@@ -1,7 +1,9 @@
 import sys
 from . import BasePatch
+from strategery.strategic_logger import strategic_logger
 
 def strategic_select_specialist_model(task, label, specialists_config):
+    # ... (rest of function unchanged)
     """
     Core specialist selection logic:
     1. Check for keyword matches in label or task.
@@ -40,7 +42,7 @@ class SubagentPatch(BasePatch):
             self._patch_heartbeat(config_data)
             return True
         except Exception as e:
-            print(f"[Launcher] Subagent patch error: {e}")
+            strategic_logger.error(f"Subagent patch error: {e}")
             return False
 
     def _patch_subagent_manager(self, config_data):
@@ -59,7 +61,7 @@ class SubagentPatch(BasePatch):
                         kwargs["model"] = config_model
                 
                 current_model = kwargs.get('model') or (args[3] if len(args) > 3 else 'auto')
-                print(f"[Strategic] SubagentManager initialized (Model: {current_model})")
+                strategic_logger.debug(f"SubagentManager initialized (Model: {current_model})")
                 
                 # Store MCP server config for subagents
                 mcp_data = config_data.get("tools", {}).get("mcpServers", {})
@@ -77,7 +79,7 @@ class SubagentPatch(BasePatch):
                 orig_model = self.model
                 if selected_model: 
                     self.model = selected_model
-                    print(f"[Strategic] Specialist Router: Assigned {selected_model} for task '{label}'")
+                    strategic_logger.info(f"Specialist Router: Assigned {selected_model} for task '{label}'")
                 
                 try:
                     return await self._orig_run_subagent_strategic(task_id, task, label, origin)
@@ -108,7 +110,7 @@ class SubagentPatch(BasePatch):
                 if "google-surgical" in str(name) and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                     if "email" in args: args["email"] = user_email
-                    print(f"[Launcher] Google Hammer: {user_email}")
+                    strategic_logger.debug(f"Google Hammer applied for: {user_email}")
                 
                 if name == "exec" and sys.platform == "win32" and isinstance(args, dict):
                     cmd = args.get("command", "").strip().lower()
@@ -133,6 +135,6 @@ class SubagentPatch(BasePatch):
                         args[1] = config_model
                     else:
                         kwargs["model"] = config_model
-                    print(f"[Launcher] Heartbeat forced to model: {config_model}")
+                    strategic_logger.info(f"Heartbeat forced to model: {config_model}")
                 self._orig_hb_init_strategic(*args, **kwargs)
             HeartbeatService.__init__ = _patched_hb_init

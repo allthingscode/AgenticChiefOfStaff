@@ -1,8 +1,13 @@
 import json
 from datetime import datetime, timedelta
 from . import BasePatch
+from .lifecycle import lifecycle_manager
+from strategery.strategic_logger import strategic_logger
 
 def strategic_prune_context(messages, ttl_hours, keep_last_assistants):
+    # ... (rest of the pruning logic is fine as is, it's a pure function)
+    # I'll keep it for brevity in this tool call, but the replace tool needs the exact text.
+    # To save context, I'll only replace the class part.
     """
     Prunes a list of messages based on TTL and mandatory retention of recent assistant turns.
     Returns: A new list of pruned messages.
@@ -104,7 +109,7 @@ class MemoryPatch(BasePatch):
             self._patch_context_pruning(config_data)
             return True
         except Exception as e:
-            print(f"[Launcher] Memory patch error: {e}")
+            strategic_logger.error(f"Memory patch error: {e}")
             return False
 
     def _patch_memory_consolidation(self, config_data):
@@ -117,7 +122,7 @@ class MemoryPatch(BasePatch):
                 config_model = config_data.get("agents", {}).get("consolidator", {}).get("model")
                 if config_model:
                     model = config_model
-                    print(f"[Launcher] Memory consolidation forced to model: {model}")
+                    strategic_logger.info(f"Memory consolidation forced to model: {model}")
 
                 archive_all = kwargs.get("archive_all", False)
                 memory_window = kwargs.get("memory_window", 50)
@@ -167,15 +172,15 @@ class MemoryPatch(BasePatch):
                     args = strategic_parse_consolidation_response(response.content, response.has_tool_calls, tool_args, current_memory)
 
                     if not args:
-                        print(f"[Launcher] Warning: Consolidator failed to parse response.")
+                        strategic_logger.warning(f"Consolidator failed to parse response.")
                         return False
 
                     # STRATEGIC EDITION: Vector Store + Daily Journal (Retiring HISTORY.md bloat)
                     try:
-                        from .vector_store import StrategicVectorStore
+                        from .vsa import VectorStoreFactory
                         from pathlib import Path
                         import asyncio
-                        vec_store = StrategicVectorStore(provider=provider)
+                        vec_store = VectorStoreFactory.get_store(provider=provider)
                         
                         entry = args.get("history_entry", "No summary available.")
                         update = args.get("memory_update", current_memory)
@@ -198,14 +203,14 @@ class MemoryPatch(BasePatch):
                             # Also index the updated memory block for semantic coverage
                             asyncio.create_task(vec_store.add_entry(f"UPDATED CORE MEMORY:\n{update}", {"type": "memory_fact_sheet"}))
 
-                        print(f"[Launcher] Strategic Consolidation complete: Vector Store + Journal updated.")
+                        strategic_logger.info(f"Strategic Consolidation complete: Vector Store + Journal updated.")
                     except Exception as ve:
-                        print(f"[Launcher] Strategic Memory persistence error: {ve}")
+                        strategic_logger.error(f"Strategic Memory persistence error: {ve}")
 
                     session.last_consolidated = 0 if archive_all else len(session.messages) - keep_count
                     return True
                 except Exception as e:
-                    print(f"[Launcher] Memory consolidation error: {e}")
+                    strategic_logger.error(f"Memory consolidation error: {e}")
                     return False
 
             MemoryStore.consolidate = _patched_consolidate
@@ -232,8 +237,9 @@ class MemoryPatch(BasePatch):
                 rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
                 if rag_cfg.get("enabled", True) and msg.content and msg.content != "[empty message]":
                     try:
-                        from .vector_store import StrategicVectorStore
-                        vec_store = StrategicVectorStore(provider=self.provider)
+                        from .vsa import VectorStoreFactory
+                        vec_store = VectorStoreFactory.get_store(provider=self.provider)
+                        
                         results = await vec_store.query(msg.content, n_results=3)
                         
                         if results:
@@ -248,13 +254,10 @@ class MemoryPatch(BasePatch):
                             mem_block = "### STRATEGIC MEMORY (RETRIEVED):\n" + "\n".join(context_lines)
                             
                             # Inject as a system-like hint before the current message
-                            # We don't want to pollute the permanent history, 
-                            # so we'll see if we can find a clean injection point.
-                            # For now, we prepend to the current message content temporarily.
                             msg.content = mem_block + "\n\n" + msg.content
-                            print(f"[Launcher] RAG: Injected {len(results)} relevant facts.")
+                            strategic_logger.info(f"RAG: Injected {len(results)} relevant facts.")
                     except Exception as re:
-                        print(f"[Launcher] Semantic Retrieval error: {re}")
+                        strategic_logger.error(f"Semantic Retrieval error: {re}")
 
                 # 3. Memory Flush
                 flush_cfg = config_data.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
@@ -263,7 +266,7 @@ class MemoryPatch(BasePatch):
                     session = self.sessions.get_or_create(key)
                     unconsolidated = len(session.messages) - session.last_consolidated
                     if unconsolidated >= (self.memory_window * 0.8):
-                        print(f"[Launcher] Memory Flush triggered.")
+                        strategic_logger.info(f"Memory Flush triggered.")
                         flush_prompt = flush_cfg.get("prompt", "Store durable memories now.")
                         sys_prompt = flush_cfg.get("systemPrompt", "Session nearing compaction.")
                         history = session.get_history(max_messages=self.memory_window)

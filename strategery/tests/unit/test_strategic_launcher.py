@@ -160,12 +160,11 @@ def test_strategic_migrate_config(mock_config_data):
 
 def test_strategic_log_provider_request():
     """Verify that strategic_log_provider_request logs in the expected format."""
-    from loguru import logger
-    with patch.object(logger, "info") as mock_logger:
+    from strategery.strategic_logger import strategic_logger
+    with patch.object(strategic_logger, "info") as mock_logger:
         from strategery.patches.provider import strategic_log_provider_request
         strategic_log_provider_request("LiteLLM", "test-model")
-        mock_logger.assert_called_with("[Strategic] {} {}: model={}", "LiteLLM", "request", "test-model")
-
+        mock_logger.assert_called_with("LiteLLM request: model=test-model")
 def test_strategic_get_media_path():
     """Verify that strategic_get_media_path correctly redirects Telegram media."""
     workspace = "D:/Nanobot_Storage/workspace"

@@ -1,17 +1,17 @@
-from loguru import logger
 from . import BasePatch
+from strategery.strategic_logger import strategic_logger
 
 def strategic_log_provider_request(provider_name, model, action="request"):
     """Logs the provider activity in a standardized strategic format."""
-    logger.info("[Strategic] {} {}: model={}", provider_name, action, model)
+    strategic_logger.info(f"{provider_name} {action}: model={model}")
+
 async def strategic_litellm_embed(self, input_text, model=None):
     """
     Strategic embedding implementation for LiteLLMProvider.
     Uses the modern google-genai library with confirmed authorized model.
     """
     from google import genai
-    from loguru import logger
-
+    
     # MANDATE: Use the EXACT confirmed model from discovery
     target_model = model or getattr(self, "embedding_model", "models/gemini-embedding-001")
     
@@ -35,8 +35,9 @@ async def strategic_litellm_embed(self, input_text, model=None):
         return embeddings
         
     except Exception as e:
-        logger.error("[Strategic] Modern Google Embedding failure ({}): {}", target_model, e)
+        strategic_logger.error(f"Modern Google Embedding failure ({target_model}): {e}")
         return []
+
 class ProviderPatch(BasePatch):
     """Handles logging, routing, and embedding patches for LLM providers."""
 
@@ -51,7 +52,7 @@ class ProviderPatch(BasePatch):
             self._patch_codex()
             return True
         except Exception as e:
-            print(f"[Launcher] Provider patch error: {e}")
+            strategic_logger.error(f"Provider patch error: {e}")
             return False
 
     def _patch_litellm(self, config_data):

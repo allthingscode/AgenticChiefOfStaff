@@ -9,12 +9,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any
 from abc import ABC, abstractmethod
-
-# Add project root to the path immediately
-# This ensures that patches can import nanobot modules safely
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+from strategery.strategic_logger import strategic_logger
 
 class BasePatch(ABC):
     """Base class for all strategic patches."""
@@ -42,27 +37,37 @@ class PatchRegistry:
     def __init__(self):
         self.patches: List[BasePatch] = []
         self._applied = False
+        self.storage_root: Optional[Path] = None
+        self.raw_config: Dict[str, Any] = {}
+        self.user_email: str = "admin@example.com"
 
     def register(self, patch: BasePatch):
         """Register a new patch."""
         self.patches.append(patch)
 
-    def apply_all(self, config_data: Dict[str, Any]):
+    def apply_all(self, config_data: Dict[str, Any], storage_root: Path = None, user_email: str = None):
         """Apply all registered patches in order."""
         if self._applied:
             return
+        
+        self.raw_config = config_data
+        self.storage_root = storage_root
+        self.user_email = user_email
+        
+        strategic_logger.info("Initializing Nanobot Strategic Edition...")
         
         for patch in self.patches:
             try:
                 success = patch.apply(config_data)
                 if success:
-                    print(f"[Launcher] Patch applied: {patch.name}")
+                    strategic_logger.debug(f"Patch applied: {patch.name}")
                 else:
-                    print(f"[Launcher] Warning: Patch failed to apply: {patch.name}")
+                    strategic_logger.warning(f"Patch failed to apply: {patch.name}")
             except Exception as e:
-                print(f"[Launcher] Fatal error applying patch '{patch.name}': {e}")
+                strategic_logger.error(f"Fatal error applying patch '{patch.name}': {e}", exc_info=True)
         
         self._applied = True
+        strategic_logger.info("Strategic Edition initialization complete.")
 
 # Global registry instance
 registry = PatchRegistry()
@@ -87,4 +92,4 @@ registry.register(TelegramPatch())
 # This ensures that even when imported by tests (like test_agent_direct.py),
 # the core patches are active.
 RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
-registry.apply_all(RAW_CONFIG)
+registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
