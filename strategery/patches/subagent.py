@@ -1,14 +1,12 @@
 import sys
+import os
+import importlib.util
+from pathlib import Path
 from . import BasePatch
 from strategery.strategic_logger import strategic_logger
 
 def strategic_select_specialist_model(task, label, specialists_config):
-    # ... (rest of function unchanged)
-    """
-    Core specialist selection logic:
-    1. Check for keyword matches in label or task.
-    2. Apply default 'researcher' or 'architect' based on broader intent keywords.
-    """
+    # ... (rest of logic)
     task_lower = ((label or "") + " " + task).lower()
     
     # 1. Exact specialist match
@@ -25,7 +23,7 @@ def strategic_select_specialist_model(task, label, specialists_config):
     return None
 
 class SubagentPatch(BasePatch):
-    """Handles specialist routing, subagent model forcing, and tool proxies (Google Hammer)."""
+    """Handles specialist routing, subagent model forcing, and tool side-loading."""
     
     @property
     def name(self) -> str:
@@ -44,6 +42,43 @@ class SubagentPatch(BasePatch):
         except Exception as e:
             strategic_logger.error(f"Subagent patch error: {e}")
             return False
+
+    def _load_strategic_tools(self, registry):
+        # ... (rest of method)
+        from nanobot.agent.tools.base import Tool
+        
+        tools_dir = Path(__file__).parent.parent / "tools"
+        if not tools_dir.exists():
+            return
+
+        strategic_logger.debug(f"Scanning for strategic tools in {tools_dir}...")
+        
+        for file in tools_dir.glob("*.py"):
+            if file.name == "__init__.py":
+                continue
+            
+            try:
+                module_name = f"strategery.tools.{file.stem}"
+                spec = importlib.util.spec_from_file_location(module_name, file)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    
+                    # Find Tool subclasses in the module
+                    for attr_name in dir(module):
+                        attr = getattr(module, attr_name)
+                        if (isinstance(attr, type) and 
+                            issubclass(attr, Tool) and 
+                            attr is not Tool):
+                            
+                            try:
+                                tool_instance = attr()
+                                registry.register(tool_instance)
+                                strategic_logger.info(f"Side-loaded strategic tool: {tool_instance.name}")
+                            except Exception as te:
+                                strategic_logger.error(f"Error instantiating tool {attr_name} from {file.name}: {te}")
+            except Exception as e:
+                strategic_logger.error(f"Error loading strategic tool module {file.name}: {e}")
 
     def _patch_subagent_manager(self, config_data):
         from nanobot.agent.subagent import SubagentManager
@@ -103,7 +138,23 @@ class SubagentPatch(BasePatch):
             SubagentManager._build_subagent_prompt = _patched_build_prompt
 
     def _patch_tool_registry(self, user_email):
+        # ... (rest of method)
         from nanobot.agent.tools.registry import ToolRegistry
+        
+        # 1. Patch __init__ to side-load tools
+        if not hasattr(ToolRegistry, "_orig_init_strategic"):
+            ToolRegistry._orig_init_strategic = ToolRegistry.__init__
+            
+            # We need to capture 'self' (the SubagentPatch instance) to call _load_strategic_tools
+            patch_self = self
+            
+            def _patched_init(registry_self, *args, **kwargs):
+                registry_self._orig_init_strategic(*args, **kwargs)
+                patch_self._load_strategic_tools(registry_self)
+            
+            ToolRegistry.__init__ = _patched_init
+
+        # 2. Patch execute for Google Hammer and Deprecations
         if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
             ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):

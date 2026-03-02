@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import os
 import signal
 import weakref
 from typing import List, Callable, Coroutine
@@ -71,15 +72,13 @@ class LifecycleManager:
                 # 1. Run our custom strategic hooks
                 await self._run_shutdown_hooks()
                 
-                # 2. Cancel all remaining tasks ONLY if we are the ones who started the loop
-                # If core started the loop, we should let core handle task cancellation
-                # to avoid "Event loop is closed" errors when core tries to clean up.
+                # 2. Inform and wait briefly
                 strategic_logger.info("Strategic shutdown hooks complete. Passing control back to core.")
                 
-                # If we are in a 'gateway' or long-running core loop, we might need 
-                # to stop the loop ourselves if we want a hard stop.
-                # However, usually SIGINT will naturally stop the core loop.
-                # loop.stop() 
+                # 3. SAFETY: If core hangs for more than 5 seconds, force exit
+                await asyncio.sleep(5)
+                strategic_logger.warning("Core shutdown timed out. Forcing process exit.")
+                os._exit(0)
 
             if loop.is_running():
                 asyncio.run_coroutine_threadsafe(_do_shutdown(), loop)
