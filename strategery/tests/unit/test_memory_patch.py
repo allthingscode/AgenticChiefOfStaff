@@ -107,4 +107,6 @@ async def test_rag_filters_junk_summaries():
         # Verify only the valid fact was injected
         assert "Actual useful fact" in msg.content
         assert "No summary available" not in msg.content
-        assert "### STRATEGIC MEMORY (RETRIEVED):" in msg.content
+        assert "### RETRIEVED HISTORICAL CONTEXT:" in msg.content
+        assert "MAY BE STALE" in msg.content
+

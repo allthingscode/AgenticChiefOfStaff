@@ -29,3 +29,15 @@ Write important facts immediately using `edit_file` or `write_file`:
 ## Auto-consolidation
 
 Old conversations are automatically summarized and appended to HISTORY.md when the session grows large. Long-term facts are extracted to MEMORY.md. You don't need to manage this.
+
+## Graph Capabilities (NanoGraph)
+
+The memory system is augmented with a semantic graph overlay.
+
+### Query Neighbors
+Find related entities for a specific memory node.
+`python D:\Nanobot_Storage\workspace\skills\memory\scripts\graph_query.py --neighbors <node_id>`
+
+### Filter by Relationship
+Find entities connected by a specific relationship (e.g., DEPENDS_ON).
+`python D:\Nanobot_Storage\workspace\skills\memory\scripts\graph_query.py --neighbors <node_id> --relation <RELATION_TYPE>`

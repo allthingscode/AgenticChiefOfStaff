@@ -260,7 +260,9 @@ class MemoryPatch(BasePatch):
                                 for r in valid_results:
                                     context_lines.append(f"- {r['content']}")
                                 
-                                mem_block = "### STRATEGIC MEMORY (RETRIEVED):\n" + "\n".join(context_lines)
+                                # We inject a warning about stale data to force the agent to use Research tools if needed
+                                warning = "[STRATEGIC MEMORY - MAY BE STALE OR OUTDATED. USE RESEARCH TOOLS TO VERIFY.]\n"
+                                mem_block = "### RETRIEVED HISTORICAL CONTEXT:\n" + warning + "\n".join(context_lines)
                                 
                                 # Inject as a system-like hint before the current message
                                 msg.content = mem_block + "\n\n" + msg.content
