@@ -22,7 +22,8 @@ def pre_start_cleanup():
     """Performs necessary cleanup and updates awareness before starting."""
     try:
         # 1. Update AWARENESS.md with current context
-        workspace_path = Path.home() / ".nanobot" / "workspace"
+        # Use the workspace path from the RAW_CONFIG or STORAGE_ROOT
+        workspace_path = Path(RAW_CONFIG.get("agents", {}).get("defaults", {}).get("workspace", str(STORAGE_ROOT / "workspace")))
         update_awareness(workspace_path)
         patch_context_builder()
         
@@ -33,10 +34,9 @@ def pre_start_cleanup():
                 if "credentials" not in str(item):
                     item.unlink()
 
-        if workspace_dir := Path.home() / ".nanobot" / "workspace":
-            if workspace_dir.exists():
-                for item in workspace_dir.glob("*.tmp"):
-                    item.unlink()
+        if workspace_path.exists():
+            for item in workspace_path.glob("*.tmp"):
+                item.unlink()
     except Exception as e:
         print(f"[Launcher] Cleanup/Awareness warning: {e}")
 
