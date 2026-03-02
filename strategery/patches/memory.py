@@ -223,6 +223,13 @@ class MemoryPatch(BasePatch):
             AgentLoop._orig_process_message_strategic = AgentLoop._process_message
 
             async def _patched_process_message(self, msg, session_key=None, on_progress=None):
+                # STRATEGIC: Detect subagent results and inject a 'Delegation Acknowledgement' hint
+                # to prevent the Main Agent from re-triggering blocked tools.
+                if msg.sender_id == "subagent":
+                    orchestrator_hint = "\n\n### ⚖️ ORCHESTRATOR SYSTEM HINT:\nThis is a FINAL REPORT from your specialist. You MUST acknowledge this as the complete answer. DO NOT attempt to use any restricted tools yourself to 'verify' this result. Summarize and close the task."
+                    msg.content += orchestrator_hint
+                    strategic_logger.info("Subagent result detected: Injected Orchestrator System Hint.")
+
                 # 1. Context Pruning
                 prune_cfg = config_data.get("agents", {}).get("defaults", {}).get("contextPruning", {})
                 if prune_cfg.get("enabled"):

@@ -24,6 +24,7 @@ class LifecycleManager:
         self._is_shutting_down = False
         self._loop = None
         self._loop_lock = asyncio.Lock()
+        self._orig_handlers = {}
 
     def register_shutdown_hook(self, hook: Callable[[], Coroutine]):
         """Register an async function to be called during shutdown."""
@@ -45,14 +46,13 @@ class LifecycleManager:
                 strategic_logger.error(f"Error in shutdown hook {hook}: {e}")
 
     def setup_signal_handlers(self):
-        """Sets up handlers for SIGINT, SIGTERM, and SIGBREAK."""
+        """Sets up handlers for SIGINT, SIGTERM, and SIGBREAK with core handoff."""
         # Check if we are already in a running loop
         try:
             loop = asyncio.get_running_loop()
             self._loop = loop
             strategic_logger.debug("LifecycleManager: Attached to running event loop.")
         except RuntimeError:
-            # No loop yet, we'll try to find it later or when a signal arrives
             strategic_logger.debug("LifecycleManager: No running loop detected during setup. Will acquire on signal.")
             loop = None
 
@@ -69,13 +69,27 @@ class LifecycleManager:
             strategic_logger.warning(f"Received signal {sig}. Initiating graceful strategic shutdown...")
             
             async def _do_shutdown():
-                # 1. Run our custom strategic hooks
+                # 1. Run our custom strategic hooks (e.g. close Vector Store)
                 await self._run_shutdown_hooks()
                 
-                # 2. Inform and wait briefly
+                # 2. Strategic Handoff: Restore original handlers and re-send signal
+                # This allows the core Nanobot to receive the signal and shut itself down.
                 strategic_logger.info("Strategic shutdown hooks complete. Passing control back to core.")
                 
-                # 3. SAFETY: If core hangs for more than 5 seconds, force exit
+                orig = self._orig_handlers.get(sig)
+                if orig and callable(orig):
+                    # Restore and invoke the original core handler
+                    signal.signal(sig, orig)
+                    if sig == signal.SIGINT:
+                        # Special handling for SIGINT to ensure it propagates correctly
+                        # Most Python apps expect KeyboardInterrupt to be raised or the handler to run
+                        os.kill(os.getpid(), sig)
+                    else:
+                        # For other signals, we just call the handler directly if possible
+                        try: orig(sig, frame)
+                        except: pass
+                
+                # 3. SAFETY: If core still hangs for more than 5 seconds, force exit
                 await asyncio.sleep(5)
                 strategic_logger.warning("Core shutdown timed out. Forcing process exit.")
                 os._exit(0)
@@ -85,7 +99,7 @@ class LifecycleManager:
             else:
                 sys.exit(0)
 
-        # Register signals
+        # Register signals and capture originals
         signals = [signal.SIGINT]
         if sys.platform == 'win32':
             signals.append(signal.SIGBREAK)
@@ -94,6 +108,11 @@ class LifecycleManager:
 
         for sig in signals:
             try:
+                # Capture original handler if not already ours
+                current = signal.getsignal(sig)
+                if current != _handler:
+                    self._orig_handlers[sig] = current
+                
                 signal.signal(sig, _handler)
             except Exception as e:
                 strategic_logger.debug(f"Could not register signal {sig}: {e}")

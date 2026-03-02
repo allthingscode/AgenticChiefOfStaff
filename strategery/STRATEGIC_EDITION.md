@@ -21,7 +21,13 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Topic/Thread Awareness:** Full support for Telegram Topics (sessions map correctly to thread IDs).
 - **Redirection Logic:** Automatically redirects all media (photos, voice, documents) to a dedicated local storage directory.
 
-### **4. Infrastructure & Resilience**
+### **4. Specialist Economy & Delegation**
+- **Enforced Delegation:** The Main Agent is strictly blocked from executing high-power surgical tools (Google, AI Search, Email).
+- **Specialist Routing:** Automatic model selection for subagents (e.g. `gemini-3-pro-preview` for architects, `gemini-2.5-flash-lite` for researchers).
+- **Circuit Breakers:** Hard-lock mechanism prevents the Main Agent from looping or abusing blocked tool registries.
+- **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
+
+### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `nanobot.cmd` script in the project root enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.

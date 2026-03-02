@@ -64,11 +64,20 @@ class ProviderPatch(BasePatch):
                 # 1. CORE & EXTENDED: Strip <think> and <thought> tags (and their contents)
                 res = re.sub(r"<(think|thought)>[\s\S]*?</\1>", "", text, flags=re.IGNORECASE).strip()
                 
-                # 2. STRATEGIC: Strip trailing reasoning markers like "thought." or "thought:"
+                # 2. STRATEGIC: Strip markdown-style thinking blocks
+                res = re.sub(r"\*\*Thought:\*\*[\s\S]*?(?=\n\n|\Z)", "", res, flags=re.IGNORECASE).strip()
+                res = re.sub(r"\*Thoughts:\*[\s\S]*?(?=\n\n|\Z)", "", res, flags=re.IGNORECASE).strip()
+                
+                # 3. STRATEGIC: Strip trailing reasoning markers
                 res = re.sub(r"\s+thought[\.:]?$", "", res, flags=re.IGNORECASE)
                 
-                # 3. STRATEGIC: Strip lingering lone opening/closing tags if any survived
+                # 4. STRATEGIC: Strip lingering lone tags
                 res = re.sub(r"</?(think|thought)>", "", res, flags=re.IGNORECASE).strip()
+                
+                # 5. CIRCUIT BREAKER (Idle Loop Prevention):
+                # If stripping reasoning left us with an empty string, provide a FORCEFUL placeholder.
+                if not res and text:
+                    return "[STRATEGIC: Your internal reasoning was captured. You MUST now provide a final response to the user or execute a permitted tool call. DO NOT repeat internal thought blocks.]"
                 
                 return res or None
             

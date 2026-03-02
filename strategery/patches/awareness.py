@@ -30,12 +30,24 @@ class AwarenessPatch(BasePatch):
         awareness_path = storage_root / "workspace" / "AWARENESS.md"
         awareness_path.parent.mkdir(parents=True, exist_ok=True)
         
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        content = f"""# Environmental Awareness
+        now = datetime.now().strftime("%A, %B %d, %Y %H:%M:%S")
+        content = f"""# 🦅 STRATEGIC AWARENESS & MANDATES
 - **Current Time:** {now}
 - **Workspace Root:** {storage_root}
-- **Strategic Edition:** v1.2 (Enforced Delegation)
+- **System Role:** Strategic Orchestrator (Orchestrate & Delegate)
 - **Active Drive:** D:/ (High-Capacity Storage)
+- **Edition:** Nanobot Strategic Edition (Zero Core Pollution)
+
+## ⚖️ THE SPECIALIST ECONOMY (ENFORCED)
+- **Direct Execution Blocked:** You (the Main Agent) are **PROHIBITED** from running surgical or research tools (Google/Web/Email) directly.
+- **Mandatory Delegation:** You **MUST** use the `spawn` tool for all research, architecture, or surgical tasks.
+- **Spawn & Stop Protocol:** Once you have called the `spawn` tool, you **MUST terminate your turn immediately**. Do NOT perform additional actions or further reasoning until the subagent report arrives in your history.
+- **Specialist Access:** Subagents have exclusive access to `gemini-3-pro-preview` (Architect) and `gemini-2.5-flash-lite` (Researcher) with high-power surgical tools.
+
+## ⚙️ SYSTEM STATE
+- **Storage:** All logs and long-term memory are redirected to `D:/Nanobot_Storage`.
+- **Memory:** Vector Store (ChromaDB) is the source of truth for durable context.
+- **Upstream Security:** You are strictly forbidden from modifying files in `nanobot/`. All logic must be implemented via strategic patches.
 """
         with open(awareness_path, "w", encoding="utf-8-sig") as f:
             f.write(content)

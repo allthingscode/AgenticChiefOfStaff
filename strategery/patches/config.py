@@ -42,11 +42,18 @@ class ConfigPatch(BasePatch):
         try:
             import nanobot.config.loader
             from nanobot.config.schema import Config
+            from . import STORAGE_ROOT
             
             # 1. Force the Config schema to ignore extra fields at runtime
             Config.model_config["extra"] = "ignore"
             
-            # 2. Global BOM-Safe 'open' wrapper for JSON files
+            # 2. Patch get_data_dir to point to strategic storage (D: drive)
+            # This ensures Cron, Matrix, and other core services find their data.
+            if not hasattr(nanobot.config.loader, "_orig_get_data_dir_strategic"):
+                nanobot.config.loader._orig_get_data_dir_strategic = nanobot.config.loader.get_data_dir
+                nanobot.config.loader.get_data_dir = lambda: STORAGE_ROOT
+
+            # 3. Global BOM-Safe 'open' wrapper for JSON files
             if not hasattr(builtins, "_orig_open_strategic"):
                 builtins._orig_open_strategic = builtins.open
                 

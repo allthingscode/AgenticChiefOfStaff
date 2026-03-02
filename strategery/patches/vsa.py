@@ -49,6 +49,11 @@ class VectorStoreFactory:
             lifecycle_manager.register_shutdown_hook(cls._instance.close)
             
             strategic_logger.debug(f"VectorStoreFactory initialized singleton store instance at {root or 'default'}")
+        
+        # MANDATE: If a provider is passed to get_store, ensure the instance is using it.
+        # This prevents 'No embedding provider' errors in background tasks.
+        if provider and hasattr(cls._instance, "provider"):
+            cls._instance.provider = provider
             
         return cls._instance
 

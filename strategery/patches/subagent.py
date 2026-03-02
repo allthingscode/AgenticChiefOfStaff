@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import os
 import importlib.util
 from pathlib import Path
@@ -98,15 +98,46 @@ class SubagentPatch(BasePatch):
                 self.model = final_model
                 
                 try:
-                    result = await self._orig_run_subagent_strategic(task_id, task, label, origin)
-                    res_snippet = (str(result)[:100] + "...") if result and len(str(result)) > 100 else str(result)
-                    strategic_logger.info(f"Subagent Result: [{task_id}] '{label}' -> {res_snippet}")
-                    return result
+                    await self._orig_run_subagent_strategic(task_id, task, label, origin)
+                    strategic_logger.info(f"Subagent Execution Finished: [{task_id}] '{label}'")
+                    return None
                 finally:
                     self.model = orig_model
                     nanobot.agent.subagent.ToolRegistry = orig_registry_cls
 
             SubagentManager._run_subagent = _patched_run_subagent
+
+        if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
+            SubagentManager._orig_announce_result_strategic = SubagentManager._announce_result
+            
+            async def _patched_announce_result(self, task_id, label, task, result, origin, status):
+                from nanobot.bus.events import InboundMessage
+                status_text = "completed successfully" if status == "ok" else "failed"
+
+                announce_content = f"""### 🛡️ SPECIALIST SUBAGENT REPORT (FINAL)
+[Subagent '{label}' {status_text}]
+
+**Original Task:** {task}
+
+**Result Data:**
+{result}
+
+---
+### ⚖️ ORCHESTRATOR DIRECTIVE (CRITICAL)
+1. **Do NOT Attempt to Verify:** You are strictly forbidden from calling any tools (Google, AI Search, etc.) to "verify" this result. The specialist has already performed the work.
+2. **Synthesize Only:** Your ONLY remaining responsibility is to present this data to the user in a natural, helpful summary.
+3. **Task Conclusion:** This specific task is now CLOSED.
+"""
+                msg = InboundMessage(
+                    channel="system",
+                    sender_id="subagent",
+                    chat_id=f"{origin['channel']}:{origin['chat_id']}",
+                    content=announce_content,
+                )
+                await self.bus.publish_inbound(msg)
+                strategic_logger.debug(f"Subagent [{task_id}] announced result with Strategic Orchestrator Directives.")
+
+            SubagentManager._announce_result = _patched_announce_result
 
         if not hasattr(SubagentManager, "_orig_build_prompt_strategic"):
             SubagentManager._orig_build_prompt_strategic = SubagentManager._build_subagent_prompt
@@ -117,8 +148,8 @@ class SubagentPatch(BasePatch):
                 reset_instr = f"""
 {role_msg}
 ## CRITICAL OVERRIDE & DESIGN MANDATES
-1. **Tool Naming:** You MUST use the exact, full name for all tools (e.g. `mcp_google-surgical_search_emails`).
-2. **Exclusive Access:** You have EXCLUSIVE access to `mcp_google-surgical_`, `mcp_google-ai-search_`, and `mcp_email-reporter_`. The main agent CANNOT use these.
+1. **Tool Naming:** You MUST use the exact, full name for all tools (e.g. mcp_google-surgical_search_emails).
+2. **Exclusive Access:** You have EXCLUSIVE access to mcp_google-surgical_, mcp_google-ai-search_, and mcp_email-reporter_. The main agent CANNOT use these.
 3. **Verify Memory:** Always verify 'Retrieved Historical Context' against fresh research to prevent stale data.
 """
                 return self._orig_build_prompt_strategic() + reset_instr
@@ -126,30 +157,44 @@ class SubagentPatch(BasePatch):
 
     def _patch_tool_registry(self, user_email):
         from nanobot.agent.tools.registry import ToolRegistry
-        
+
         if not hasattr(ToolRegistry, "_orig_register_strategic"):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
-            
+
             def _patched_register(registry_self, tool):
                 name = getattr(tool, "name", str(tool))
                 is_high_power = any(hp in name for hp in ["google-surgical", "google-ai-search", "email-reporter", "strategic_"])
-                
+
                 # Main agent registry (no specialist tag)
                 if is_high_power and not getattr(registry_self, "_is_strategic_specialist", False):
-                    strategic_logger.debug(f"Tool Stripping: Blocked registration of '{name}' for Main Agent.")
+                    strategic_logger.debug(f"Tool Stripping: Blocked registration of '{name}' for Main Agent (forced delegation).")
                     return
-                
+
                 return registry_self._orig_register_strategic(tool)
-            
+
             ToolRegistry.register = _patched_register
 
         if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
             ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):
+                is_high_power = any(hp in str(name) for hp in ["google-surgical", "google-ai-search", "email-reporter", "strategic_"])
+
+                # Hard Block & Circuit Breaker: Prevent Main Agent from looping on blocked tools
+                if is_high_power and not getattr(self, "_is_strategic_specialist", False):
+                    attempts = getattr(self, "_strategic_block_attempts", 0) + 1
+                    self._strategic_block_attempts = attempts
+                    
+                    strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted to execute high-power tool '{name}' (Attempt {attempts}). Execution blocked.")
+                    
+                    if attempts >= 2:
+                        return f"CRITICAL ERROR: Access Denied. Your internal registry is HARD-LOCKED for tool '{name}'. Repeated attempts are a violation of your Strategic Mandates. You MUST STOP trying to call this tool directly and instead spawn a specialist subagent immediately or explain the failure to the user."
+                    
+                    return f"ERROR: The tool '{name}' is restricted to SPECIALIST subagents. You MUST use the 'spawn' tool to delegate this task to a researcher or architect."
+
                 if "google-surgical" in str(name) and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                     if "email" in args: args["email"] = user_email
-                
+
                 if name == "web_search":
                     return "ERROR: The 'web_search' tool is DEPRECATED. You MUST use 'mcp_google-ai-search_search_ai' via a subagent."
 
