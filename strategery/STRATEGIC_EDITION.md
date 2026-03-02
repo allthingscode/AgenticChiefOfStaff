@@ -9,11 +9,14 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Vector Database:** Uses **ChromaDB** as a local-first singleton for long-term durable recall.
 - **Modern Embeddings:** Integrated with the modern `google-genai` library using **`models/gemini-embedding-001`** (3072 dimensions).
 - **Proactive Warmup:** Initialized at startup to eliminate the 3-second "Cold Start" delay on first message.
+- **Hardened RAG (NEW):** Implemented selective retrieval to prevent 'amnesia'—RAG is skipped for short/generic messages (e.g., 'yes', 'no', 'hello').
+- **Junk Filtering (NEW):** Automated filtering of 'No summary available' placeholders from retrieved context before prompt injection.
 
 ### **2. "Clean History" Consolidation**
 - **Bloat Prevention:** Retired the linear `HISTORY.md` file in favor of the Vector Store.
 - **Surgical Ingestion:** Summaries and memory updates are automatically vectorized during consolidation.
 - **Daily Journals:** Chronological journals (e.g., `2026-03-01.md`) provide human-readable snapshots without context window bloat.
+- **Full Workspace Migration (NEW):** All logs, media, and workspace data have been migrated to the high-capacity **D:/Nanobot_Storage** drive. Legacy C: drive paths have been purged and redirected.
 
 ### **3. Advanced Telegram Integration**
 - **Topic/Thread Awareness:** Full support for Telegram Topics (sessions map correctly to thread IDs).
