@@ -233,29 +233,39 @@ class MemoryPatch(BasePatch):
                     
                     session.messages = strategic_prune_context(session.messages, hours, keep_last)
 
-                # 2. Semantic Retrieval (RAG)
+            # 2. Semantic Retrieval (RAG)
                 rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
-                if rag_cfg.get("enabled", True) and msg.content and msg.content != "[empty message]":
+                content = msg.content or ""
+                # HARDENING: Avoid triggering RAG for short or generic messages that drown context
+                is_generic = content.lower().strip() in ["yes", "no", "ok", "okay", "hello", "hi", "thanks", "thank you", "confirmed"]
+                
+                if rag_cfg.get("enabled", True) and len(content) > 10 and not is_generic and content != "[empty message]":
                     try:
                         from .vsa import VectorStoreFactory
                         vec_store = VectorStoreFactory.get_store(provider=self.provider)
                         
-                        results = await vec_store.query(msg.content, n_results=3)
+                        results = await vec_store.query(content, n_results=3)
                         
                         if results:
-                            key = session_key or msg.session_key
-                            session = self.sessions.get_or_create(key)
+                            # Filter out 'No summary available' and empty content
+                            valid_results = [r for r in results if r.get('content') and "No summary available" not in r['content']]
                             
-                            # Format retrieved context
-                            context_lines = []
-                            for r in results:
-                                context_lines.append(f"- {r['content']}")
-                            
-                            mem_block = "### STRATEGIC MEMORY (RETRIEVED):\n" + "\n".join(context_lines)
-                            
-                            # Inject as a system-like hint before the current message
-                            msg.content = mem_block + "\n\n" + msg.content
-                            strategic_logger.info(f"RAG: Injected {len(results)} relevant facts.")
+                            if valid_results:
+                                key = session_key or msg.session_key
+                                session = self.sessions.get_or_create(key)
+                                
+                                # Format retrieved context
+                                context_lines = []
+                                for r in valid_results:
+                                    context_lines.append(f"- {r['content']}")
+                                
+                                mem_block = "### STRATEGIC MEMORY (RETRIEVED):\n" + "\n".join(context_lines)
+                                
+                                # Inject as a system-like hint before the current message
+                                msg.content = mem_block + "\n\n" + msg.content
+                                strategic_logger.info(f"RAG: Injected {len(valid_results)} relevant facts.")
+                            else:
+                                strategic_logger.debug("RAG: No high-quality matches found (filtered placeholders).")
                     except Exception as re:
                         strategic_logger.error(f"Semantic Retrieval error: {re}")
 
