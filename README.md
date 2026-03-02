@@ -8,34 +8,18 @@
 
 ---
 
-### 1. Requirements
-- Python 3.10+
-- [uv](https://github.com/astral-sh/uv) (for dependency management)
-- Node.js (for some MCP servers)
+# Nanobot
 
-### 2. Configuration
-Create a `config.json` in `~/.nanobot/` and define your `strategic_edition` settings:
-```json
-{
-  "strategic_edition": {
-    "user_email": "your-email@example.com",
-    "storage_root": "D:/Nanobot_Storage",
-    "app_root": "C:/Path/To/Nanobot"
-  }
-}
-```
+[![Discord](https://img.shields.io/discord/1324709405417832511?color=7289da&label=Discord&logo=discord&logoColor=white)](https://discord.gg/h2M48FFr9k)
 
-### 3. Launching
-Use the provided PowerShell script for the best experience on Windows:
-```powershell
-.\start_strategic_nanobot.ps1
-```
+AI agent, for all channels.
 
-## 🧪 Testing
-Run the test suite to verify your environment:
-```powershell
-pytest tests/unit/test_strategic_main.py
-```
+- **For all channels:** WhatsApp (by MoChat), Telegram, Discord, Slack, Email, etc.
+- **Support almost all LLMs:** OpenAI, Claude, Gemini, Llama (via Ollama or Groq), etc.
+- **Rich skills:** Can use search, shell, browser, and many other tools.
 
-## 📜 License
+[Read documentation](https://allthingscode.github.io/nanobot/)
+
+## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

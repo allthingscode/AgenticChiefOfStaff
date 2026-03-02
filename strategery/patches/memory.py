@@ -189,8 +189,9 @@ class MemoryPatch(BasePatch):
                         asyncio.create_task(vec_store.add_entry(str(entry), {"type": "history_summary", "source": "consolidation"}))
                         
                         # 2. Write to Daily Journal (Human-Readable Log)
+                        from . import STORAGE_ROOT
                         today = datetime.now().strftime("%Y-%m-%d")
-                        journal_path = Path("D:/Nanobot_Storage/workspace/memory") / f"{today}.md"
+                        journal_path = STORAGE_ROOT / "workspace" / "memory" / f"{today}.md"
                         journal_path.parent.mkdir(parents=True, exist_ok=True)
                         
                         with open(journal_path, "a", encoding="utf-8-sig") as f:

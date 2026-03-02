@@ -5,14 +5,20 @@ from pathlib import Path
 from datetime import datetime
 
 # --- CONFIGURATION ---
-LOG_DIR = Path("D:/Nanobot_Storage/logs")
+# Default to current directory if not set by launcher
+LOG_DIR = Path(os.environ.get("STRATEGIC_LOG_DIR", "./logs"))
 LOG_FILE = LOG_DIR / "strategic.log"
 
-def setup_strategic_logger(name="StrategicEdition"):
+def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     """
     Sets up a unified logger for all strategic patches.
     Outputs to both a rotating-style file and the console.
     """
+    global LOG_DIR, LOG_FILE
+    if log_dir:
+        LOG_DIR = Path(log_dir)
+        LOG_FILE = LOG_DIR / "strategic.log"
+
     # Create log directory if it doesn't exist
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -20,7 +26,6 @@ def setup_strategic_logger(name="StrategicEdition"):
         # Fallback to local logs if D: drive is unavailable
         local_log_dir = Path("./logs")
         local_log_dir.mkdir(parents=True, exist_ok=True)
-        global LOG_FILE
         LOG_FILE = local_log_dir / "strategic.log"
 
     logger = logging.getLogger(name)

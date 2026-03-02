@@ -11,6 +11,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Import strategic context
+from strategery.patches import STORAGE_ROOT
+
 # Import the standalone logic functions
 from strategery.patches.config import strategic_migrate_config
 from strategery.patches.provider import strategic_log_provider_request
@@ -20,10 +23,12 @@ from strategery.patches.memory import strategic_prune_context, strategic_format_
 
 @pytest.fixture
 def mock_config_data():
+    # Derive a test storage root from the actual configuration or use a generic fallback
+    test_storage = (STORAGE_ROOT.parent / "Test_Storage") if STORAGE_ROOT else Path("tmp_storage")
     return {
         "strategic_edition": {
             "user_email": "test@example.com",
-            "storage_root": "D:/Test_Storage"
+            "storage_root": str(test_storage)
         },
         "agents": {
             "defaults": {
@@ -165,21 +170,28 @@ def test_strategic_log_provider_request():
         from strategery.patches.provider import strategic_log_provider_request
         strategic_log_provider_request("LiteLLM", "test-model")
         mock_logger.assert_called_with("LiteLLM request: model=test-model")
+
 def test_strategic_get_media_path():
     """Verify that strategic_get_media_path correctly redirects Telegram media."""
-    workspace = "D:/Nanobot_Storage/workspace"
-    orig_path = r"C:\Users\Admin\.nanobot\media\test.jpg"
+    # Pull workspace from config if available, otherwise use a generic name
+    workspace = (STORAGE_ROOT / "test_workspace") if STORAGE_ROOT else Path("tmp_workspace")
+    # Derive a realistic original path from the user's home directory
+    orig_path = Path.home() / ".nanobot" / "media" / "test.jpg"
     
     # It should redirect if it matches the expected .nanobot\media pattern
     new_path = strategic_get_media_path(workspace, orig_path)
-    assert "D:\\Nanobot_Storage\\workspace\\media\\test.jpg" in str(Path(new_path))
+    
+    # Verify the logic: is the path now anchored in our workspace?
+    assert str(workspace) in str(new_path)
+    assert "media" in str(new_path)
+    assert "test.jpg" in str(new_path)
     
     # It should NOT redirect if it doesn't match
-    other_path = r"C:\Temp\photo.png"
+    other_path = Path("/tmp/photo.png")
     assert strategic_get_media_path(workspace, other_path) == other_path
 
 @pytest.mark.asyncio
-async def test_strategic_consolidation_flow():
+async def test_strategic_consolidation_flow(tmp_path):
     """Verify the 'Clean History' consolidation flow (Vector Store + Journal)."""
     from strategery.patches.memory import MemoryPatch
     from nanobot.agent.memory import MemoryStore
@@ -194,16 +206,18 @@ async def test_strategic_consolidation_flow():
     mock_response.content = '{"history_entry": "Test summary", "memory_update": "Test facts"}'
     mock_provider.chat.return_value = mock_response
     
-    store = MemoryStore(workspace=Path("D:/Test_Storage/workspace"))
+    # Use real temp path provided by pytest to allow physical directory creation
+    store = MemoryStore(workspace=tmp_path)
     store.read_long_term = MagicMock(return_value="Existing facts")
     store.write_long_term = MagicMock()
     store.append_history = MagicMock() # Should NOT be called in strategic edition
     
     patch_inst = MemoryPatch()
-    # Mocking the Vector Store to avoid actual DB/API calls
-    # Note: It is imported locally inside the patched consolidate method
+    
+    # We patch STORAGE_ROOT in the patches package so the logic uses our tmp_path
     with patch("strategery.patches.vector_store.StrategicVectorStore") as mock_vec_cls, \
-         patch("builtins.open", mock_open()) as mock_file:
+         patch("builtins.open", mock_open()) as mock_file, \
+         patch("strategery.patches.STORAGE_ROOT", tmp_path):
         
         mock_vec = mock_vec_cls.return_value
         mock_vec.add_entry = AsyncMock(return_value=True)
