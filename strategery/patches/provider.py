@@ -1,7 +1,7 @@
 import os
 import re
 import asyncio
-from .base import BasePatch
+from . import BasePatch
 from strategery.strategic_logger import strategic_logger
 
 def strategic_log_provider_request(provider_name, model):
@@ -26,18 +26,33 @@ def strategic_format_error(error_text: str) -> str:
 
 async def strategic_litellm_embed(self, input_text):
     """
-    Standalone wrapper for Google GenAI embedding with strategic logging.
+    Standalone wrapper for Google GenAI embedding with strategic logging and retries.
     Used by StrategicVectorStore to bypass LiteLLM's sometimes inconsistent embedding routing.
     """
     try:
         from google import genai
         strategic_logger.info(f"GoogleGenAI embed: model={self.embedding_model}")
         client = genai.Client(api_key=self.api_key)
-        result = await client.models.embed_content(
-            model=self.embedding_model,
-            contents=input_text
-        )
-        return [item.values for item in result.embeddings]
+        
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                result = await client.models.embed_content(
+                    model=self.embedding_model,
+                    contents=input_text
+                )
+                return [item.values for item in result.embeddings]
+            except Exception as api_err:
+                if attempt == max_retries - 1:
+                    # Final attempt failed
+                    raise api_err
+                
+                strategic_logger.warning(f"Embedding API attempt {attempt + 1} failed: {api_err}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                
     except Exception as e:
         strategic_logger.error(f"Strategic Embedding Error: {e}")
         return []
