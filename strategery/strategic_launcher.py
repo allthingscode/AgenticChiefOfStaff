@@ -16,16 +16,12 @@ if project_root not in sys.path:
 
 # Import everything from patches; initialization happens on import!
 from strategery.patches import RAW_CONFIG, USER_EMAIL, STORAGE_ROOT
-from strategery.patches.awareness import update_awareness, patch_context_builder
 
 def pre_start_cleanup():
-    """Performs necessary cleanup and updates awareness before starting."""
+    """Performs necessary cleanup before starting."""
     try:
-        # 1. Update AWARENESS.md with current context
-        # Use the workspace path from the RAW_CONFIG or STORAGE_ROOT
+        # 1. Determine workspace path
         workspace_path = Path(RAW_CONFIG.get("agents", {}).get("defaults", {}).get("workspace", str(STORAGE_ROOT / "workspace")))
-        update_awareness(workspace_path)
-        patch_context_builder()
         
         # 2. Workspace cleanup
         mcp_dir = Path.home() / ".google_workspace_mcp"
@@ -38,7 +34,7 @@ def pre_start_cleanup():
             for item in workspace_path.glob("*.tmp"):
                 item.unlink()
     except Exception as e:
-        print(f"[Launcher] Cleanup/Awareness warning: {e}")
+        print(f"[Launcher] Cleanup warning: {e}")
 
 if __name__ == "__main__":
     pre_start_cleanup()

@@ -1,97 +1,75 @@
+import os
+import re
 from . import BasePatch
 from strategery.strategic_logger import strategic_logger
 
-def strategic_log_provider_request(provider_name, model, action="request"):
-    """Logs the provider activity in a standardized strategic format."""
-    strategic_logger.info(f"{provider_name} {action}: model={model}")
+def strategic_log_provider_request(provider_name, model):
+    """Logs LLM requests at the INFO level for strategic visibility."""
+    strategic_logger.info(f"{provider_name} request: model={model}")
 
-async def strategic_litellm_embed(self, input_text, model=None):
+async def strategic_litellm_embed(self, input_text):
     """
-    Strategic embedding implementation for LiteLLMProvider.
-    Uses the modern google-genai library with confirmed authorized model.
+    Standalone wrapper for Google GenAI embedding with strategic logging.
+    Used by StrategicVectorStore to bypass LiteLLM's sometimes inconsistent embedding routing.
     """
-    from google import genai
-    
-    # MANDATE: Use the EXACT confirmed model from discovery
-    target_model = model or getattr(self, "embedding_model", "models/gemini-embedding-001")
-    
     try:
-        strategic_log_provider_request("GoogleGenAI", target_model, action="embed")
-        
-        # Initialize client with the API key
+        from google import genai
+        strategic_logger.info(f"GoogleGenAI embed: model={self.embedding_model}")
         client = genai.Client(api_key=self.api_key)
-        
-        # Determine if we have a single string or multiple
-        texts = [input_text] if isinstance(input_text, str) else input_text
-        
-        # Perform embedding
-        result = client.models.embed_content(
-            model=target_model,
-            contents=texts
+        result = await client.models.embed_content(
+            model=self.embedding_model,
+            contents=input_text
         )
-        
-        # Extract embeddings
-        embeddings = [item.values for item in result.embeddings]
-        return embeddings
-        
+        return [item.values for item in result.embeddings]
     except Exception as e:
-        strategic_logger.error(f"Modern Google Embedding failure ({target_model}): {e}")
+        strategic_logger.error(f"Strategic Embedding Error: {e}")
         return []
 
 class ProviderPatch(BasePatch):
-    """Handles logging, routing, and embedding patches for LLM providers."""
-
+    """Handles provider-level logging, routing, and response cleaning."""
+    
     @property
     def name(self) -> str:
         return "Provider Logging & Routing"
 
     def apply(self, config_data: dict) -> bool:
         try:
-            self._patch_litellm(config_data)
-            self._patch_custom()
-            self._patch_codex()
+            self._patch_litellm_provider()
+            self._patch_agent_loop_cleaning()
             return True
         except Exception as e:
             strategic_logger.error(f"Provider patch error: {e}")
             return False
 
-    def _patch_litellm(self, config_data):
+    def _patch_litellm_provider(self):
         from nanobot.providers.litellm_provider import LiteLLMProvider
-
-        # 1. Patch Chat
         if not hasattr(LiteLLMProvider, "_orig_chat_strategic"):
             LiteLLMProvider._orig_chat_strategic = LiteLLMProvider.chat
-            async def _patched_litellm_chat(self, messages, tools=None, model=None, max_tokens=4096, temperature=0.7, reasoning_effort=None, **kwargs):
-                target_model = model or self.default_model
-                strategic_log_provider_request("LiteLLM", target_model)
-                return await self._orig_chat_strategic(messages, tools=tools, model=model, max_tokens=max_tokens, temperature=temperature, reasoning_effort=reasoning_effort, **kwargs)
-            LiteLLMProvider.chat = _patched_litellm_chat
-
-        # 2. Patch Embed (New strategic functionality)
-        if not hasattr(LiteLLMProvider, "embed"):
-            # Set default embedding model from config if present
-            embedding_model = config_data.get("strategic_edition", {}).get("embedding_model", "models/gemini-embedding-001")
-            LiteLLMProvider.embedding_model = embedding_model
-
-            # We bind the standalone function as a method
-            LiteLLMProvider.embed = strategic_litellm_embed
-
-    def _patch_custom(self):
-        from nanobot.providers.custom_provider import CustomProvider
-        if not hasattr(CustomProvider, "_orig_chat_strategic"):
-            CustomProvider._orig_chat_strategic = CustomProvider.chat
-            async def _patched_custom_chat(self, *args, **kwargs):
-                model = kwargs.get("model") or self.default_model
-                strategic_log_provider_request("CustomProvider", model)
+            async def _patched_chat(self, *args, **kwargs):
+                model = kwargs.get("model") or (args[2] if len(args) > 2 else "unknown")
+                strategic_log_provider_request("LiteLLM", model)
                 return await self._orig_chat_strategic(*args, **kwargs)
-            CustomProvider.chat = _patched_custom_chat
+            LiteLLMProvider.chat = _patched_chat
 
-    def _patch_codex(self):
-        from nanobot.providers.openai_codex_provider import OpenAICodexProvider
-        if not hasattr(OpenAICodexProvider, "_orig_chat_strategic"):
-            OpenAICodexProvider._orig_chat_strategic = OpenAICodexProvider.chat
-            async def _patched_codex_chat(self, *args, **kwargs):
-                model = kwargs.get("model") or self.default_model
-                strategic_log_provider_request("Codex", model)
-                return await self._orig_chat_strategic(*args, **kwargs)
-            OpenAICodexProvider.chat = _patched_codex_chat
+    def _patch_agent_loop_cleaning(self):
+        """Patches AgentLoop to aggressively strip reasoning artifacts (<thought>, <think>, etc)."""
+        from nanobot.agent.loop import AgentLoop
+        if not hasattr(AgentLoop, "_orig_strip_think_strategic"):
+            AgentLoop._orig_strip_think_strategic = AgentLoop._strip_think
+            
+            @staticmethod
+            def _patched_strip_think(text: str | None) -> str | None:
+                if not text: return None
+                
+                # 1. CORE & EXTENDED: Strip <think> and <thought> tags (and their contents)
+                res = re.sub(r"<(think|thought)>[\s\S]*?</\1>", "", text, flags=re.IGNORECASE).strip()
+                
+                # 2. STRATEGIC: Strip trailing reasoning markers like "thought." or "thought:"
+                res = re.sub(r"\s+thought[\.:]?$", "", res, flags=re.IGNORECASE)
+                
+                # 3. STRATEGIC: Strip lingering lone opening/closing tags if any survived
+                res = re.sub(r"</?(think|thought)>", "", res, flags=re.IGNORECASE).strip()
+                
+                return res or None
+            
+            AgentLoop._strip_think = _patched_strip_think

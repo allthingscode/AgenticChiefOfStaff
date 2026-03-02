@@ -91,7 +91,7 @@ async def test_strategic_litellm_embed_success():
     mock_item = MagicMock()
     mock_item.values = [0.1, 0.2, 0.3]
     mock_result.embeddings = [mock_item]
-    mock_client.models.embed_content.return_value = mock_result
+    mock_client.models.embed_content = AsyncMock(return_value=mock_result)
     
     with patch("google.genai.Client", return_value=mock_client):
         embeddings = await strategic_litellm_embed(mock_self, "hello world")
@@ -100,7 +100,7 @@ async def test_strategic_litellm_embed_success():
         assert embeddings[0] == [0.1, 0.2, 0.3]
         mock_client.models.embed_content.assert_called_once_with(
             model="models/gemini-embedding-001",
-            contents=["hello world"]
+            contents="hello world"
         )
 
 @pytest.mark.asyncio
@@ -108,6 +108,7 @@ async def test_strategic_litellm_embed_failure():
     """Verify graceful degradation on embedding failure."""
     mock_self = MagicMock()
     mock_self.api_key = "test-key"
+    mock_self.embedding_model = "models/gemini-embedding-001"
     
     with patch("google.genai.Client", side_effect=Exception("API Error")):
         embeddings = await strategic_litellm_embed(mock_self, "hello world")

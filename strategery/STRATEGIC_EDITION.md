@@ -29,6 +29,7 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
 
 ## **Future Roadmap**
+- [ ] **Subagent Queueing:** Mechanism to stack and sequentially execute multiple subagent requests.
 - [ ] **Knowledge Graph:** Relationship-based memory beyond basic semantic similarity.
 - [ ] **Cross-Device Sync:** Cloud-syncing options for the local ChromaDB database.
 - [ ] **Surgical UI:** Slim dashboard for managing "Gold Standard" facts in memory.
