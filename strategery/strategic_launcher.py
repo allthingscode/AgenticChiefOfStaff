@@ -47,8 +47,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[Launcher] Vector Store warmup warning: {e}")
     
-    sys.argv = ["nanobot", "gateway"]
-    print(f"[Launcher] Starting nanobot Gateway...")
+    if len(sys.argv) > 1:
+        # Pass through all arguments to the core nanobot CLI
+        # e.g., 'python strategic_launcher.py status' becomes 'nanobot status'
+        sys.argv[0] = "nanobot"
+    else:
+        # Default behavior: start the gateway
+        sys.argv = ["nanobot", "gateway"]
+    
+    print(f"[Launcher] Running: {' '.join(sys.argv)}")
     
     try:
         runpy.run_module("nanobot", run_name="__main__", alter_sys=True)
