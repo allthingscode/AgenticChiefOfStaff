@@ -1,3 +1,29 @@
+import os
+import sys
+import json
+from pathlib import Path
+
+# SET UP TEST ENVIRONMENT VARIABLES BEFORE ANY IMPORTS
+# This prevents strategic_logger from creating ./logs/ in the project root
+# We derive it manually to avoid triggering strategic patch initialization.
+try:
+    home_config = Path.home() / ".nanobot" / "config.json"
+    storage_root = Path.home() / ".nanobot" / "storage"
+    if home_config.exists():
+        with open(home_config, "r", encoding="utf-8-sig") as f:
+            raw = json.load(f)
+            strat = raw.get("strategic_edition", {})
+            if s_root := strat.get("storage_root"):
+                storage_root = Path(s_root)
+    
+    # User requested derivation: D:\Test_Workspace\logs
+    # storage_root is typically D:\Nanobot_Storage
+    TEST_WORKSPACE = storage_root.parent / "Test_Workspace"
+    os.environ["STRATEGIC_LOG_DIR"] = str(TEST_WORKSPACE / "logs")
+except Exception:
+    # Fallback to literal if derivation fails
+    os.environ["STRATEGIC_LOG_DIR"] = "D:/Test_Workspace/logs"
+
 import pytest
 from unittest.mock import patch, MagicMock
 
