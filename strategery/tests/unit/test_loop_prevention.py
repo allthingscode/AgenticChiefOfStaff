@@ -78,3 +78,34 @@ async def test_exec_cli_bypass_blocking(subagent_patch):
     cmd_args3 = {"command": "python -m nanobot status"}
     res3 = await registry.execute("exec", cmd_args3)
     assert "Access Denied" in res3
+
+@pytest.mark.asyncio
+async def test_spawn_termination_directive(subagent_patch):
+    """Tests that 'spawn' returns a termination mandate for the Main Agent."""
+    subagent_patch._patch_tool_registry("test@example.com")
+    registry = ToolRegistry()
+    
+    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+        mock_orig.return_value = "Subagent [123] spawned."
+        
+        res = await registry.execute("spawn", {"task": "test"})
+        assert "Subagent [123] spawned." in res
+        assert "STRATEGIC MANDATE: STOP Turn" in res
+        assert "Your turn is now OVER" in res
+
+@pytest.mark.asyncio
+async def test_history_md_bypass_blocking(subagent_patch):
+    """Tests that attempts to poll HISTORY.md via 'exec' are blocked."""
+    subagent_patch._patch_tool_registry("test@example.com")
+    registry = ToolRegistry()
+    
+    # 1. Block findstr on HISTORY.md
+    cmd_args = {"command": "findstr /C:\"System Health Check\" D:\\Nanobot_Storage\\workspace\\memory\\HISTORY.md"}
+    res = await registry.execute("exec", cmd_args)
+    assert "Access Denied" in res
+    assert "HISTORY.md is RETIRED" in res
+    
+    # 2. Block direct grep/cat on history
+    cmd_args2 = {"command": "cat history.md"}
+    res2 = await registry.execute("exec", cmd_args2)
+    assert "Access Denied" in res2

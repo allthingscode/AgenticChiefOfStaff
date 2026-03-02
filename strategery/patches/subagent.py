@@ -32,6 +32,7 @@ class SubagentPatch(BasePatch):
     - Subagents are granted Surgical Tools (including MCP) and assigned specialist models.
     - Idle Polling Loops are detected and broken.
     - CLI-based tool bypass via 'exec' is detected and blocked.
+    - Turn termination is ENFORCED after subagent spawn.
     """
     
     # patterns to block for main agent (case-insensitive)
@@ -76,7 +77,6 @@ class SubagentPatch(BasePatch):
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
                         if (isinstance(attr, type) and issubclass(attr, Tool) and attr is not Tool):
-                            # We use _orig_register if available to bypass our own block
                             reg_func = getattr(registry, "_orig_register_strategic", registry.register)
                             reg_func(attr())
             except Exception as e:
@@ -96,7 +96,6 @@ class SubagentPatch(BasePatch):
         async def _strategic_run_subagent(self, task_id, task, label, origin):
             strategic_logger.info(f"Subagent [{task_id}] starting task: {label}")
             
-            # 1. Model Selection
             specialists = config_data.get("agents", {}).get("specialists", {})
             selected_model = strategic_select_specialist_model(task, label, specialists)
             final_model = selected_model if selected_model else self.model
@@ -105,7 +104,6 @@ class SubagentPatch(BasePatch):
 
             try:
                 async with AsyncExitStack() as stack:
-                    # 2. Build Tool Registry (Specialist Mode)
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
                     
@@ -123,26 +121,19 @@ class SubagentPatch(BasePatch):
                     tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     
-                    # 3. Inject Strategic Tools & MCP
-                    # Use Pydantic to validate and convert raw config to objects for connect_mcp_servers
                     try:
-                        # Clean config for Pydantic (strip strategic keys)
                         from .config import strategic_migrate_config
-                        # We make a deep copy to ensure stripping doesn't affect the shared config_data
                         pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(config_data)))
-                        
                         validated_config = Config.model_validate(pydantic_cfg)
                         mcp_configs = validated_config.tools.mcp_servers
                         if mcp_configs:
                             strategic_logger.debug(f"Subagent [{task_id}]: Connecting to {len(mcp_configs)} MCP servers...")
-                            # FIXED: Signature order is (configs, tools, stack)
                             await connect_mcp_servers(mcp_configs, tools, stack)
                     except Exception as mcp_err:
                         strategic_logger.error(f"Subagent [{task_id}] MCP setup failed: {mcp_err}")
                     
                     SubagentPatch()._load_strategic_tools(tools)
 
-                    # 4. Prepare Prompt & Context
                     system_prompt = self._build_subagent_prompt()
                     is_pro = "pro" in str(final_model).lower()
                     specialist_header = "\n## SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools." if is_pro else ""
@@ -152,7 +143,6 @@ class SubagentPatch(BasePatch):
                         {"role": "user", "content": task},
                     ]
 
-                    # 5. Execute Agent Loop
                     max_iterations = 15
                     iteration = 0
                     final_result = None
@@ -281,17 +271,24 @@ class SubagentPatch(BasePatch):
                     hint = " (Note: 'web_search' is DEPRECATED. Use 'mcp_google-ai-search_search_ai' via a specialist subagent.)" if name_str == "web_search" else ""
                     return f"ERROR: The tool '{name}' is restricted to SPECIALIST subagents. You MUST use 'spawn' to delegate this task.{hint}"
 
-                # 2. Loop Detection & CLI Bypass Prevention
+                # 2. Forced Turn Termination for 'spawn'
+                if name_str == "spawn" and not getattr(self, "_is_strategic_specialist", False):
+                    # Call original execute to perform the spawn
+                    result = await self._orig_tool_execute_strategic(name, args)
+                    # Append Strategic Termination Directive
+                    return f"{result}\n\n### ⚖️ STRATEGIC MANDATE: STOP Turn\nYou have successfully spawned a specialist. Your turn is now OVER. You MUST NOT call any more tools (like findstr or status) to poll for the result. Wait for the subagent to report back via the message bus. Provide a short acknowledgement to the user now and END your response."
+
+                # 3. Loop Detection & CLI/File Bypass Prevention
                 if name_str == "exec" and not getattr(self, "_is_strategic_specialist", False):
                     cmd = str(args.get("command", "")).lower()
                     
-                    # A. CLI Bypass Detection: Block calling restricted tools via 'python -m nanobot mcp ...'
-                    if "nanobot mcp" in cmd or "nanobot status" in cmd:
-                        if any(hp.lower() in cmd for hp in patch_self.BLOCKED_PATTERNS) or "status" in cmd:
-                            strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted CLI bypass via 'exec': {cmd}")
-                            return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates by calling restricted tools via the CLI. This is a severe violation. You MUST use the 'spawn' tool to delegate these tasks to a specialist."
+                    # A. CLI/File Bypass Detection
+                    bypass_patterns = ["nanobot mcp", "nanobot status", "history.md", "findstr /c", "grep -i"]
+                    if any(p in cmd for p in bypass_patterns):
+                        strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
+                        return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
 
-                    # B. Idle Polling Loop Detection
+                    # B. Idle Polling Loop Detection (ping, status, etc.)
                     if any(x in cmd for x in ["status", "ping"]):
                         history = getattr(self, "_strategic_exec_history", [])
                         history.append(cmd)
@@ -299,9 +296,9 @@ class SubagentPatch(BasePatch):
                         
                         if history.count(cmd) >= 3:
                             strategic_logger.warning(f"LOOP DETECTED: Main Agent is polling '{cmd}'. Breaking loop.")
-                            return f"CRITICAL ERROR: Loop Detected. You have called '{cmd}' too many times. You MUST STOP polling the system status and instead provide a final synthesis to the user based on the information you already have."
+                            return f"CRITICAL ERROR: Loop Detected. You have called '{cmd}' too many times. You MUST STOP polling the system and instead provide a final synthesis to the user based on the information you already have."
 
-                # 3. Surgical Tool Injection
+                # 4. Surgical Tool Injection
                 if "google-surgical" in name_str and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                     if "email" in args: args["email"] = user_email
