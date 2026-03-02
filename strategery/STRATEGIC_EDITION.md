@@ -21,6 +21,8 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Media Redirection:** Automatically redirects all media (photos, voice, documents) to your local `D:/Nanobot_Storage/workspace/media` directory.
 
 ### **4. Infrastructure & Resilience**
+- **Unified CLI Wrapper:** The `nanobot.cmd` script in the project root enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
+- **Self-Awareness Context:** Tracks environmental changes and architectural updates in `D:\Nanobot_Storage\workspace\memory\STRATEGIC_CONTEXT.md` to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read with `utf-8-sig` on Windows.
 - **Signal Handling:** Hardened signal and loop retrieval for multi-threaded environments.
 - **Modular Patching:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core.
