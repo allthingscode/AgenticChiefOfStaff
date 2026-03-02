@@ -1,31 +1,29 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 from strategery.strategic_logger import strategic_logger
 
 class VectorStoreInterface(ABC):
     """
-    Abstract interface for vector storage and retrieval.
-    Decouples strategic logic from specific database implementations.
+    Abstract interface for vector memory storage.
+    Enables swapping implementations (e.g., ChromaDB vs in-memory) without core changes.
     """
-    
     @abstractmethod
-    async def add_entry(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """Vectorizes and adds a single entry to the store."""
+    async def add_entry(self, content: str, metadata: Dict[str, Any]) -> bool:
         pass
 
     @abstractmethod
     async def query(self, text: str, n_results: int = 3) -> List[Dict[str, Any]]:
-        """Queries the store for semantically similar entries."""
         pass
 
     @abstractmethod
-    async def close(self) -> None:
-        """Gracefully closes any database connections."""
+    def close(self):
         pass
 
 class VectorStoreFactory:
     """
-    Factory to manage the singleton instance of the active vector store.
+    Singleton factory for accessing the strategic vector store.
+    Handles lazy initialization and implementation selection.
     """
     _instance: Optional[VectorStoreInterface] = None
 
@@ -36,25 +34,25 @@ class VectorStoreFactory:
         If no instance exists, it initializes the default (ChromaDB) implementation.
         """
         if cls._instance is None:
-            # For now, we default to our ChromaDB implementation
             from .vector_store import StrategicVectorStore
-            from . import registry
+            from .config import load_strategic_context
+
+            # Use provided root or derive it from strategic context
+            if storage_root is None:
+                _, _, storage_root = load_strategic_context()
             
-            # Use provided root or fallback to the globally resolved one
-            root = storage_root or registry.storage_root
-            cls._instance = StrategicVectorStore(storage_root=root, provider=provider)
-            
+            cls._instance = StrategicVectorStore(storage_root=storage_root, provider=provider)
+
             # Register with LifecycleManager for automatic cleanup
             from .lifecycle import lifecycle_manager
             lifecycle_manager.register_shutdown_hook(cls._instance.close)
-            
-            strategic_logger.debug(f"VectorStoreFactory initialized singleton store instance at {root or 'default'}")
-        
+
+            strategic_logger.debug(f"VectorStoreFactory initialized singleton store instance at {storage_root or 'default'}")
+
         # MANDATE: If a provider is passed to get_store, ensure the instance is using it.
-        # This prevents 'No embedding provider' errors in background tasks.
         if provider and hasattr(cls._instance, "provider"):
             cls._instance.provider = provider
-            
+
         return cls._instance
 
     @classmethod

@@ -1,6 +1,6 @@
 from pathlib import Path
 from functools import wraps
-from . import BasePatch
+from .base import BasePatch
 from strategery.strategic_logger import strategic_logger
 
 def strategic_get_media_path(base_workspace, original_path):

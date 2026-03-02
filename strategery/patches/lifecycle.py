@@ -3,6 +3,7 @@ import sys
 import os
 import signal
 import weakref
+import time
 from typing import List, Callable, Coroutine
 from strategery.strategic_logger import strategic_logger
 
@@ -23,8 +24,8 @@ class LifecycleManager:
         self.shutdown_hooks: List[Callable[[], Coroutine]] = []
         self._is_shutting_down = False
         self._loop = None
-        self._loop_lock = asyncio.Lock()
         self._orig_handlers = {}
+        self._refresh_task = None
 
     def register_shutdown_hook(self, hook: Callable[[], Coroutine]):
         """Register an async function to be called during shutdown."""
@@ -47,59 +48,60 @@ class LifecycleManager:
 
     def setup_signal_handlers(self):
         """Sets up handlers for SIGINT, SIGTERM, and SIGBREAK with core handoff."""
-        # Check if we are already in a running loop
+        # 1. Immediate capture of existing handlers
+        self._capture_handlers()
+
+        # 2. Setup periodic refresh to catch core handlers set later
         try:
             loop = asyncio.get_running_loop()
             self._loop = loop
-            strategic_logger.debug("LifecycleManager: Attached to running event loop.")
+            if not self._refresh_task or self._refresh_task.done():
+                self._refresh_task = loop.create_task(self._periodic_handler_refresh())
         except RuntimeError:
-            strategic_logger.debug("LifecycleManager: No running loop detected during setup. Will acquire on signal.")
-            loop = None
+            pass
 
         def _handler(sig, frame=None):
-            nonlocal loop
-            if loop is None:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    # If there's truly no loop, we just exit
-                    strategic_logger.warning(f"No active event loop found for signal {sig}. Exiting.")
-                    sys.exit(0)
-
             strategic_logger.warning(f"Received signal {sig}. Initiating graceful strategic shutdown...")
             
+            # Use current loop or find it
+            current_loop = self._loop
+            if not current_loop:
+                try: current_loop = asyncio.get_running_loop()
+                except RuntimeError: pass
+
             async def _do_shutdown():
-                # 1. Run our custom strategic hooks (e.g. close Vector Store)
+                # A. Run our custom strategic hooks
                 await self._run_shutdown_hooks()
                 
-                # 2. Strategic Handoff: Restore original handlers and re-send signal
-                # This allows the core Nanobot to receive the signal and shut itself down.
+                # B. Strategic Handoff: Restore original handlers and re-trigger
                 strategic_logger.info("Strategic shutdown hooks complete. Passing control back to core.")
                 
                 orig = self._orig_handlers.get(sig)
-                if orig and callable(orig):
-                    # Restore and invoke the original core handler
-                    signal.signal(sig, orig)
-                    if sig == signal.SIGINT:
-                        # Special handling for SIGINT to ensure it propagates correctly
-                        # Most Python apps expect KeyboardInterrupt to be raised or the handler to run
-                        os.kill(os.getpid(), sig)
-                    else:
-                        # For other signals, we just call the handler directly if possible
-                        try: orig(sig, frame)
-                        except: pass
+                # Restore original
+                try: signal.signal(sig, orig or signal.SIG_DFL)
+                except: pass
+
+                # Trigger core shutdown
+                if sig == signal.SIGINT or (hasattr(signal, 'SIGBREAK') and sig == signal.SIGBREAK):
+                    # For terminal-driven apps, re-sending the signal to our own PID
+                    # is the most reliable way to trigger KeyboardInterrupt in the main thread.
+                    os.kill(os.getpid(), sig)
+                elif orig and callable(orig):
+                    try: orig(sig, frame)
+                    except: pass
                 
-                # 3. SAFETY: If core still hangs for more than 5 seconds, force exit
-                await asyncio.sleep(5)
+                # C. SAFETY: If core still hangs for more than 10 seconds, force exit
+                await asyncio.sleep(10)
                 strategic_logger.warning("Core shutdown timed out. Forcing process exit.")
                 os._exit(0)
 
-            if loop.is_running():
-                asyncio.run_coroutine_threadsafe(_do_shutdown(), loop)
+            if current_loop and current_loop.is_running():
+                asyncio.run_coroutine_threadsafe(_do_shutdown(), current_loop)
             else:
+                # If no loop, we can't run async hooks easily, just try to exit
                 sys.exit(0)
 
-        # Register signals and capture originals
+        # Register signals
         signals = [signal.SIGINT]
         if sys.platform == 'win32':
             signals.append(signal.SIGBREAK)
@@ -108,14 +110,30 @@ class LifecycleManager:
 
         for sig in signals:
             try:
-                # Capture original handler if not already ours
-                current = signal.getsignal(sig)
-                if current != _handler:
-                    self._orig_handlers[sig] = current
-                
                 signal.signal(sig, _handler)
             except Exception as e:
                 strategic_logger.debug(f"Could not register signal {sig}: {e}")
+
+    def _capture_handlers(self):
+        """Captures handlers that are NOT our own."""
+        signals = [signal.SIGINT]
+        if sys.platform == 'win32': signals.append(signal.SIGBREAK)
+        else: signals.append(signal.SIGTERM)
+
+        for sig in signals:
+            try:
+                current = signal.getsignal(sig)
+                # Only capture if it's not our own wrapper
+                if current and "_handler" not in str(current):
+                    self._orig_handlers[sig] = current
+            except:
+                pass
+
+    async def _periodic_handler_refresh(self):
+        """Background task to periodically capture handlers set by core later."""
+        while not self._is_shutting_down:
+            self._capture_handlers()
+            await asyncio.sleep(2.0)
 
 # Global singleton
 lifecycle_manager = LifecycleManager()

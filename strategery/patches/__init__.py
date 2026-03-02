@@ -4,92 +4,57 @@ This module provides the base classes and registry for applying runtime patches
 without modifying the core Nanobot codebase.
 """
 
-import sys
-import os
-from pathlib import Path
-from typing import List, Dict, Any
-from abc import ABC, abstractmethod
-from strategery.strategic_logger import strategic_logger
-
-class BasePatch(ABC):
-    """Base class for all strategic patches."""
-    
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """The display name of the patch."""
-        pass
-
-    @abstractmethod
-    def apply(self, config_data: Dict[str, Any]) -> bool:
-        """
-        Apply the patch to the runtime environment.
-        Args:
-            config_data: The raw global configuration (RAW_CONFIG).
-        Returns:
-            True if applied successfully, False otherwise.
-        """
-        pass
-
-class PatchRegistry:
-    """Registry to manage and apply multiple strategic patches."""
-    
-    def __init__(self):
-        self.patches: List[BasePatch] = []
-        self._applied = False
-        self.storage_root: Optional[Path] = None
-        self.raw_config: Dict[str, Any] = {}
-        self.user_email: str = "admin@example.com"
-
-    def register(self, patch: BasePatch):
-        """Register a new patch."""
-        self.patches.append(patch)
-
-    def apply_all(self, config_data: Dict[str, Any], storage_root: Path = None, user_email: str = None):
-        """Apply all registered patches in order."""
-        if self._applied:
-            return
-        
-        self.raw_config = config_data
-        self.storage_root = storage_root
-        self.user_email = user_email
-        
-        strategic_logger.info("Initializing Nanobot Strategic Edition...")
-        
-        for patch in self.patches:
-            try:
-                success = patch.apply(config_data)
-                if success:
-                    strategic_logger.debug(f"Patch applied: {patch.name}")
-                else:
-                    strategic_logger.warning(f"Patch failed to apply: {patch.name}")
-            except Exception as e:
-                strategic_logger.error(f"Fatal error applying patch '{patch.name}': {e}", exc_info=True)
-        
-        self._applied = True
-        strategic_logger.info("Strategic Edition initialization complete.")
-
-# Global registry instance
-registry = PatchRegistry()
-
-# Import patches to register them
+from .base import BasePatch
 from .infra import InfraPatch
 from .config import ConfigPatch, load_strategic_context
 from .provider import ProviderPatch
 from .memory import MemoryPatch
 from .subagent import SubagentPatch
 from .telegram import TelegramPatch
+from .vector_store import StrategicVectorStore
+from strategery.strategic_logger import strategic_logger, setup_strategic_logger
 
-registry.register(InfraPatch())
-registry.register(ConfigPatch())
-registry.register(ProviderPatch())
-registry.register(MemoryPatch())
-registry.register(SubagentPatch())
-registry.register(TelegramPatch())
+class PatchRegistry:
+    """Registry for managing and applying strategic patches."""
+    
+    def __init__(self):
+        self._patches = [
+            InfraPatch(),
+            ConfigPatch(),
+            ProviderPatch(),
+            MemoryPatch(),
+            SubagentPatch(),
+            TelegramPatch()
+        ]
 
-# AUTOMATIC INITIALIZATION: 
-# When this module is imported, we immediately apply the patches.
+    def apply_all(self, config_data: dict, **kwargs) -> dict:
+        """Applies all registered patches in sequence."""
+        results = {}
+        for patch in self._patches:
+            try:
+                success = patch.apply(config_data)
+                results[patch.name] = "Applied" if success else "Failed"
+                if success:
+                    strategic_logger.debug(f"Patch applied: {patch.name}")
+                else:
+                    strategic_logger.warning(f"Patch failed to apply: {patch.name}")
+            except Exception as e:
+                results[patch.name] = f"Error: {e}"
+                strategic_logger.error(f"{patch.name} patch error: {e}")
+        
+        strategic_logger.info("Strategic Edition initialization complete.")
+        return results
+
+# Initialize global registry
+registry = PatchRegistry()
+
+# Auto-apply patches on import to ensure environment is set up correctly
 # This ensures that even when imported by tests (like test_agent_direct.py),
 # the core patches are active.
 RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
+
+# Re-initialize logger with strategic storage root if available
+if STORAGE_ROOT:
+    setup_strategic_logger(log_dir=STORAGE_ROOT / "logs")
+
 registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)

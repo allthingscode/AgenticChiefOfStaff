@@ -1,13 +1,12 @@
 import json
 from datetime import datetime, timedelta
-from . import BasePatch
+from .base import BasePatch
 from .lifecycle import lifecycle_manager
+from .config import load_strategic_context
+from .vsa import VectorStoreFactory
 from strategery.strategic_logger import strategic_logger
 
 def strategic_prune_context(messages, ttl_hours, keep_last_assistants):
-    # ... (rest of the pruning logic is fine as is, it's a pure function)
-    # I'll keep it for brevity in this tool call, but the replace tool needs the exact text.
-    # To save context, I'll only replace the class part.
     """
     Prunes a list of messages based on TTL and mandatory retention of recent assistant turns.
     Returns: A new list of pruned messages.
@@ -177,7 +176,6 @@ class MemoryPatch(BasePatch):
 
                     # STRATEGIC EDITION: Vector Store + Daily Journal (Retiring HISTORY.md bloat)
                     try:
-                        from .vsa import VectorStoreFactory
                         from pathlib import Path
                         import asyncio
                         vec_store = VectorStoreFactory.get_store(provider=provider)
@@ -189,9 +187,9 @@ class MemoryPatch(BasePatch):
                         asyncio.create_task(vec_store.add_entry(str(entry), {"type": "history_summary", "source": "consolidation"}))
                         
                         # 2. Write to Daily Journal (Human-Readable Log)
-                        from . import STORAGE_ROOT
+                        _, _, storage_root = load_strategic_context()
                         today = datetime.now().strftime("%Y-%m-%d")
-                        journal_path = STORAGE_ROOT / "workspace" / "memory" / f"{today}.md"
+                        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
                         journal_path.parent.mkdir(parents=True, exist_ok=True)
                         
                         with open(journal_path, "a", encoding="utf-8-sig") as f:
@@ -249,6 +247,9 @@ class MemoryPatch(BasePatch):
                 
                 if rag_cfg.get("enabled", True) and len(content) > 10 and not is_generic and content != "[empty message]":
                     try:
+                        from .config import load_strategic_context
+                        _, _, storage_root = load_strategic_context()
+                        
                         from .vsa import VectorStoreFactory
                         vec_store = VectorStoreFactory.get_store(provider=self.provider)
                         

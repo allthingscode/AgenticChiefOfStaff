@@ -3,7 +3,7 @@ import os
 import io
 import asyncio
 from functools import wraps
-from . import BasePatch
+from .base import BasePatch
 from .lifecycle import lifecycle_manager
 from strategery.strategic_logger import strategic_logger
 
