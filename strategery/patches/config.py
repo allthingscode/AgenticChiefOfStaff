@@ -3,7 +3,7 @@ import os
 import builtins
 from pathlib import Path
 from functools import wraps
-from . import BasePatch
+from .base import BasePatch
 
 def strategic_migrate_config(data, config_data_capture=None):
     """
@@ -19,14 +19,20 @@ def strategic_migrate_config(data, config_data_capture=None):
     # Surgical strip of custom keys
     def _strip_recursively(obj):
         if not isinstance(obj, dict): return
+        # Mandate: Remove all strategic-specific keys to prevent Pydantic validation errors
         obj.pop("strategic_edition", None)
         obj.pop("memory", None)
         obj.pop("keywords", None)
         obj.pop("compaction", None)
         obj.pop("contextPruning", None)
         obj.pop("memorySearch", None)
-        for v in obj.values():
-            if isinstance(v, (dict, list)): _strip_recursively(v)
+        for v in list(obj.values()): # Use list to avoid 'dictionary changed size' during recursion
+            if isinstance(v, (dict, list)): 
+                if isinstance(v, list):
+                    for item in v: 
+                        if isinstance(item, dict): _strip_recursively(item)
+                else:
+                    _strip_recursively(v)
     
     _strip_recursively(data)
     return data
@@ -42,16 +48,21 @@ class ConfigPatch(BasePatch):
         try:
             import nanobot.config.loader
             from nanobot.config.schema import Config
-            from . import STORAGE_ROOT
             
             # 1. Force the Config schema to ignore extra fields at runtime
             Config.model_config["extra"] = "ignore"
             
             # 2. Patch get_data_dir to point to strategic storage (D: drive)
-            # This ensures Cron, Matrix, and other core services find their data.
             if not hasattr(nanobot.config.loader, "_orig_get_data_dir_strategic"):
                 nanobot.config.loader._orig_get_data_dir_strategic = nanobot.config.loader.get_data_dir
-                nanobot.config.loader.get_data_dir = lambda: STORAGE_ROOT
+                
+                # Derivation helper to avoid circular imports of STORAGE_ROOT from .
+                def _get_strategic_data_dir():
+                    from .config import load_strategic_context
+                    _, _, storage_root = load_strategic_context()
+                    return storage_root
+                    
+                nanobot.config.loader.get_data_dir = _get_strategic_data_dir
 
             # 3. Global BOM-Safe 'open' wrapper for JSON files
             if not hasattr(builtins, "_orig_open_strategic"):
@@ -67,7 +78,7 @@ class ConfigPatch(BasePatch):
                 
                 builtins.open = _strategic_open
 
-            # 3. Patch _migrate_config
+            # 4. Patch _migrate_config
             if not hasattr(nanobot.config.loader, "_orig_migrate_strategic"):
                 nanobot.config.loader._orig_migrate_strategic = nanobot.config.loader._migrate_config
                 
@@ -93,7 +104,8 @@ def load_strategic_context():
     try:
         home_config = Path.home() / ".nanobot" / "config.json"
         if home_config.exists():
-            with open(home_config, "r", encoding="utf-8-sig") as f:
+            # Use original open to avoid recursion during bootstrap
+            with builtins.open(home_config, "r", encoding="utf-8-sig") as f:
                 _raw = json.load(f)
                 raw_config = _raw
                 _strat = _raw.get("strategic_edition", {})

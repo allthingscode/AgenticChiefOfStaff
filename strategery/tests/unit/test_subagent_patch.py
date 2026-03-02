@@ -32,8 +32,7 @@ async def test_tool_registry_blocks_high_power_for_main_agent(subagent_patch, mo
     
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
     assert "restricted to SPECIALIST subagents" in result
-    assert "MUST use the 'spawn' tool" in result
-
+    assert "MUST use 'spawn' to delegate this task" in result
 @pytest.mark.asyncio
 async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     # Apply patch
@@ -51,7 +50,7 @@ async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
     assert "CRITICAL ERROR" in result
     assert "HARD-LOCKED" in result
-    assert "Repeated attempts are a violation" in result
+    assert "You MUST STOP trying to call this tool directly" in result
 
 @pytest.mark.asyncio
 async def test_tool_registry_allows_high_power_for_specialist(subagent_patch, mock_tool):
@@ -78,5 +77,5 @@ async def test_web_search_deprecation(subagent_patch):
     registry = ToolRegistry()
     
     result = await registry.execute("web_search", {"query": "test"})
-    assert "DEPRECATED" in result
+    assert "restricted to SPECIALIST" in result
     assert "mcp_google-ai-search_search_ai" in result
