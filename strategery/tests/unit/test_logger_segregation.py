@@ -44,9 +44,18 @@ def test_logger_segregation():
     else:
         print(f"FAILED: Message 2 NOT found in {log_file_2}")
 
+    # Explicitly close and remove handlers to release file locks on Windows
+    for handler in list(logger_2.handlers):
+        handler.close()
+        logger_2.removeHandler(handler)
+
     # Cleanup
     if log_dir_1.exists(): shutil.rmtree(log_dir_1)
     if log_dir_2.exists(): shutil.rmtree(log_dir_2)
+
+    # Restore the original log dir for subsequent tests
+    os.environ["STRATEGIC_LOG_DIR"] = "D:/Test_Workspace/logs"
+    setup_strategic_logger()
 
 if __name__ == "__main__":
     test_logger_segregation()

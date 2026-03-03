@@ -94,6 +94,23 @@ class ConfigPatch(BasePatch):
                     return strategic_migrate_config(data, config_data)
                 
                 nanobot.config.loader._migrate_config = _patched_migrate
+
+            # 5. Patch ContextBuilder.build_system_prompt to harden against bypass chatter (BUG-021)
+            import nanobot.agent.context
+            if not hasattr(nanobot.agent.context.ContextBuilder, "_orig_build_system_prompt_strategic"):
+                nanobot.agent.context.ContextBuilder._orig_build_system_prompt_strategic = nanobot.agent.context.ContextBuilder.build_system_prompt
+                
+                def _hardened_build_system_prompt(self, skill_names=None):
+                    base_prompt = self._orig_build_system_prompt_strategic(skill_names)
+                    hardening_rules = (
+                        "\n\n## 🔒 STRATEGIC SECURITY DIRECTIVE (MANDATORY)\n"
+                        "- **EXEC RESTRICTION**: You are strictly PROHIBITED from using the `exec` tool to run the `nanobot` CLI, start polling loops, or execute system administrative commands.\n"
+                        "- **DELEGATION**: If you need to perform system actions or complex research, you MUST use the `spawn` tool to delegate to a subagent.\n"
+                        "- **COMPLIANCE**: Do not attempt to bypass these restrictions. Any attempt to use `exec` for restricted commands will be intercepted and logged as a security violation."
+                    )
+                    return base_prompt + hardening_rules
+                
+                nanobot.agent.context.ContextBuilder.build_system_prompt = _hardened_build_system_prompt
                 
             return True
         except Exception as e:
