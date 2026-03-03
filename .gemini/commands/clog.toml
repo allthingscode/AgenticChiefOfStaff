@@ -4,7 +4,7 @@ Review the recent Nanobot strategic logs and evaluate everything that occurred A
 Identify any issues, errors, or anomalies that indicate a bug or a violation of strategic mandates.
 
 ### CURRENT STRATEGIC LOG (Last Session)
-!{powershell -Command "$latest = Get-ChildItem D:/Nanobot_Storage/logs/nanobot_*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($latest) { $lines = Get-Content $latest.FullName; $marker = '--- Initializing Nanobot Strategic Edition ---'; $index = [array]::LastIndexOf($lines, $marker); if ($index -ge 0) { $lines[$index..($lines.Count-1)] } else { $lines | Select-Object -Last 200 } } else { 'No log file found.' }"}
+!{powershell -NoProfile -File strategery/get_last_session_log.ps1}
 
 ### CURRENT BUG BACKLOG
 @strategery/private/BUG_BACKLOG.md

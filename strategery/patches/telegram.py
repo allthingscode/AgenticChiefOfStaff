@@ -67,6 +67,12 @@ class TelegramPatch(BasePatch):
             
             async def _strategic_start(self):
                 strategic_logger.info(f"Telegram: Starting strategic channel (disable_commands={disable_commands})...")
+                
+                # Import NetworkError and asyncio locally to avoid early import failures
+                from telegram.error import NetworkError
+                import asyncio
+                import time
+
                 if disable_commands:
                     strategic_logger.debug("Telegram: Disabling default bot commands...")
                     # We patch the CommandHandler class temporarily during start!
@@ -79,7 +85,9 @@ class TelegramPatch(BasePatch):
                     
                     CommandHandler.__init__ = _patched_init
                     try:
-                        return await self._orig_start_strategic()
+                        # Original start method blocks in its own loop
+                        # We run it in a task so we can monitor/retry it here
+                        asyncio.create_task(self._orig_start_strategic())
                     except Exception as e:
                         strategic_logger.error(f"Telegram: FATAL during start (with suppression): {e}")
                         raise
@@ -87,11 +95,37 @@ class TelegramPatch(BasePatch):
                         CommandHandler.__init__ = _orig_init
                 else:
                     try:
-                        return await self._orig_start_strategic()
+                        # Original start method blocks in its own loop
+                        asyncio.create_task(self._orig_start_strategic())
                     except Exception as e:
                         strategic_logger.error(f"Telegram: FATAL during start: {e}")
                         raise
-            
+
+                # Resilience Loop for start_polling
+                # The original start() method enters a while self._running: loop after start_polling.
+                # However, if start_polling fails with a NetworkError, the app state might be inconsistent.
+                # python-telegram-bot's Updater usually handles retries, but BUG-034 shows it's crashing.
+                # We monitor self._app.updater.running and self._running to ensure continuity.
+                retry_delay = 5
+                while self._running:
+                    try:
+                        if self._app and self._app.updater and not self._app.updater.running:
+                            strategic_logger.info("Telegram: (Re)starting polling loop...")
+                            await self._app.updater.start_polling(
+                                allowed_updates=["message"],
+                                drop_pending_updates=True
+                            )
+                            retry_delay = 5 # Reset on success
+                        
+                        await asyncio.sleep(1)
+                    except NetworkError as e:
+                        strategic_logger.warning(f"Telegram: Network error during polling: {e}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, 60) # Exponential backoff
+                    except Exception as e:
+                        strategic_logger.error(f"Telegram: Unexpected error in polling loop: {e}")
+                        await asyncio.sleep(5)
+
             TelegramChannel.start = _strategic_start
 
         if not hasattr(TelegramChannel, "_orig_on_message_strategic"):
