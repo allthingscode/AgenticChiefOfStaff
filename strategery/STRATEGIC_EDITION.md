@@ -26,14 +26,14 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Specialist Routing:** Automatic model selection for subagents (e.g. `gemini-3-pro-preview` for architects, `gemini-2.5-flash-lite` for researchers).
 - **Circuit Breakers:** Hard-lock mechanism prevents the Main Agent from looping or abusing blocked tool registries.
 - **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
+- **Mandate Enforcement:** Hardened system prompts prevent bypass attempts, ensuring strict adherence to the delegation model and automated history management.
 
 ### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
+- **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.
 - **Signal Handling:** Hardened signal and loop retrieval for multi-threaded environments.
-- **Diagnostic Logging (BUG-022):** Integrated provider tracking in `VectorStoreFactory` to resolve singleton injection race conditions.
-- **Resilient Embedding (BUG-023):** Hardened retry logic (5 attempts) with specific handlers for transient API errors vs. permanent 400/401/403 failures.
 - **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
 
 ### **6. Graph Capabilities (NanoGraph)**

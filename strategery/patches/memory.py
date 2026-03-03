@@ -179,9 +179,11 @@ class MemoryPatch(BasePatch):
                         from pathlib import Path
                         import asyncio
                         
+                        p_type = type(provider).__name__ if provider else "NoneType"
+                        has_embed = hasattr(provider, "embed") if provider else False
+                        strategic_logger.debug(f"Memory Consolidation (Strategic): Provider type={p_type}, has_embed={has_embed}")
+
                         # HARDENING (BUG-022): Ensure provider has the strategic embed method
-                        # LiteLLMProvider is patched in ProviderPatch, but if consolidation runs
-                        # early or in a way that bypasses the patch, we re-verify here.
                         if not hasattr(provider, "embed"):
                             from strategery.patches.provider import strategic_litellm_embed
                             provider.embed = strategic_litellm_embed.__get__(provider, type(provider))

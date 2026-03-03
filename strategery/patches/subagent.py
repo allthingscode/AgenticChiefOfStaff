@@ -118,7 +118,8 @@ class SubagentPatch(BasePatch):
                         restrict_to_workspace=self.restrict_to_workspace,
                         path_append=self.exec_config.path_append,
                     ))
-                    tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
+                    # MANDATE: web_search is DEPRECATED. Specialists use mcp_google-ai-search.
+                    # tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     
                     try:
@@ -201,6 +202,21 @@ class SubagentPatch(BasePatch):
 
         SubagentManager._run_subagent = _strategic_run_subagent
 
+        if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
+            SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
+            
+            def _patched_build_subagent_prompt(self):
+                prompt = self._orig_build_subagent_prompt_strategic()
+                
+                # Append Strategic Specialist Instructions
+                prompt += "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
+                prompt += "1. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
+                prompt += "2. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
+                prompt += "3. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
+                return prompt
+
+            SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
+
         if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
             SubagentManager._orig_announce_result_strategic = SubagentManager._announce_result
             
@@ -244,10 +260,14 @@ class SubagentPatch(BasePatch):
             def _patched_register(registry_self, tool):
                 name = str(getattr(tool, "name", tool)).lower()
                 is_high_power = any(hp.lower() in name for hp in patch_self.BLOCKED_PATTERNS)
+                is_specialist = getattr(registry_self, "_is_strategic_specialist", False)
 
-                if is_high_power and not getattr(registry_self, "_is_strategic_specialist", False):
-                    strategic_logger.debug(f"Tool Stripping: Blocked registration of '{name}' for Main Agent.")
-                    return
+                if is_high_power:
+                    if not is_specialist:
+                        strategic_logger.debug(f"Tool Stripping: Blocked registration of '{name}' for Main Agent.")
+                        return
+                    else:
+                        strategic_logger.debug(f"Tool Stripping: ALLOWED registration of '{name}' for Specialist.")
 
                 return registry_self._orig_register_strategic(tool)
 

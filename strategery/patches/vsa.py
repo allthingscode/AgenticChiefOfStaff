@@ -47,20 +47,40 @@ class VectorStoreFactory:
             from .lifecycle import lifecycle_manager
             lifecycle_manager.register_shutdown_hook(cls._instance.close)
 
-            strategic_logger.debug(f"VectorStoreFactory initialized singleton store instance at {storage_root or 'default'}")
+            p_type = type(provider).__name__ if provider else "NoneType"
+            has_embed = hasattr(provider, "embed") if provider else False
+            strategic_logger.debug(f"VectorStoreFactory: Initialized singleton with provider type={p_type}, has_embed={has_embed}")
 
         # MANDATE: If a provider is passed to get_store, ensure the instance is using it.
         if provider:
+            # DEFENSIVE (BUG-030): Ensure provider has 'embed' before injecting
+            if not hasattr(provider, "embed"):
+                try:
+                    from nanobot.providers.base import LLMProvider
+                    if isinstance(provider, LLMProvider):
+                        from .provider import strategic_litellm_embed
+                        provider.embed = strategic_litellm_embed.__get__(provider, type(provider))
+                        strategic_logger.debug(f"VectorStoreFactory: Late-patched provider ({type(provider).__name__}) with embed.")
+                except Exception as e:
+                    strategic_logger.error(f"VectorStoreFactory: Failed to late-patch provider: {e}")
+
             if hasattr(cls._instance, "provider"):
-                # Track provider injection to diagnose BUG-022
+                # Track provider injection to diagnose BUG-022 / BUG-030
                 old_p = getattr(cls._instance, "provider", None)
                 if old_p != provider:
                     cls._instance.provider = provider
                     p_type = type(provider).__name__
                     has_embed = hasattr(provider, "embed")
                     strategic_logger.debug(f"VectorStoreFactory injected provider: type={p_type}, has_embed={has_embed}")
+                else:
+                    # Even if it's the same instance, log if it's missing the embed method
+                    if not hasattr(cls._instance.provider, "embed"):
+                        p_type = type(cls._instance.provider).__name__
+                        strategic_logger.warning(f"VectorStoreFactory: Current provider ({p_type}) is MISSING 'embed' method!")
             else:
                 strategic_logger.warning("VectorStoreFactory: Store instance missing 'provider' attribute.")
+        elif cls._instance and not getattr(cls._instance, "provider", None):
+             strategic_logger.warning("VectorStoreFactory: get_store() called with no provider, and instance has NONE.")
 
         return cls._instance
 

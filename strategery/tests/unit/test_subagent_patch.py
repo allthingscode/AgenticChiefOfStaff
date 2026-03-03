@@ -79,3 +79,27 @@ async def test_web_search_deprecation(subagent_patch):
     result = await registry.execute("web_search", {"query": "test"})
     assert "restricted to SPECIALIST" in result
     assert "mcp_google-ai-search_search_ai" in result
+
+@pytest.mark.asyncio
+async def test_subagent_prompt_patch(subagent_patch):
+    """Verify that _build_subagent_prompt is patched with specialist instructions."""
+    from nanobot.agent.subagent import SubagentManager
+    from pathlib import Path
+    
+    # Apply patch
+    subagent_patch._patch_subagent_manager({})
+    
+    # Mock dependencies for SubagentManager init
+    mock_bus = MagicMock()
+    mock_provider = MagicMock()
+    mock_provider.get_default_model.return_value = "gpt-4"
+    
+    manager = SubagentManager(provider=mock_provider, workspace=Path("/tmp"), bus=mock_bus)
+    
+    # Call patched prompt
+    prompt = manager._build_subagent_prompt()
+    
+    assert "## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS" in prompt
+    assert "mcp_google-ai-search_search_ai" in prompt
+    assert "NETWORK DIAGNOSTICS" in prompt
+    assert "Do NOT use 'ping'" in prompt

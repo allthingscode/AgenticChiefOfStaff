@@ -103,10 +103,12 @@ class ConfigPatch(BasePatch):
                 def _hardened_build_system_prompt(self, skill_names=None):
                     base_prompt = self._orig_build_system_prompt_strategic(skill_names)
                     hardening_rules = (
-                        "\n\n## 🔒 STRATEGIC SECURITY DIRECTIVE (MANDATORY)\n"
+                        "\n\n## 🛡️ STRATEGIC MANDATE (MANDATORY)\n"
                         "- **EXEC RESTRICTION**: You are strictly PROHIBITED from using the `exec` tool to run the `nanobot` CLI, start polling loops, or execute system administrative commands.\n"
-                        "- **DELEGATION**: If you need to perform system actions or complex research, you MUST use the `spawn` tool to delegate to a subagent.\n"
-                        "- **COMPLIANCE**: Do not attempt to bypass these restrictions. Any attempt to use `exec` for restricted commands will be intercepted and logged as a security violation."
+                        "- **DELEGATION**: High-power tools (Google AI Search, Email, Strategic CLI) are RESTRICTED. You MUST use the `spawn` tool to delegate these tasks to a specialist subagent.\n"
+                        "- **MEMORY MANAGEMENT**: DO NOT attempt to manually write to `history.md`, `memory.json`, or any log files using `exec` or `write_file`. The system's automated consolidation protocol manages all long-term memory. Any attempt to manually manage history will be intercepted.\n"
+                        "- **DO NOT CALL DIRECTLY**: Any attempt to call specialist tools (e.g. `mcp_google-ai-search_search_ai`, `mcp_email-reporter_send_email_report`) from the Main Agent will be BLOCKED. You are an ORCHESTRATOR, not a researcher.\n"
+                        "- **COMPLIANCE**: If you need to search, verify facts, or perform system operations, spawn a specialist subagent immediately and wait for the result via the message bus."
                     )
                     return base_prompt + hardening_rules
                 

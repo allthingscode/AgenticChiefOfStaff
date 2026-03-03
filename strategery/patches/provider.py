@@ -77,6 +77,7 @@ class ProviderPatch(BasePatch):
 
     def apply(self, config_data: dict) -> bool:
         try:
+            self._patch_base_provider()
             self._patch_litellm_provider()
             self._patch_agent_loop_cleaning()
             return True
@@ -84,54 +85,89 @@ class ProviderPatch(BasePatch):
             strategic_logger.error(f"Provider patch error: {e}")
             return False
 
+    def _patch_base_provider(self):
+        from nanobot.providers.base import LLMProvider
+        
+        # 1. Attach Embedding Method & Model to BASE class
+        # This ensures all providers (LiteLLM, Custom, etc) have it.
+        if not hasattr(LLMProvider, "embed"):
+            LLMProvider.embed = strategic_litellm_embed
+            LLMProvider.embedding_model = "models/gemini-embedding-001"
+            strategic_logger.debug("Patched LLMProvider base with strategic embedding.")
+
     def _patch_litellm_provider(self):
         from nanobot.providers.litellm_provider import LiteLLMProvider
         
-        # 1. Attach Embedding Method & Model
+        # 0. DEFENSIVE (BUG-030): Attach embed directly to LiteLLMProvider as well
         if not hasattr(LiteLLMProvider, "embed"):
             LiteLLMProvider.embed = strategic_litellm_embed
-            # Default model for Strategic Edition (3072 dims)
             LiteLLMProvider.embedding_model = "models/gemini-embedding-001"
-            strategic_logger.debug("Patched LiteLLMProvider with strategic embedding.")
+            strategic_logger.debug("Patched LiteLLMProvider class directly with strategic embedding.")
 
-        # 2. Patch Chat for Logging & Retries
+        # 1. Patch Chat for Logging & Retries
         if not hasattr(LiteLLMProvider, "_orig_chat_strategic"):
             LiteLLMProvider._orig_chat_strategic = LiteLLMProvider.chat
             
             async def _patched_chat(self, *args, **kwargs):
-                model = kwargs.get("model") or (args[2] if len(args) > 2 else "unknown")
+                # Handle both positional and keyword arguments for 'model'
+                # Signature: (self, messages, tools=None, model=None, ...)
+                model = kwargs.get("model") or (args[1] if len(args) > 1 else None)
+                if not model:
+                    # Look deeper if it's passed via args (index 2 because self is index 0 in the original call but args here doesn't include self if called via instance)
+                    # Actually, when we patch LiteLLMProvider.chat = _patched_chat, 'self' IS passed as args[0]
+                    model = args[2] if len(args) > 2 else "unknown"
+                
                 strategic_log_provider_request("LiteLLM", model)
                 
-                # Execution with Strategic Retry & Error Interception
-                try:
-                    response = await self._orig_chat_strategic(*args, **kwargs)
-                    
-                    # Intercept error responses returned as successful calls (LiteLLM pattern)
-                    if getattr(response, "finish_reason", None) == "error":
-                        raw_content = str(response.content)
+                max_retries = 3
+                retry_delay = 2.0
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = await self._orig_chat_strategic(*args, **kwargs)
                         
-                        # RETRY LOGIC: If it's a transient 500/503, try once more after a brief pause
-                        if any(x in raw_content for x in ["500", "503", "InternalServerError", "ServiceUnavailable"]):
-                            strategic_logger.warning(f"Transient error detected ({raw_content[:50]}). Initiating strategic retry...")
-                            await asyncio.sleep(1.5)
-                            response = await self._orig_chat_strategic(*args, **kwargs)
+                        # Intercept error responses returned as successful calls (LiteLLM pattern)
+                        if getattr(response, "finish_reason", None) == "error":
+                            raw_content = str(response.content)
                             
-                            # If still failing, format gracefully
-                            if getattr(response, "finish_reason", None) == "error":
-                                response.content = strategic_format_error(str(response.content))
-                        else:
-                            # Immediate formatting for non-retriable errors
+                            # 1. CATEGORIZE ERROR
+                            is_transient = any(x in raw_content for x in ["500", "503", "504", "InternalServerError", "ServiceUnavailable", "RateLimitError", "429", "timeout"])
+                            is_permanent = any(x in raw_content for x in ["400", "401", "403", "InvalidRequestError", "ContextWindow", "too many tokens", "API_KEY_INVALID", "PERMISSION_DENIED"])
+                            
+                            # 2. RETRY IF TRANSIENT
+                            if is_transient and attempt < max_retries - 1:
+                                strategic_logger.warning(f"Transient error detected ({raw_content[:50]}). Attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s...")
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 2
+                                continue
+                            
+                            # 3. FORMAT AND RETURN IF PERMANENT OR LAST ATTEMPT
+                            if is_permanent:
+                                strategic_logger.error(f"Permanent Provider Error: {raw_content[:100]}")
+                            elif attempt == max_retries - 1:
+                                strategic_logger.error(f"Exhausted retries for transient error: {raw_content[:100]}")
+                                
                             response.content = strategic_format_error(raw_content)
                             
-                    return response
-                except Exception as e:
-                    # Catch-all for unexpected provider crashes
-                    strategic_logger.error(f"LiteLLM Fatal Crash: {e}")
-                    from nanobot.providers.base import LLMResponse
-                    return LLMResponse(
-                        content=strategic_format_error(str(e)),
-                        finish_reason="error"
-                    )
+                        return response
+
+                    except Exception as e:
+                        err_str = str(e)
+                        is_transient = any(x in err_str for x in ["500", "503", "InternalServerError", "ServiceUnavailable", "RateLimit", "429", "Timeout"])
+                        
+                        if is_transient and attempt < max_retries - 1:
+                            strategic_logger.warning(f"LiteLLM Exception (Transient): {err_str[:50]}. Retrying...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+                            continue
+                            
+                        # Catch-all for unexpected provider crashes or final failures
+                        strategic_logger.error(f"LiteLLM Fatal Crash: {e}")
+                        from nanobot.providers.base import LLMResponse
+                        return LLMResponse(
+                            content=strategic_format_error(err_str),
+                            finish_reason="error"
+                        )
                     
             LiteLLMProvider.chat = _patched_chat
 
