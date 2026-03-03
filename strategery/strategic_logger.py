@@ -59,7 +59,7 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     try:
         file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
         file_formatter = logging.Formatter(
-            '%(asctime)s [%(levelname)s] [%(name)s] %(message)s'
+            '%(asctime)s [PID:%(process)d] [%(levelname)s] [%(name)s] %(message)s'
         )
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.DEBUG)
@@ -72,7 +72,7 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     if not has_console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_formatter = logging.Formatter(
-            '[Strategic] %(levelname)s: %(message)s'
+            '[Strategic] [PID:%(process)d] %(levelname)s: %(message)s'
         )
         console_handler.setFormatter(console_formatter)
         console_handler.setLevel(logging.INFO)

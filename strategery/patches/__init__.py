@@ -4,6 +4,7 @@ This module provides the base classes and registry for applying runtime patches
 without modifying the core Nanobot codebase.
 """
 
+import sys
 from .base import BasePatch
 from .infra import InfraPatch
 from .config import ConfigPatch, load_strategic_context
@@ -29,6 +30,10 @@ class PatchRegistry:
 
     def apply_all(self, config_data: dict, **kwargs) -> dict:
         """Applies all registered patches in sequence."""
+        # Check if already initialized in this process
+        if getattr(sys, "_STRATEGIC_INITIALIZED", False):
+            return {}
+            
         # Ensure logger is correctly configured for the current environment/storage root
         setup_strategic_logger()
         strategic_logger.info("Applying Nanobot Strategic Edition patches...")
@@ -46,6 +51,8 @@ class PatchRegistry:
                 results[patch.name] = f"Error: {e}"
                 strategic_logger.error(f"{patch.name} patch error: {e}")
         
+        # Set global flag on sys module to survive reloads within the same process
+        setattr(sys, "_STRATEGIC_INITIALIZED", True)
         strategic_logger.info("Strategic Edition initialization complete.")
         return results
 
@@ -61,4 +68,5 @@ RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
 if STORAGE_ROOT:
     setup_strategic_logger(log_dir=STORAGE_ROOT / "logs")
 
-registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
+if not getattr(sys, "_STRATEGIC_INITIALIZED", False):
+    registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
