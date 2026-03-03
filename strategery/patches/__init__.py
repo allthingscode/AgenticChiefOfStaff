@@ -29,6 +29,10 @@ class PatchRegistry:
 
     def apply_all(self, config_data: dict, **kwargs) -> dict:
         """Applies all registered patches in sequence."""
+        # Ensure logger is correctly configured for the current environment/storage root
+        setup_strategic_logger()
+        strategic_logger.info("Applying Nanobot Strategic Edition patches...")
+        
         results = {}
         for patch in self._patches:
             try:

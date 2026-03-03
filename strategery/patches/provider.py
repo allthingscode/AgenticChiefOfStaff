@@ -32,14 +32,17 @@ async def strategic_litellm_embed(self, input_text):
     try:
         from google import genai
         strategic_logger.info(f"GoogleGenAI embed: model={self.embedding_model}")
-        client = genai.Client(api_key=self.api_key)
         
         max_retries = 3
         retry_delay = 1.0
         
         for attempt in range(max_retries):
             try:
-                result = await client.models.embed_content(
+                # MANDATE: Constructor moved inside retry loop to handle transient initialization failures
+                client = genai.Client(api_key=self.api_key)
+                
+                # USE ASYNC CLIENT: client.aio.models.embed_content
+                result = await client.aio.models.embed_content(
                     model=self.embedding_model,
                     contents=input_text
                 )

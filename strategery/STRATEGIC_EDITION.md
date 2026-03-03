@@ -28,14 +28,19 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
 
 ### **5. Infrastructure & Resilience**
-- **Unified CLI Wrapper:** The `nanobot.cmd` script in the project root enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
+- **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
 - **Signal Handling:** Hardened signal and loop retrieval for multi-threaded environments.
 - **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
 
+### **6. Graph Capabilities (NanoGraph)**
+- **Semantic Overlay:** The memory system is augmented with a semantic graph overlay for relationship-based recall.
+- **Neighbor Querying:** Find related entities for a specific memory node using relationship types.
+- **Surgical Tools:** Accessible via `python D:\Nanobot_Storage\workspace\skills\memory\scripts\graph_query.py`.
+
 ## **Future Roadmap**
 - [ ] **Subagent Queueing:** Mechanism to stack and sequentially execute multiple subagent requests.
-- [ ] **Knowledge Graph:** Relationship-based memory beyond basic semantic similarity.
+- [x] **Knowledge Graph:** Relationship-based memory beyond basic semantic similarity (Phase 1: NanoGraph complete).
 - [ ] **Cross-Device Sync:** Cloud-syncing options for the local ChromaDB database.
 - [ ] **Surgical UI:** Slim dashboard for managing "Gold Standard" facts in memory.

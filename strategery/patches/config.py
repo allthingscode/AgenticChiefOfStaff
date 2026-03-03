@@ -20,12 +20,15 @@ def strategic_migrate_config(data, config_data_capture=None):
     def _strip_recursively(obj):
         if not isinstance(obj, dict): return
         # Mandate: Remove all strategic-specific keys to prevent Pydantic validation errors
-        obj.pop("strategic_edition", None)
-        obj.pop("memory", None)
-        obj.pop("keywords", None)
-        obj.pop("compaction", None)
-        obj.pop("contextPruning", None)
-        obj.pop("memorySearch", None)
+        # This list must be comprehensive based on everything injected in config.json
+        keys_to_strip = [
+            "strategic_edition", "memory", "keywords", "compaction", 
+            "contextPruning", "memorySearch", "user_email", "storage_path", 
+            "storage_root", "storage_root_backup", "app_root"
+        ]
+        for key in keys_to_strip:
+            obj.pop(key, None)
+            
         for v in list(obj.values()): # Use list to avoid 'dictionary changed size' during recursion
             if isinstance(v, (dict, list)): 
                 if isinstance(v, list):
@@ -47,10 +50,12 @@ class ConfigPatch(BasePatch):
     def apply(self, config_data: dict) -> bool:
         try:
             import nanobot.config.loader
-            from nanobot.config.schema import Config
+            from nanobot.config.schema import Config, Base
             
             # 1. Force the Config schema to ignore extra fields at runtime
+            # MANDATE: We patch both 'Base' (for child models) and 'Config' (for root)
             Config.model_config["extra"] = "ignore"
+            Base.model_config["extra"] = "ignore"
             
             # 2. Patch get_data_dir to point to strategic storage (D: drive)
             if not hasattr(nanobot.config.loader, "_orig_get_data_dir_strategic"):

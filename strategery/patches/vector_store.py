@@ -2,8 +2,10 @@ import os
 import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from strategery.strategic_logger import strategic_logger
+from strategery.strategic_logger import get_logger
 from .vsa import VectorStoreInterface
+
+strategic_logger = get_logger()
 
 class StrategicVectorStore(VectorStoreInterface):
     """

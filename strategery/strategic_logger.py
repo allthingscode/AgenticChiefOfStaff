@@ -13,13 +13,21 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     """
     Sets up a unified logger for all strategic patches.
     Outputs to both a rotating-style file and the console.
-    If log_dir is provided, it re-configures the file logger.
+    If log_dir is provided or STRATEGIC_LOG_DIR is changed, it re-configures the file logger.
     """
     global LOG_DIR, LOG_FILE
     
-    if log_dir:
-        LOG_DIR = Path(log_dir)
-        LOG_FILE = LOG_DIR / "strategic.log"
+    # 1. Determine target log directory
+    env_log_dir = os.environ.get("STRATEGIC_LOG_DIR")
+    target_dir = Path(log_dir or env_log_dir or "./logs")
+    target_file = target_dir / "strategic.log"
+
+    # 2. Check if we need to re-configure (log_dir changed)
+    needs_reconfig = False
+    if target_file != LOG_FILE:
+        needs_reconfig = True
+        LOG_DIR = target_dir
+        LOG_FILE = target_file
 
     # Create log directory if it doesn't exist
     try:
@@ -34,18 +42,18 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
-    # Avoid duplicate handlers
-    if logger.hasHandlers():
-        # If we are re-configuring with a specific log_dir, 
-        # we need to remove old file handlers
-        if log_dir:
-            handlers = logger.handlers[:]
-            for handler in handlers:
-                if isinstance(handler, logging.FileHandler):
-                    logger.removeHandler(handler)
-                    handler.close()
-        else:
-            return logger
+    # Avoid duplicate handlers unless re-configuring
+    if logger.hasHandlers() and not needs_reconfig:
+        return logger
+
+    # If we are re-configuring (due to change in log_dir/env), 
+    # we MUST remove old file handlers to prevent pollution.
+    if needs_reconfig:
+        handlers = logger.handlers[:]
+        for handler in handlers:
+            if isinstance(handler, logging.FileHandler):
+                logger.removeHandler(handler)
+                handler.close()
 
     # 1. File Handler (UTF-8 safe)
     try:
@@ -73,4 +81,13 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     return logger
 
 # Global singleton logger
-strategic_logger = setup_strategic_logger()
+_logger = None
+
+def get_logger():
+    """Always returns the latest correctly-configured logger."""
+    global _logger
+    _logger = setup_strategic_logger()
+    return _logger
+
+# Legacy compatibility (initialized once, but can be updated via setup_strategic_logger)
+strategic_logger = get_logger()

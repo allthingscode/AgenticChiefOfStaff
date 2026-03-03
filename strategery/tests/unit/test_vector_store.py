@@ -86,19 +86,19 @@ async def test_strategic_litellm_embed_success():
     
     mock_client = MagicMock()
     mock_result = MagicMock()
-    # Mock return from client.models.embed_content
+    # Mock return from client.aio.models.embed_content
     # item.values for each item in result.embeddings
     mock_item = MagicMock()
     mock_item.values = [0.1, 0.2, 0.3]
     mock_result.embeddings = [mock_item]
-    mock_client.models.embed_content = AsyncMock(return_value=mock_result)
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_result)
     
     with patch("google.genai.Client", return_value=mock_client):
         embeddings = await strategic_litellm_embed(mock_self, "hello world")
         
         assert len(embeddings) == 1
         assert embeddings[0] == [0.1, 0.2, 0.3]
-        mock_client.models.embed_content.assert_called_once_with(
+        mock_client.aio.models.embed_content.assert_called_once_with(
             model="models/gemini-embedding-001",
             contents="hello world"
         )
