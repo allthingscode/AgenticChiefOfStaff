@@ -303,7 +303,10 @@ class SubagentPatch(BasePatch):
                     cmd = str(args.get("command", "")).lower()
                     
                     # A. CLI/File Bypass Detection
-                    bypass_patterns = ["nanobot mcp", "nanobot status", "history.md", "findstr /c", "grep -i"]
+                    bypass_patterns = [
+                        "nanobot mcp", "nanobot status", "history.md", "findstr", 
+                        "grep", "cat ", "type ", "tail ", "get-content"
+                    ]
                     if any(p in cmd for p in bypass_patterns):
                         strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
                         return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."

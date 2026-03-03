@@ -109,3 +109,18 @@ async def test_history_md_bypass_blocking(subagent_patch):
     cmd_args2 = {"command": "cat history.md"}
     res2 = await registry.execute("exec", cmd_args2)
     assert "Access Denied" in res2
+
+    # 3. Block type on history
+    cmd_args3 = {"command": "type D:\\Nanobot_Storage\\workspace\\memory\\history.md"}
+    res3 = await registry.execute("exec", cmd_args3)
+    assert "Access Denied" in res3
+
+    # 4. Block tail on history
+    cmd_args4 = {"command": "tail -n 5 history.md"}
+    res4 = await registry.execute("exec", cmd_args4)
+    assert "Access Denied" in res4
+
+    # 5. Block PowerShell Get-Content on history
+    cmd_args5 = {"command": "powershell -command \"Get-Content history.md -Tail 5\""}
+    res5 = await registry.execute("exec", cmd_args5)
+    assert "Access Denied" in res5

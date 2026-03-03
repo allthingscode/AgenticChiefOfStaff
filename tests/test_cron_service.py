@@ -43,17 +43,21 @@ async def test_running_service_honors_external_disable(tmp_path) -> None:
     service = CronService(store_path, on_job=on_job)
     job = service.add_job(
         name="external-disable",
-        schedule=CronSchedule(kind="every", every_ms=200),
+        schedule=CronSchedule(kind="every", every_ms=1000),
         message="hello",
     )
     await service.start()
     try:
         external = CronService(store_path)
+        # Give service a moment to initialize and arm
+        await asyncio.sleep(0.1)
         updated = external.enable_job(job.id, enabled=False)
         assert updated is not None
         assert updated.enabled is False
 
-        await asyncio.sleep(0.35)
+        # If it wasn't disabled, it would run at 1000ms. 
+        # We wait 1500ms to be sure it DOESN'T run.
+        await asyncio.sleep(1.5)
         assert called == []
     finally:
         service.stop()
