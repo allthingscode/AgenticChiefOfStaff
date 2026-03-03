@@ -28,11 +28,14 @@ def strategic_migrate_config(data, config_data_capture=None):
         ]
         for key in keys_to_strip:
             obj.pop(key, None)
-            
-        for v in list(obj.values()): # Use list to avoid 'dictionary changed size' during recursion
-            if isinstance(v, (dict, list)): 
+
+        for k, v in list(obj.items()):
+            if k in keys_to_strip:
+                obj.pop(k, None)
+                continue
+            if isinstance(v, (dict, list)):
                 if isinstance(v, list):
-                    for item in v: 
+                    for item in v:
                         if isinstance(item, dict): _strip_recursively(item)
                 else:
                     _strip_recursively(v)
@@ -42,7 +45,7 @@ def strategic_migrate_config(data, config_data_capture=None):
 
 class ConfigPatch(BasePatch):
     """Handles global configuration overrides, BOM handling, and RAW_CONFIG management."""
-    
+
     @property
     def name(self) -> str:
         return "Configuration & Schema Overrides"
@@ -51,23 +54,43 @@ class ConfigPatch(BasePatch):
         try:
             import nanobot.config.loader
             from nanobot.config.schema import Config, Base
-            
+
             # 1. Force the Config schema to ignore extra fields at runtime
             # MANDATE: We patch both 'Base' (for child models) and 'Config' (for root)
-            Config.model_config["extra"] = "ignore"
-            Base.model_config["extra"] = "ignore"
-            
+            # Use dictionary update to be safe with model_config which might be a mapping or a dict
+            if isinstance(Config.model_config, dict):
+                Config.model_config["extra"] = "ignore"
+            else:
+                # Fallback for newer Pydantic versions where it might be a ConfigDict object
+                setattr(Config, "model_config", {**Config.model_config, "extra": "ignore"})
+
+            if isinstance(Base.model_config, dict):
+                Base.model_config["extra"] = "ignore"
+            else:
+                setattr(Base, "model_config", {**Base.model_config, "extra": "ignore"})
+
             # 2. Patch get_data_dir to point to strategic storage (D: drive)
             if not hasattr(nanobot.config.loader, "_orig_get_data_dir_strategic"):
                 nanobot.config.loader._orig_get_data_dir_strategic = nanobot.config.loader.get_data_dir
-                
+
                 # Derivation helper to avoid circular imports of STORAGE_ROOT from .
                 def _get_strategic_data_dir():
                     from .config import load_strategic_context
                     _, _, storage_root = load_strategic_context()
                     return storage_root
-                    
+
                 nanobot.config.loader.get_data_dir = _get_strategic_data_dir
+
+                # Also patch Config.workspace_path to be safe (it often uses defaults.workspace)
+                # This ensures any code using config.workspace_path also sees the strategic root
+                if hasattr(Config, "workspace_path"):
+                    @property
+                    def _strategic_workspace_path(self):
+                        from .config import load_strategic_context
+                        _, _, storage_root = load_strategic_context()
+                        return storage_root / "workspace"
+
+                    Config.workspace_path = _strategic_workspace_path
 
             # 3. Global BOM-Safe 'open' wrapper for JSON files
             if not hasattr(builtins, "_orig_open_strategic"):

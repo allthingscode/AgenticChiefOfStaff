@@ -207,12 +207,13 @@ class SubagentPatch(BasePatch):
             
             def _patched_build_subagent_prompt(self):
                 prompt = self._orig_build_subagent_prompt_strategic()
-                
+
                 # Append Strategic Specialist Instructions
                 prompt += "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
                 prompt += "1. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
                 prompt += "2. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
-                prompt += "3. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
+                prompt += "3. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. The file `HISTORY.md` is RETIRED.\n"
+                prompt += "4. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
                 return prompt
 
             SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt

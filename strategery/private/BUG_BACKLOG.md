@@ -11,6 +11,8 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 | BUG-032 | Tool Stripping Initialization Bug | High | Inconsistent tool stripping during startup. **Update:** Added diagnostic telemetry to track registration turns. |
 | BUG-033 | Test Infrastructure Failure (Core & Strategic) | Medium | Core and Strategic tests fail to run out-of-the-box due to missing `pythonpath` configuration and `strategery/__init__.py`. Core `test_cron_service.py` is failing due to a race condition. |
 | BUG-034 | Telegram Polling Resilience (High) | Defended | Network errors (`httpx.ReadError`) during Telegram polling cause fatal process termination. Fixed via monkey-patch in `TelegramPatch` with exponential backoff. |
+| BUG-035 | Memory Path Discrepancy | Resolved | Subagents/Health Checks now point to `D:\Nanobot_Storage\workspace\memory` via updated SUITE.md and Subagent Specialist Instructions. |
+| BUG-036 | Retired File Dependency | Defended | Subagents/Health Checks are now explicitly instructed that `HISTORY.md` is retired and to use the Vector Store/Journal system. |
 
 ---
 *Created on 2026-03-01 by nanobot 🐾*

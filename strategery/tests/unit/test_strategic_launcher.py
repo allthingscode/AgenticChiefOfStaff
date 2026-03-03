@@ -37,17 +37,20 @@ def test_infra_patch_apply():
         patch_inst.apply({})
         mock_set_policy.assert_called()
 
-def test_config_patch_data_dir_redirection():
+def test_config_patch_data_dir_redirection(tmp_path):
     """Verify that ConfigPatch redirects the core data directory."""
-    from strategery.patches.config import load_strategic_context
-    _, _, expected_root = load_strategic_context()
+    custom_root = tmp_path / "custom_storage"
     
-    patch_inst = ConfigPatch()
-    patch_inst.apply({})
-    
-    from nanobot.config.loader import get_data_dir
-    assert get_data_dir() == expected_root
+    # Mock load_strategic_context so it returns our custom root
+    # This avoids issues with mocking Path.home globally
+    with patch("strategery.patches.config.load_strategic_context", return_value=({}, "test@example.com", custom_root)):
+        # Apply Patch
+        patch_inst = ConfigPatch()
+        patch_inst.apply({})
 
+        # Verify Redirection
+        from nanobot.config.loader import get_data_dir
+        assert Path(get_data_dir()) == custom_root
 @pytest.mark.asyncio
 async def test_subagent_patch_model_routing():
     """Verify that SubagentPatch correctly identifies specialist models."""
