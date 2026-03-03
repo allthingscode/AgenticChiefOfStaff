@@ -290,10 +290,22 @@ class MemoryPatch(BasePatch):
                         strategic_logger.info(f"Memory Flush triggered.")
                         flush_prompt = flush_cfg.get("prompt", "Store durable memories now.")
                         sys_prompt = flush_cfg.get("systemPrompt", "Session nearing compaction.")
+                        
+                        # HARDENING (BUG-024): Explicitly tell the agent NOT to use restricted tools during flush.
+                        # We append a mandate to the system prompt for the flush turn.
+                        hardened_sys_prompt = (
+                            f"{sys_prompt}\n\n"
+                            "### ⚖️ STRATEGIC MANDATE (FLUSH MODE):\n"
+                            "1. DO NOT use 'exec' to write to HISTORY.md or any log files.\n"
+                            "2. DO NOT attempt to 'save' memory yourself. The system's automated 'save_memory' protocol will handle this.\n"
+                            "3. Your ONLY task is to provide a brief acknowledgement or a final thought before the session is compacted.\n"
+                            "4. STOP your turn immediately after your response."
+                        )
+                        
                         history = session.get_history(max_messages=self.memory_window)
                         flush_msgs = self.context.build_messages(
                             history=history,
-                            current_message=f"""### SYSTEM NOTIFICATION: {sys_prompt}
+                            current_message=f"""### SYSTEM NOTIFICATION: {hardened_sys_prompt}
 
 {flush_prompt}""",
                             channel=msg.channel, chat_id=msg.chat_id

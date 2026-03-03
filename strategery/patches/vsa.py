@@ -50,8 +50,17 @@ class VectorStoreFactory:
             strategic_logger.debug(f"VectorStoreFactory initialized singleton store instance at {storage_root or 'default'}")
 
         # MANDATE: If a provider is passed to get_store, ensure the instance is using it.
-        if provider and hasattr(cls._instance, "provider"):
-            cls._instance.provider = provider
+        if provider:
+            if hasattr(cls._instance, "provider"):
+                # Track provider injection to diagnose BUG-022
+                old_p = getattr(cls._instance, "provider", None)
+                if old_p != provider:
+                    cls._instance.provider = provider
+                    p_type = type(provider).__name__
+                    has_embed = hasattr(provider, "embed")
+                    strategic_logger.debug(f"VectorStoreFactory injected provider: type={p_type}, has_embed={has_embed}")
+            else:
+                strategic_logger.warning("VectorStoreFactory: Store instance missing 'provider' attribute.")
 
         return cls._instance
 

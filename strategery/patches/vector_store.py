@@ -60,7 +60,9 @@ class StrategicVectorStore(VectorStoreInterface):
     async def add_entry(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Vectorizes and adds a single entry to the store."""
         if not self.provider or not hasattr(self.provider, "embed"):
-            strategic_logger.error("Vector Store: No embedding provider available.")
+            p_type = type(self.provider).__name__ if self.provider else "NoneType"
+            has_embed = hasattr(self.provider, "embed") if self.provider else False
+            strategic_logger.error(f"Vector Store: No embedding provider available. (provider={p_type}, has_embed={has_embed})")
             return False
 
         try:

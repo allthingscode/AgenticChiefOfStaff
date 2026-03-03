@@ -32,6 +32,8 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
 - **Signal Handling:** Hardened signal and loop retrieval for multi-threaded environments.
+- **Diagnostic Logging (BUG-022):** Integrated provider tracking in `VectorStoreFactory` to resolve singleton injection race conditions.
+- **Resilient Embedding (BUG-023):** Hardened retry logic (5 attempts) with specific handlers for transient API errors vs. permanent 400/401/403 failures.
 - **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
 
 ### **6. Graph Capabilities (NanoGraph)**

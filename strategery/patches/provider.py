@@ -50,6 +50,12 @@ async def strategic_litellm_embed(self, input_text):
                 )
                 return [item.values for item in result.embeddings]
             except Exception as api_err:
+                err_str = str(api_err)
+                # DO NOT retry on 400/401/403 errors (Permanent)
+                if any(x in err_str for x in ["400", "401", "403", "INVALID_ARGUMENT", "PERMISSION_DENIED", "API_KEY_INVALID"]):
+                    strategic_logger.error(f"Permanent Embedding API Error: {api_err}")
+                    raise api_err
+
                 if attempt == max_retries - 1:
                     # Final attempt failed
                     raise api_err
