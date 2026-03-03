@@ -178,6 +178,15 @@ class MemoryPatch(BasePatch):
                     try:
                         from pathlib import Path
                         import asyncio
+                        
+                        # HARDENING (BUG-022): Ensure provider has the strategic embed method
+                        # LiteLLMProvider is patched in ProviderPatch, but if consolidation runs
+                        # early or in a way that bypasses the patch, we re-verify here.
+                        if not hasattr(provider, "embed"):
+                            from strategery.patches.provider import strategic_litellm_embed
+                            provider.embed = strategic_litellm_embed.__get__(provider, type(provider))
+                            strategic_logger.debug(f"Memory consolidation background task: Late-patched provider with embed.")
+                        
                         vec_store = VectorStoreFactory.get_store(provider=provider)
                         
                         entry = args.get("history_entry", "No summary available.")

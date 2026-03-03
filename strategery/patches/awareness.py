@@ -45,8 +45,10 @@ class AwarenessPatch(BasePatch):
 - **Specialist Access:** Subagents have exclusive access to `gemini-3-pro-preview` (Architect) and `gemini-2.5-flash-lite` (Researcher) with high-power surgical tools.
 
 ## ⚙️ SYSTEM STATE
+- **Retired Files (READ-ONLY):** `HISTORY.md` is **RETIRED**. You are strictly **FORBIDDEN** from attempting to read or write to `HISTORY.md` via `exec` or any other tool.
+- **Source of Truth:** Your long-term memory is managed via the **Vector Store (ChromaDB)** and the **Daily Journal** (`YYYY-MM-DD.md`).
+- **Context Retrieval:** Rely on the **RETRIEVED HISTORICAL CONTEXT (RAG)** provided in your history. If you need more data, `spawn` a **Researcher Specialist** to audit the journals.
 - **Storage:** All logs and long-term memory are redirected to `D:/Nanobot_Storage`.
-- **Memory:** Vector Store (ChromaDB) is the source of truth for durable context.
 - **Upstream Security:** You are strictly forbidden from modifying files in `nanobot/`. All logic must be implemented via strategic patches.
 """
         with open(awareness_path, "w", encoding="utf-8-sig") as f:
