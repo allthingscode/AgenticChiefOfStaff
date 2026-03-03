@@ -6,13 +6,9 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 
 | ID | Title | Priority | Description |
 |---|---|---|---|
-| BUG-030 | Regression: Vector Store Embedding Provider Loss | Critical | Vector Store singleton loses its embedding provider reference during or after memory consolidation. **Update:** Implemented defensive late-patching and diagnostic logging. |
-| BUG-031 | Failure: Tool Stripping & Mandate Bypass (Main Agent) | High | Main Agent continues to attempt restricted tool calls (e.g., `mcp_google-ai-search`) and mandate bypasses via `exec`. |
-| BUG-032 | Tool Stripping Initialization Bug | High | Inconsistent tool stripping during startup. **Update:** Added diagnostic telemetry to track registration turns. |
-| BUG-033 | Test Infrastructure Failure (Core & Strategic) | Medium | Core and Strategic tests fail to run out-of-the-box due to missing `pythonpath` configuration and `strategery/__init__.py`. Core `test_cron_service.py` is failing due to a race condition. |
-| BUG-034 | Telegram Polling Resilience (High) | Defended | Network errors (`httpx.ReadError`) during Telegram polling cause fatal process termination. Fixed via monkey-patch in `TelegramPatch` with exponential backoff. |
-| BUG-035 | Memory Path Discrepancy | Resolved | Subagents/Health Checks now point to `D:\Nanobot_Storage\workspace\memory` via updated SUITE.md and Subagent Specialist Instructions. |
-| BUG-036 | Retired File Dependency | Defended | Subagents/Health Checks are now explicitly instructed that `HISTORY.md` is retired and to use the Vector Store/Journal system. |
+| BUG-031 | Monitoring: Tool Stripping & Mandate Bypass | High | Main Agent mandate bypasses (via `exec`) are currently blocked by filters, but we are monitoring for new creative attempts (e.g. `type`, `cat`, `Get-Content`). |
+| BUG-032 | Monitoring: Tool Stripping Initialization | High | Monitoring the `ToolRegistry` via diagnostic telemetry to ensure restricted tools are stripped across all session startup scenarios. |
+| BUG-033 | Core Test Race Condition (test_cron_service.py) | Medium | Core `test_cron_service.py` is occasionally flaky. Increased wait time to 1500ms, but monitoring for further regressions. |
 
 ---
 *Created on 2026-03-01 by nanobot 🐾*
