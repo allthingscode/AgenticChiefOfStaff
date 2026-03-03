@@ -31,10 +31,12 @@ async def strategic_litellm_embed(self, input_text):
     """
     try:
         from google import genai
-        strategic_logger.info(f"GoogleGenAI embed: model={self.embedding_model}")
+        # MANDATE: Fallback to models/gemini-embedding-001 if not set
+        model_name = getattr(self, "embedding_model", "models/gemini-embedding-001")
+        strategic_logger.info(f"GoogleGenAI embed: model={model_name}")
         
-        max_retries = 3
-        retry_delay = 1.0
+        max_retries = 5
+        retry_delay = 2.0
         
         for attempt in range(max_retries):
             try:
@@ -43,7 +45,7 @@ async def strategic_litellm_embed(self, input_text):
                 
                 # USE ASYNC CLIENT: client.aio.models.embed_content
                 result = await client.aio.models.embed_content(
-                    model=self.embedding_model,
+                    model=model_name,
                     contents=input_text
                 )
                 return [item.values for item in result.embeddings]
@@ -78,6 +80,15 @@ class ProviderPatch(BasePatch):
 
     def _patch_litellm_provider(self):
         from nanobot.providers.litellm_provider import LiteLLMProvider
+        
+        # 1. Attach Embedding Method & Model
+        if not hasattr(LiteLLMProvider, "embed"):
+            LiteLLMProvider.embed = strategic_litellm_embed
+            # Default model for Strategic Edition (3072 dims)
+            LiteLLMProvider.embedding_model = "models/gemini-embedding-001"
+            strategic_logger.debug("Patched LiteLLMProvider with strategic embedding.")
+
+        # 2. Patch Chat for Logging & Retries
         if not hasattr(LiteLLMProvider, "_orig_chat_strategic"):
             LiteLLMProvider._orig_chat_strategic = LiteLLMProvider.chat
             
