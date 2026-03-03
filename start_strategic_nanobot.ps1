@@ -93,6 +93,7 @@ function Stop-NanobotProcesses {
 }
 
 Write-Host "--- Initializing Nanobot Strategic Edition ---" -ForegroundColor Cyan
+"--- Initializing Nanobot Strategic Edition --- ($(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))" | Add-Content -Path $LogFile
 Write-Host "Press CTRL+C at any time to stop the gateway and exit." -ForegroundColor White
 Write-Host "Logging to: $LogFile" -ForegroundColor Gray
 
