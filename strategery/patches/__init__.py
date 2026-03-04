@@ -12,6 +12,7 @@ from .provider import ProviderPatch
 from .memory import MemoryPatch
 from .subagent import SubagentPatch
 from .telegram import TelegramPatch
+from .cron import CronPatch
 from .vector_store import StrategicVectorStore
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
 
@@ -25,7 +26,8 @@ class PatchRegistry:
             ProviderPatch(),
             MemoryPatch(),
             SubagentPatch(),
-            TelegramPatch()
+            TelegramPatch(),
+            CronPatch()
         ]
 
     def apply_all(self, config_data: dict, **kwargs) -> dict:

@@ -167,3 +167,17 @@ This file archives technical issues and regressions that have been resolved and 
 
 ---
 *Archived on 2026-03-03 by nanobot 🐾*
+
+## **[BUG-037] Health Suite Syntax Error (SUITE.md)**
+- **Status:** FIXED & VERIFIED
+- **Priority:** HIGH
+- **Progress:** Fixed SyntaxError in `SUITE.md` by moving comments outside of backticks in the pytest command. Also fixed AsyncExitStack shutdown hook in `infra.py` and improved `nanobot.cmd` path resolution.
+- **Description:** Automated health suite was failing due to improper command formatting and cleanup errors.
+
+
+## **[BUG-033] Core Test Race Condition (test_cron_service.py)**
+- **Status:** FIXED & VERIFIED
+- **Priority:** MEDIUM
+- **Progress:** Implemented `CronPatch` to enhance `jobs.json` reload detection using file-size monitoring.
+- **Description:** Fixed flaky core tests on Windows where low mtime resolution caused missed reload triggers.
+

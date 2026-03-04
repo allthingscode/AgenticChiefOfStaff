@@ -8,7 +8,8 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 |---|---|---|---|
 | BUG-031 | Monitoring: Tool Stripping & Mandate Bypass | High | Main Agent mandate bypasses (via `exec`) are currently blocked by filters, but we are monitoring for new creative attempts (e.g. `type`, `cat`, `Get-Content`). |
 | BUG-032 | Monitoring: Tool Stripping Initialization | High | Monitoring the `ToolRegistry` via diagnostic telemetry to ensure restricted tools are stripped across all session startup scenarios. |
-| BUG-033 | Core Test Race Condition (test_cron_service.py) | Medium | Core `test_cron_service.py` is occasionally flaky. Increased wait time to 1500ms, but monitoring for further regressions. |
+| BUG-038 | Google AI Search: Shallow Results | Medium | `search_ai` returning 0 citations/sources on valid queries. Possible parsing regression. |
+| BUG-039 | Subagent Task Truncation (Logging) | Low | `spawn` tool call logs are truncating task descriptions, making auditing difficult. |
 
 ---
 *Created on 2026-03-01 by nanobot 🐾*

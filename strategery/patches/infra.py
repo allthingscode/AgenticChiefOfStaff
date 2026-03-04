@@ -104,7 +104,7 @@ class StrategicMcpManager:
                         self._connections[name] = (session, stack, tools_response.tools)
                         
                         # Register cleanup
-                        lifecycle_manager.register_shutdown_hook(stack.aclose())
+                        lifecycle_manager.register_shutdown_hook(stack.aclose)
                     else:
                         strategic_logger.debug(f"[StrategicMCP] Reusing existing connection for '{name}' for Subagent [{subagent_id}].")
 
