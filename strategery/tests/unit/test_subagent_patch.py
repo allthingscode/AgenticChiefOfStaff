@@ -87,6 +87,10 @@ async def test_subagent_prompt_patch(subagent_patch):
     from pathlib import Path
     
     # Apply patch
+    if hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
+        SubagentManager._build_subagent_prompt = SubagentManager._orig_build_subagent_prompt_strategic
+        del SubagentManager._orig_build_subagent_prompt_strategic
+        
     subagent_patch._patch_subagent_manager({})
     
     # Mock dependencies for SubagentManager init
