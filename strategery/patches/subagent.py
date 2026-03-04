@@ -388,7 +388,8 @@ class SubagentPatch(BasePatch):
                         "nanobot mcp", "nanobot status", "history.md", "findstr", 
                         "grep", "cat ", "type ", "tail ", "get-content", "read-host",
                         "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod"
-                    ]                    if any(p in cmd for p in bypass_patterns):
+                    ]
+                    if any(p in cmd for p in bypass_patterns):
                         strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
                         return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
 
