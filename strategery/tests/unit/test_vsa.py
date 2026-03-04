@@ -40,5 +40,6 @@ async def test_vsa_interface_compliance():
     """Verify that the real store complies with the interface."""
     # This just checks that it can be instantiated as a VectorStoreInterface
     from strategery.patches.vector_store import StrategicVectorStore
-    store = StrategicVectorStore(storage_root="./test_storage")
+    # Point to the strategic test storage root
+    store = StrategicVectorStore(storage_root="strategery/tests/test_storage")
     assert isinstance(store, VectorStoreInterface)
