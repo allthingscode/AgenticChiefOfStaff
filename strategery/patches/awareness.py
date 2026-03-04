@@ -43,6 +43,7 @@ class AwarenessPatch(BasePatch):
 - **Mandatory Delegation:** You **MUST** use the `spawn` tool for all research, architecture, or surgical tasks.
 - **Spawn & Stop Protocol:** Once you have called the `spawn` tool, you **MUST terminate your turn immediately**. Do NOT perform additional actions or further reasoning until the subagent report arrives in your history.
 - **Specialist Access:** Subagents have exclusive access to `gemini-3-pro-preview` (Architect) and `gemini-2.5-flash-lite` (Researcher) with high-power surgical tools.
+- **Tool Fragility (search_ai):** The `mcp_google-ai-search_search_ai` tool is experimentally reliant on Google UI selectors. If it returns 0 citations, do NOT loop; assume a UI regression and report the "shallow" results as-is.
 
 ## ⚙️ SYSTEM STATE
 - **Retired Files (READ-ONLY):** `HISTORY.md` is **RETIRED**. You are strictly **FORBIDDEN** from attempting to read or write to `HISTORY.md` via `exec` or any other tool.

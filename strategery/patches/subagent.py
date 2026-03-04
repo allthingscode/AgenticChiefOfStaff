@@ -134,7 +134,7 @@ class SubagentPatch(BasePatch):
             
             async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher"):
                 task_id = str(uuid.uuid4())[:8]
-                display_label = label or task[:30] + ("..." if len(task) > 30 else "")
+                display_label = label or task[:100] + ("..." if len(task) > 100 else "")
                 origin = {"channel": origin_channel, "chat_id": origin_chat_id}
 
                 bg_task = asyncio.create_task(
@@ -159,6 +159,10 @@ class SubagentPatch(BasePatch):
 
         # 2. Replace the entire _run_subagent to inject MCP and Specialist Logic
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher"):
+            from .config import load_strategic_context
+            _, _, storage_root = load_strategic_context()
+            strategic_workspace = storage_root / "workspace"
+
             strategic_logger.info(f"Subagent [{task_id}] starting task: {label}")
             
             # Specialist model selection from config
@@ -178,13 +182,16 @@ class SubagentPatch(BasePatch):
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
                     
-                    allowed_dir = self.workspace if self.restrict_to_workspace else None
-                    tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-                    tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-                    tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-                    tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
+                    # MANDATE: Subagents MUST use the strategic workspace root on D:
+                    subagent_workspace = strategic_workspace
+                    allowed_dir = subagent_workspace if self.restrict_to_workspace else None
+                    
+                    tools.register(ReadFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
+                    tools.register(WriteFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
+                    tools.register(EditFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
+                    tools.register(ListDirTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
                     tools.register(ExecTool(
-                        working_dir=str(self.workspace),
+                        working_dir=str(subagent_workspace),
                         timeout=self.exec_config.timeout,
                         restrict_to_workspace=self.restrict_to_workspace,
                         path_append=self.exec_config.path_append,
@@ -257,10 +264,12 @@ class SubagentPatch(BasePatch):
                                 })
                         else:
                             final_result = response.content
+                            if response.finish_reason == "error":
+                                raise Exception(f"Subagent LLM Error: {final_result}")
                             break
 
                     if final_result is None:
-                        final_result = "Task completed but no final response was generated."
+                        raise Exception(f"Subagent Task Timeout: No final response generated after {max_iterations} iterations.")
 
                     strategic_logger.info(f"Subagent [{task_id}] completed successfully.")
                     await self._announce_result(task_id, label, task, final_result, origin, "ok")
