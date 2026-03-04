@@ -119,19 +119,49 @@ def list_calendars():
 
 @mcp.tool()
 def list_calendar_events(calendar_id: str = "primary", max_results: int = 10):
-    """Lists upcoming events from a specific calendar (Read-Only)."""
+    """
+    Lists upcoming events from a specific calendar (Read-Only). 
+    Use calendar_id='all' to fetch and merge events from ALL available calendars.
+    """
     service = get_service("calendar")
     # Use timezone-aware UTC datetime to avoid DeprecationWarning
     from datetime import UTC
     now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    results = service.events().list(
-        calendarId=calendar_id, 
-        timeMin=now, 
-        maxResults=max_results, 
-        singleEvents=True, 
-        orderBy='startTime'
-    ).execute()
-    return results.get("items", [])
+    
+    if calendar_id == "all":
+        calendars = list_calendars()
+        all_events = []
+        for cal in calendars:
+            cal_id = cal.get("id")
+            cal_name = cal.get("summary", "Unknown")
+            try:
+                results = service.events().list(
+                    calendarId=cal_id, 
+                    timeMin=now, 
+                    maxResults=max_results, 
+                    singleEvents=True, 
+                    orderBy='startTime'
+                ).execute()
+                events = results.get("items", [])
+                for ev in events:
+                    ev["_calendar_name"] = cal_name # Inject calendar name for context
+                all_events.extend(events)
+            except Exception as e:
+                # Skip calendars we can't access
+                continue
+        
+        # Sort combined events by start time
+        all_events.sort(key=lambda x: x.get("start", {}).get("dateTime") or x.get("start", {}).get("date") or "")
+        return all_events[:max_results*2] # Return a bit more for the combined view
+    else:
+        results = service.events().list(
+            calendarId=calendar_id, 
+            timeMin=now, 
+            maxResults=max_results, 
+            singleEvents=True, 
+            orderBy='startTime'
+        ).execute()
+        return results.get("items", [])
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":

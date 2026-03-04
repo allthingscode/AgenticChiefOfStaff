@@ -23,13 +23,15 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 
 ### **4. Specialist Economy & Delegation**
 - **Enforced Delegation:** The Main Agent is strictly blocked from executing high-power surgical tools (Google, AI Search, Email).
-- **Specialist Routing:** Automatic model selection for subagents (e.g. `gemini-3-pro-preview` for architects, `gemini-2.5-flash-lite` for researchers).
+- **Explicit Specialist Routing:** Orchestrator-driven delegation where the agent chooses between **'researcher'** (default) or **'architect'** types.
+- **Model Isolation:** Specialist models are strictly assigned by the system (e.g., `gemini-1.5-pro` for architects, `gemini-1.5-flash` for researchers).
 - **Circuit Breakers:** Hard-lock mechanism prevents the Main Agent from looping or abusing blocked tool registries.
 - **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
 - **Mandate Enforcement:** Hardened system prompts prevent bypass attempts, ensuring strict adherence to the delegation model and automated history management.
 
 ### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
+- **Persistent MCP Connections:** `StrategicMcpManager` maintains persistent server sessions across subagent spawns to eliminate startup latency.
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
 - **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.

@@ -4,34 +4,18 @@ import importlib.util
 import re
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from .base import BasePatch
 from strategery.strategic_logger import strategic_logger
-
-def strategic_select_specialist_model(task, label, specialists_config):
-    """
-    Determines if a task requires a specialist model based on keywords and context.
-    """
-    task_lower = ((label or "") + " " + task).lower()
-    
-    for name, spec in specialists_config.items():
-        if any(kw.lower() in task_lower for kw in spec.get("keywords", [])):
-            return spec.get("model")
-            
-    if any(kw in task_lower for kw in ["research", "find", "search", "analyze", "report", "audit", "verify", "stale", "email"]): 
-        return specialists_config.get("researcher", {}).get("model")
-    elif any(kw in task_lower for kw in ["architect", "design", "structure", "plan", "refactor", "implement", "deploy"]): 
-        return specialists_config.get("architect", {}).get("model")
-        
-    return None
 
 class SubagentPatch(BasePatch):
     """
     Enforces a Specialist Economy:
     - High-power tools are BLOCKED from the Main Agent.
     - Subagents are granted Surgical Tools (including MCP) and assigned specialist models.
-    - Idle Polling Loops are detected and broken.
-    - CLI-based tool bypass via 'exec' is detected and blocked.
+    - Dynamic Specialist Routing: Orchestrator chooses 'researcher' or 'architect'.
+    - Specialist models are strictly tied to type; Orchestrator cannot dictate models.
     - Turn termination is ENFORCED after subagent spawn.
     """
     
@@ -53,9 +37,11 @@ class SubagentPatch(BasePatch):
         _, user_email, _ = load_strategic_context()
         
         try:
+            self._patch_spawn_tool()
             self._patch_subagent_manager(config_data)
             self._patch_tool_registry(user_email)
             self._patch_heartbeat(config_data)
+            self._patch_context_builder()
             return True
         except Exception as e:
             strategic_logger.error(f"Subagent patch error: {e}")
@@ -82,25 +68,110 @@ class SubagentPatch(BasePatch):
             except Exception as e:
                 strategic_logger.error(f"Error loading strategic tool {file.name}: {e}")
 
+    def _patch_spawn_tool(self):
+        from nanobot.agent.tools.spawn import SpawnTool
+        
+        # 1. Update Tool Definition with 'specialist' parameter
+        if not hasattr(SpawnTool, "_orig_parameters_strategic"):
+            SpawnTool._orig_parameters_strategic = SpawnTool.parameters
+            
+            @property
+            def _patched_parameters(self):
+                return {
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "The task for the subagent to complete",
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "Optional short label for the task (for display)",
+                        },
+                        "specialist": {
+                            "type": "string",
+                            "enum": ["researcher", "architect"],
+                            "description": "The type of specialist required. Default: researcher. Use 'architect' for design, NanoGraph, or complex reasoning.",
+                        },
+                    },
+                    "required": ["task"],
+                }
+
+            SpawnTool.parameters = _patched_parameters
+
+        # 2. Update Tool Execution to pass 'specialist'
+        if not hasattr(SpawnTool, "_orig_execute_strategic"):
+            SpawnTool._orig_execute_strategic = SpawnTool.execute
+            
+            async def _patched_execute(self, task: str, label: str | None = None, specialist: str = "researcher", **kwargs):
+                # Ensure specialist is one of the allowed types, otherwise default to researcher
+                if specialist not in ["researcher", "architect"]:
+                    specialist = "researcher"
+                    
+                return await self._manager.spawn(
+                    task=task,
+                    label=label,
+                    origin_channel=self._origin_channel,
+                    origin_chat_id=self._origin_chat_id,
+                    session_key=self._session_key,
+                    specialist=specialist
+                )
+            
+            SpawnTool.execute = _patched_execute
+
     def _patch_subagent_manager(self, config_data):
         from nanobot.agent.subagent import SubagentManager
         from nanobot.agent.tools.registry import ToolRegistry
         from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
         from nanobot.agent.tools.shell import ExecTool
-        from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
-        from nanobot.agent.tools.mcp import connect_mcp_servers
+        from nanobot.agent.tools.web import WebFetchTool
         from nanobot.config.schema import Config
         from contextlib import AsyncExitStack
 
-        # Replace the entire _run_subagent to inject MCP and Specialist Logic
-        async def _strategic_run_subagent(self, task_id, task, label, origin):
+        # 1. Update spawn signature to accept specialist type
+        if not hasattr(SubagentManager, "_orig_spawn_strategic"):
+            SubagentManager._orig_spawn_strategic = SubagentManager.spawn
+            
+            async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher"):
+                task_id = str(uuid.uuid4())[:8]
+                display_label = label or task[:30] + ("..." if len(task) > 30 else "")
+                origin = {"channel": origin_channel, "chat_id": origin_chat_id}
+
+                bg_task = asyncio.create_task(
+                    self._run_subagent(task_id, task, display_label, origin, specialist)
+                )
+                self._running_tasks[task_id] = bg_task
+                if session_key:
+                    self._session_tasks.setdefault(session_key, set()).add(task_id)
+
+                def _cleanup(_: asyncio.Task) -> None:
+                    self._running_tasks.pop(task_id, None)
+                    if session_key and (ids := self._session_tasks.get(session_key)):
+                        ids.discard(task_id)
+                        if not ids:
+                            del self._session_tasks[session_key]
+
+                bg_task.add_done_callback(_cleanup)
+                strategic_logger.info(f"Spawned subagent [{task_id}]: {display_label} (specialist={specialist})")
+                return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
+
+            SubagentManager.spawn = _patched_spawn
+
+        # 2. Replace the entire _run_subagent to inject MCP and Specialist Logic
+        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher"):
             strategic_logger.info(f"Subagent [{task_id}] starting task: {label}")
             
-            specialists = config_data.get("agents", {}).get("specialists", {})
-            selected_model = strategic_select_specialist_model(task, label, specialists)
-            final_model = selected_model if selected_model else self.model
+            # Specialist model selection from config
+            specialists_cfg = config_data.get("agents", {}).get("specialists", {})
+            # Default to researcher if specialist is invalid
+            if specialist not in ["researcher", "architect"]:
+                specialist = "researcher"
+                
+            selected_model = specialists_cfg.get(specialist, {}).get("model")
             
-            strategic_logger.info(f"Subagent Specialist Assigned: model='{final_model}'")
+            # Final fallback to manager default model if config is missing
+            final_model = selected_model or self.model
+            strategic_logger.info(f"Subagent Specialist Assigned: {specialist} (model='{final_model}')")
 
             try:
                 async with AsyncExitStack() as stack:
@@ -118,18 +189,16 @@ class SubagentPatch(BasePatch):
                         restrict_to_workspace=self.restrict_to_workspace,
                         path_append=self.exec_config.path_append,
                     ))
-                    # MANDATE: web_search is DEPRECATED. Specialists use mcp_google-ai-search.
-                    # tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     
                     try:
                         from .config import strategic_migrate_config
+                        from .infra import strategic_mcp_manager
                         pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(config_data)))
                         validated_config = Config.model_validate(pydantic_cfg)
                         mcp_configs = validated_config.tools.mcp_servers
                         if mcp_configs:
-                            strategic_logger.debug(f"Subagent [{task_id}]: Connecting to {len(mcp_configs)} MCP servers...")
-                            await connect_mcp_servers(mcp_configs, tools, stack)
+                            await strategic_mcp_manager.get_tools_for_subagent(mcp_configs, tools, task_id)
                     except Exception as mcp_err:
                         strategic_logger.error(f"Subagent [{task_id}] MCP setup failed: {mcp_err}")
                     
@@ -137,7 +206,7 @@ class SubagentPatch(BasePatch):
 
                     system_prompt = self._build_subagent_prompt()
                     is_pro = "pro" in str(final_model).lower()
-                    specialist_header = "\n## SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools." if is_pro else ""
+                    specialist_header = f"\n## {specialist.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
                     
                     messages = [
                         {"role": "system", "content": system_prompt + specialist_header},
@@ -212,8 +281,9 @@ class SubagentPatch(BasePatch):
                 prompt += "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
                 prompt += "1. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
                 prompt += "2. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
-                prompt += "3. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. The file `HISTORY.md` is RETIRED.\n"
-                prompt += "4. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
+                prompt += "3. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS for all file operations (e.g., `D:\\Nanobot_Storage\\workspace\\memory\\MEMORY.md`). The file `HISTORY.md` is RETIRED.\n"
+                prompt += "4. **CALENDAR MANDATE:** When asked about scheduling, appointments, or events for 'today' or 'tomorrow', you MUST use the `mcp_google-surgical_list_calendar_events` tool with `calendar_id='all'` to ensure you capture events from all sub-calendars.\n"
+                prompt += "5. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
                 return prompt
 
             SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
@@ -300,7 +370,8 @@ class SubagentPatch(BasePatch):
                     return f"{result}\n\n### ⚖️ STRATEGIC MANDATE: STOP Turn\nYou have successfully spawned a specialist. Your turn is now OVER. You MUST NOT call any more tools (like findstr or status) to poll for the result. Wait for the subagent to report back via the message bus. Provide a short acknowledgement to the user now and END your response."
 
                 # 3. Loop Detection & CLI/File Bypass Prevention
-                if name_str == "exec" and not getattr(self, "_is_strategic_specialist", False):
+                is_specialist = getattr(self, "_is_strategic_specialist", False)
+                if name_str == "exec" and not is_specialist:
                     cmd = str(args.get("command", "")).lower()
                     
                     # A. CLI/File Bypass Detection
@@ -343,3 +414,27 @@ class SubagentPatch(BasePatch):
                     else: kwargs["model"] = config_model
                 self._orig_hb_init_strategic(*args, **kwargs)
             HeartbeatService.__init__ = _patched_hb_init
+
+    def _patch_context_builder(self):
+        from nanobot.agent.context import ContextBuilder
+        if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
+            ContextBuilder._orig_build_messages_strategic = ContextBuilder.build_messages
+            
+            def _patched_build_messages(self, history, current_message, **kwargs):
+                messages = self._orig_build_messages_strategic(history, current_message, **kwargs)
+                
+                # Identify System Message
+                for msg in messages:
+                    if msg.get("role") == "system":
+                        msg["content"] += "\n\n## ⚖️ DELEGATION & SPECIALIST ECONOMY\n"
+                        msg["content"] += "1. **DELEGATE BY DEFAULT:** For any background, research, or complex architectural task, use the 'spawn' tool.\n"
+                        msg["content"] += "2. **CHOOSE YOUR SPECIALIST:**\n"
+                        msg["content"] += "   - **'researcher' (DEFAULT):** Use for general facts, search, data collection, and simple file operations.\n"
+                        msg["content"] += "   - **'architect':** Use for design, NanoGraph extraction, high-level structural planning, or complex reasoning.\n"
+                        msg["content"] += "3. **NO MODEL CONTROL:** You choose the TYPE of specialist, but you have NO say in which AI model is used. The system handles model assignment automatically.\n"
+                        msg["content"] += "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear or the specialist choice is not obvious, STOP and ask the user for a directive.\n"
+                        msg["content"] += "5. **STOP AFTER SPAWN:** Once you call 'spawn', your turn is OVER. Provide a brief acknowledgement and end your response."
+                
+                return messages
+                
+            ContextBuilder.build_messages = _patched_build_messages

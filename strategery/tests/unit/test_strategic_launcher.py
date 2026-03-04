@@ -52,28 +52,6 @@ def test_config_patch_data_dir_redirection(tmp_path):
         from nanobot.config.loader import get_data_dir
         assert Path(get_data_dir()) == custom_root
 @pytest.mark.asyncio
-async def test_subagent_patch_model_routing():
-    """Verify that SubagentPatch correctly identifies specialist models."""
-    from strategery.patches.subagent import strategic_select_specialist_model
-    
-    specialists = {
-        "architect": {"keywords": ["design", "refactor"], "model": "pro-model"},
-        "researcher": {"keywords": ["search", "verify"], "model": "lite-model"}
-    }
-    
-    # 1. Matches Architect
-    model1 = strategic_select_specialist_model("Please refactor this code", "Architect", specialists)
-    assert model1 == "pro-model"
-    
-    # 2. Matches Researcher
-    model2 = strategic_select_specialist_model("Find information about X", "Research", specialists)
-    assert model2 == "lite-model"
-    
-    # 3. Default (None)
-    model3 = strategic_select_specialist_model("Just say hello", "Greeting", specialists)
-    assert model3 is None
-
-@pytest.mark.asyncio
 async def test_subagent_registry_initialization():
     """Verify that SubagentPatch correctly tags its tool registry."""
     patch_inst = SubagentPatch()

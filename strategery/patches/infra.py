@@ -58,3 +58,63 @@ class InfraPatch(BasePatch):
 
         return True
 
+class StrategicMcpManager:
+    """
+    Manages persistent MCP server connections across subagent spawns.
+    Reduces startup overhead and improves responsiveness.
+    """
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(StrategicMcpManager, cls).__new__(cls)
+            cls._instance._connections = {} # name -> (session, stack, tools_def)
+            cls._instance._lock = asyncio.Lock()
+        return cls._instance
+
+    async def get_tools_for_subagent(self, mcp_configs, registry, subagent_id):
+        """
+        Connects to (or reuses) MCP servers and registers tools in the subagent's registry.
+        """
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        from contextlib import AsyncExitStack
+        from nanobot.agent.tools.mcp import MCPToolWrapper
+
+        async with self._lock:
+            for name, cfg in mcp_configs.items():
+                try:
+                    if name not in self._connections:
+                        strategic_logger.info(f"[StrategicMCP] Initializing persistent connection for '{name}'...")
+                        stack = AsyncExitStack()
+                        
+                        if cfg.command:
+                            params = StdioServerParameters(
+                                command=cfg.command, args=cfg.args, env=cfg.env or None
+                            )
+                            read, write = await stack.enter_async_context(stdio_client(params))
+                        else:
+                            strategic_logger.warning(f"[StrategicMCP] Server '{name}' has no command, skipping.")
+                            continue
+
+                        session = await stack.enter_async_context(ClientSession(read, write))
+                        await session.initialize()
+                        
+                        tools_response = await session.list_tools()
+                        self._connections[name] = (session, stack, tools_response.tools)
+                        
+                        # Register cleanup
+                        lifecycle_manager.register_shutdown_hook(stack.aclose())
+                    else:
+                        strategic_logger.debug(f"[StrategicMCP] Reusing existing connection for '{name}' for Subagent [{subagent_id}].")
+
+                    session, _, tools_def = self._connections[name]
+                    for tool_def in tools_def:
+                        wrapper = MCPToolWrapper(session, name, tool_def, tool_timeout=cfg.tool_timeout)
+                        registry.register(wrapper)
+                        
+                except Exception as e:
+                    strategic_logger.error(f"[StrategicMCP] Failed to connect to '{name}': {e}")
+
+strategic_mcp_manager = StrategicMcpManager()
+
