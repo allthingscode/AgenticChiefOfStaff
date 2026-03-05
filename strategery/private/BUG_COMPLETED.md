@@ -193,6 +193,18 @@ This file archives technical issues and regressions that have been resolved and 
 - **Progress:** Hardened `SubagentPatch` with specialist loop detection (limit 5) and blocked empty tool-call responses. Enhanced iteration logging for visibility.
 - **Description:** Researcher specialist was hitting the 15-iteration limit instantly due to a tight tool-call loop in the health suite.
 
+## **[BUG-044] Subagent: False Timeout (Empty LLM Response)**
+- **Status:** FIXED & VERIFIED
+- **Priority:** CRITICAL
+- **Progress:** Patched `SubagentPatch` to correctly identify empty LLM responses (e.g., 503s or malformed thoughts) and report them as early exits, rather than erroneously triggering the 15-iteration timeout fallback.
+- **Description:** Subagent reported a timeout after 15 iterations even when breaking the loop early due to an empty response.
+
+## **[BUG-046] Orchestrator: Redundant Directive Injection**
+- **Status:** FIXED & VERIFIED
+- **Priority:** LOW
+- **Progress:** Removed redundant orchestrator hint injection from `MemoryPatch` since it's already handled cleanly in `SubagentPatch._announce_result`.
+- **Description:** Subagent reports in session history were bloated with three separate sets of overlapping instructions.
+
 ---
 *Archived on 2026-03-04 by nanobot 🐾*
 

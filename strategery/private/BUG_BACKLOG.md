@@ -9,6 +9,7 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 | BUG-031 | Monitoring: Tool Stripping & Mandate Bypass | High | Main Agent mandate bypasses (via `exec`) are currently blocked by filters, but we are monitoring for new creative attempts (e.g. `type`, `cat`, `Get-Content`). |
 | BUG-032 | Monitoring: Tool Stripping Initialization | High | Monitoring the `ToolRegistry` via diagnostic telemetry to ensure restricted tools are stripped across all session startup scenarios. |
 | BUG-038 | Google AI Search: Shallow Results | Medium | `search_ai` returning 0 citations/sources on valid queries. Fragility due to hard-coded selectors in `google-ai-mode-mcp` (npm package). |
+| BUG-045 | Subagent: Sequential MCP Connection Latency | Medium | MCP server connections during subagent startup occur sequentially, adding significant latency (10s+) before the first iteration. |
 
 ## **Completed / Resolved**
 

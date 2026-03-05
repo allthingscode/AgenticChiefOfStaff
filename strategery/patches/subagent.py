@@ -271,12 +271,16 @@ class SubagentPatch(BasePatch):
                                 })
                         else:
                             final_result = response.content
+                            if not final_result:
+                                final_result = "Error: LLM returned empty response without tool calls."
                             if response.finish_reason == "error":
                                 raise Exception(f"Subagent LLM Error: {final_result}")
                             break
 
-                    if final_result is None:
+                    if final_result is None and iteration >= max_iterations:
                         raise Exception(f"Subagent Task Timeout: No final response generated after {max_iterations} iterations.")
+                    elif final_result is None:
+                        final_result = "Error: Subagent exited loop unexpectedly with no result."
 
                     strategic_logger.info(f"Subagent [{task_id}] completed successfully.")
                     await self._announce_result(task_id, label, task, final_result, origin, "ok")
