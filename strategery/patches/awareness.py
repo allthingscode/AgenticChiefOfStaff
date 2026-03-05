@@ -30,9 +30,7 @@ class AwarenessPatch(BasePatch):
         awareness_path = storage_root / "workspace" / "AWARENESS.md"
         awareness_path.parent.mkdir(parents=True, exist_ok=True)
         
-        now = datetime.now().strftime("%A, %B %d, %Y %H:%M:%S")
         content = f"""# 🦅 STRATEGIC AWARENESS & MANDATES
-- **Current Time:** {now}
 - **Workspace Root:** {storage_root}
 - **System Role:** Strategic Orchestrator (Orchestrate & Delegate)
 - **Active Drive:** D:/ (High-Capacity Storage)

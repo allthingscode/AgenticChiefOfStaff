@@ -13,6 +13,7 @@ from .memory import MemoryPatch
 from .subagent import SubagentPatch
 from .telegram import TelegramPatch
 from .cron import CronPatch
+from .awareness import AwarenessPatch
 from .vector_store import StrategicVectorStore
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
 
@@ -27,7 +28,8 @@ class PatchRegistry:
             MemoryPatch(),
             SubagentPatch(),
             TelegramPatch(),
-            CronPatch()
+            CronPatch(),
+            AwarenessPatch()
         ]
 
     def apply_all(self, config_data: dict, **kwargs) -> dict:
