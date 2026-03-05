@@ -398,13 +398,19 @@ class SubagentPatch(BasePatch):
                     # A. CLI/File Bypass Detection (Main Agent Only)
                     if not is_specialist:
                         bypass_patterns = [
-                            "nanobot mcp", "nanobot status", "history.md", "findstr", 
-                            "grep", "cat ", "type ", "tail ", "get-content", "read-host",
-                            "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod"
+                            "nanobot mcp", "nanobot status", "history.md", "findstr ", 
+                            "grep ", "cat ", "type ", "tail ", "get-content", "read-host",
+                            "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod",
+                            "ls ", "dir ", "more ", "head ", "ping ", "iex ", "Invoke-Expression ",
+                            "python ", "sh ", "bash ", "powershell ", "cmd ", "Get-ChildItem ",
+                            "Select-String ", "Get-Item ", "Get-Service "
                         ]
-                        if any(p in cmd for p in bypass_patterns):
+                        if any(p in cmd + " " for p in bypass_patterns):
                             strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
                             return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
+                        
+                        # Monitor non-flagged exec calls for the Main Agent
+                        strategic_logger.info(f"Monitoring: Main Agent executing 'exec': {cmd}")
 
                     # B. Idle Polling Loop Detection (ping, status, etc.)
                     if any(x in cmd for x in ["status", "ping"]):

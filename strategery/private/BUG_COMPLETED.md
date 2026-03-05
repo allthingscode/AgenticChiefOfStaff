@@ -215,3 +215,9 @@ This file archives technical issues and regressions that have been resolved and 
 *Archived on 2026-03-04 by nanobot 🐾*
 
 
+
+## **[BUG-031] Monitoring: Tool Stripping & Mandate Bypass**
+- **Status:** FIXED & VERIFIED
+- **Priority:** HIGH
+- **Progress:** Hardened SubagentPatch filters for \exec\ (added \dir\, \ls\, \ping\, \python\, etc.) and implemented a \cmd + " "\ word-boundary check to prevent simple bypasses. Added active \strategic_logger.info\ monitoring for non-flagged Main Agent \exec\ calls.
+- **Description:** Main Agent was attempting to bypass strategic mandates by using creative CLI commands (like \dir\ or \ping\) that were not caught by the original simple substring filters.

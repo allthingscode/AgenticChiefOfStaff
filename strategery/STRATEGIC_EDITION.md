@@ -27,7 +27,7 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Model Isolation:** Specialist models are strictly assigned by the system (e.g., `gemini-1.5-pro` for architects, `gemini-1.5-flash` for researchers).
 - **Hardened Execution:** Integrated circuit breakers and loop detection prevent amnesia loops or tool abuse by both the Main Agent and Specialists.
 - **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
-- **Mandate Enforcement:** Hardened system prompts prevent bypass attempts, ensuring strict adherence to the delegation model and automated history management.
+- **Enhanced Mandate Enforcement:** Hardened filters and monitoring prevent bypass attempts (e.g., 'exec', 'ping', 'dir', 'python'), ensuring strict adherence to the delegation model.
 
 ### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
