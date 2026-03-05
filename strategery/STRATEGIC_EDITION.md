@@ -12,6 +12,11 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Hardened RAG:** Selective retrieval skips generic responses to preserve context window for complex queries.
 - **Junk Filtering:** Automated filtering of 'No summary available' placeholders from retrieved context before prompt injection.
 
+### **Memory Roadmap (Upcoming)**
+- **Hybrid Memory Index:** Layering **SQLite FTS5** over ChromaDB for 100% precision on technical IDs and keywords.
+- **Proactive Memory Retrieval:** Transitioning from passive system-injected context to explicit agent-managed `search_memory` tools.
+- **Chronological Continuity:** Automated rolling injection of daily journal snapshots for seamless session-to-session awareness.
+
 ### **2. "Clean History" Consolidation**
 - **Bloat Prevention:** Replaces linear history files with high-density Vector Store summaries.
 - **Surgical Ingestion:** Summaries and memory updates are automatically vectorized during consolidation.

@@ -25,7 +25,8 @@ class SubagentPatch(BasePatch):
         "ai-search", 
         "email-reporter", 
         "strategic_", 
-        "web_search"
+        "web_search",
+        "search_memory"
     ]
 
     @property
@@ -160,6 +161,7 @@ class SubagentPatch(BasePatch):
         # 2. Replace the entire _run_subagent to inject MCP and Specialist Logic
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher"):
             from .config import load_strategic_context
+            from .vsa import VectorStoreFactory
             _, _, storage_root = load_strategic_context()
             strategic_workspace = storage_root / "workspace"
 
@@ -176,6 +178,10 @@ class SubagentPatch(BasePatch):
             # Final fallback to manager default model if config is missing
             final_model = selected_model or self.model
             strategic_logger.info(f"Subagent Specialist Assigned: {specialist} (model='{final_model}')")
+
+            # MANDATE (F-007): Ensure VectorStore singleton is initialized with this subagent's provider
+            # This ensures that tools like 'search_memory' have access to embeddings.
+            VectorStoreFactory.get_store(provider=self.provider)
 
             try:
                 async with AsyncExitStack() as stack:

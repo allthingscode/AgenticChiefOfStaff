@@ -95,6 +95,37 @@ def strategic_parse_consolidation_response(content, has_tool_calls, tool_argumen
         return args
     return None
 
+def strategic_get_rolling_journal(storage_root, max_chars=1000):
+    """
+    Reads the last N characters from the current day's journal for chronological continuity.
+    Returns: A formatted string or empty if no journal exists.
+    """
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
+        
+        if not journal_path.exists():
+            return ""
+            
+        with open(journal_path, "r", encoding="utf-8-sig") as f:
+            content = f.read()
+            
+        if not content:
+            return ""
+            
+        # Extract the last part of the file
+        snippet = content[-max_chars:]
+        if len(content) > max_chars:
+            # Try to find the first newline to avoid mid-line cuts
+            nl_pos = snippet.find("\n")
+            if nl_pos != -1:
+                snippet = snippet[nl_pos+1:]
+                
+        return f"\n### RECENT CONTINUITY (FROM DAILY JOURNAL):\n...{snippet}\n"
+    except Exception as e:
+        strategic_logger.error(f"Error reading rolling journal: {e}")
+        return ""
+
 class MemoryPatch(BasePatch):
     """Handles memory consolidation, context pruning, and memory flush patches."""
     
@@ -234,6 +265,19 @@ class MemoryPatch(BasePatch):
             async def _patched_process_message(self, msg, session_key=None, on_progress=None):
                 # STRATEGIC: Redundant hint injection removed. Handled cleanly in SubagentPatch._announce_result.
                 
+                # 0. Rolling Journal Injection (F-008)
+                # This provides chronological continuity by injecting recent entries from today's journal.
+                try:
+                    from .config import load_strategic_context
+                    _, _, storage_root = load_strategic_context()
+                    
+                    journal_snippet = strategic_get_rolling_journal(storage_root)
+                    if journal_snippet:
+                        msg.content = journal_snippet + "\n" + msg.content
+                        strategic_logger.debug("Rolling Journal: Injected chronological snippet.")
+                except Exception as je:
+                    strategic_logger.error(f"Rolling Journal injection failed: {je}")
+
                 # 1. Context Pruning
                 prune_cfg = config_data.get("agents", {}).get("defaults", {}).get("contextPruning", {})
                 if prune_cfg.get("enabled"):
