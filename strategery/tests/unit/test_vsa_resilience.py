@@ -19,15 +19,18 @@ def reset_vsa_singleton():
 @pytest.mark.asyncio
 async def test_vsa_factory_initialization(tmp_path):
     """Verify first-time initialization with a real provider."""
+    from strategery.patches.hybrid_store import StrategicHybridStore
     provider = LiteLLMProvider(api_key="test-key")
     store = VectorStoreFactory.get_store(provider=provider, storage_root=tmp_path)
     
-    assert isinstance(store, StrategicVectorStore)
+    assert isinstance(store, StrategicHybridStore)
     assert store.provider == provider
+    # StrategicHybridStore wraps vector_store
+    assert isinstance(store.vector_store, StrategicVectorStore)
     # StrategicVectorStore derives storage_path from storage_root
     # We verify it ends with the expected platform-agnostic suffix
     expected_suffix = str(Path("workspace") / "memory" / "chroma").lower()
-    assert str(store.storage_path).lower().endswith(expected_suffix)
+    assert str(store.vector_store.storage_path).lower().endswith(expected_suffix)
 
 @pytest.mark.asyncio
 async def test_vsa_late_patching_resilience():

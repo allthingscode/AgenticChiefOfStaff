@@ -31,22 +31,21 @@ class VectorStoreFactory:
     def get_store(cls, provider=None, storage_root=None) -> VectorStoreInterface:
         """
         Returns the active vector store instance.
-        If no instance exists, it initializes the default (ChromaDB) implementation.
+        If no instance exists, it initializes the default (Hybrid: SQLite + ChromaDB) implementation.
         """
         if cls._instance is None:
-            from .vector_store import StrategicVectorStore
+            from .hybrid_store import StrategicHybridStore
             from .config import load_strategic_context
 
             # Use provided root or derive it from strategic context
             if storage_root is None:
                 _, _, storage_root = load_strategic_context()
-            
-            cls._instance = StrategicVectorStore(storage_root=storage_root, provider=provider)
+
+            cls._instance = StrategicHybridStore(storage_root=storage_root, provider=provider)
 
             # Register with LifecycleManager for automatic cleanup
             from .lifecycle import lifecycle_manager
             lifecycle_manager.register_shutdown_hook(cls._instance.close)
-
             p_type = type(provider).__name__ if provider else "NoneType"
             has_embed = hasattr(provider, "embed") if provider else False
             strategic_logger.debug(f"VectorStoreFactory: Initialized singleton with provider type={p_type}, has_embed={has_embed}")

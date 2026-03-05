@@ -20,7 +20,8 @@ async def test_exec_polling_loop_prevention(subagent_patch):
     with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
         mock_orig.return_value = "Success"
         
-        cmd_args = {"command": "ping 8.8.8.8"}
+        # Use 'status' which is monitored for loops but NOT blocked as a bypass
+        cmd_args = {"command": "status"}
         
         # 1. First Call -> Success
         res1 = await registry.execute("exec", cmd_args)

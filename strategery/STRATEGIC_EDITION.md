@@ -1,21 +1,18 @@
-# Nanobot Strategic Edition
+﻿# Nanobot Strategic Edition
 
 ## **Overview**
-The Strategic Edition is a modular, high-performance extension of the Nanobot Core, specifically designed for deep integration with senior-level productivity workflows. It focuses on **Zero Core Pollution**, **Semantic Recall**, and **Surgical Tooling**.
+The Strategic Edition is a modular, high-performance extension of the Nanobot Core, specifically designed for deep integration with senior-level productivity workflows. It focuses on **Zero Core Pollution**, **Hybrid Memory**, and **Surgical Tooling**.
 
 ## **Key Features & Differences**
 
-### **1. Semantic Memory (RAG)**
-- **Vector Database:** Uses **ChromaDB** as a local-first singleton for long-term durable recall.
+### **1. Hybrid Memory Architecture (RAG)**
+- **Hybrid Index:** Combines **SQLite FTS5 (Keyword)** and **ChromaDB (Vector)** for 100% precision on technical IDs (e.g., BUG-042) and high-recall semantic search.
+- **Active RAG (search_memory):** Specialist subagents have explicit access to a `search_memory` tool for proactive, deep-dive context retrieval.
+- **Chronological Continuity:** Automated **Rolling Journal** injection provides seamless session-to-session awareness from daily journal snapshots.
 - **Modern Embeddings:** Integrated with the modern `google-genai` library using **`models/gemini-embedding-001`** (3072 dimensions).
 - **Proactive Warmup:** Initialized at startup to eliminate the 3-second "Cold Start" delay on first message.
 - **Hardened RAG:** Selective retrieval skips generic responses to preserve context window for complex queries.
 - **Junk Filtering:** Automated filtering of 'No summary available' placeholders from retrieved context before prompt injection.
-
-### **Memory Roadmap (Upcoming)**
-- **Hybrid Memory Index:** Layering **SQLite FTS5** over ChromaDB for 100% precision on technical IDs and keywords.
-- **Proactive Memory Retrieval:** Transitioning from passive system-injected context to explicit agent-managed `search_memory` tools.
-- **Chronological Continuity:** Automated rolling injection of daily journal snapshots for seamless session-to-session awareness.
 
 ### **2. "Clean History" Consolidation**
 - **Bloat Prevention:** Replaces linear history files with high-density Vector Store summaries.
@@ -29,10 +26,10 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 ### **4. Specialist Economy & Delegation**
 - **Enforced Delegation:** The Main Agent is strictly blocked from executing high-power surgical tools (Google, AI Search, Email).
 - **Explicit Specialist Routing:** Orchestrator-driven delegation where the agent chooses between **'researcher'** (default) or **'architect'** types.
-- **Model Isolation:** Specialist models are strictly assigned by the system (e.g., `gemini-1.5-pro` for architects, `gemini-1.5-flash` for researchers).
+- **Model Isolation:** Specialist models are strictly assigned by the system (e.g., `gemini-3-flash-preview` for researchers, `gemini-3-pro-preview` for architects).
 - **Hardened Execution:** Integrated circuit breakers and loop detection prevent amnesia loops or tool abuse by both the Main Agent and Specialists.
 - **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
-- **Enhanced Mandate Enforcement:** Hardened filters and monitoring prevent bypass attempts (e.g., 'exec', 'ping', 'dir', 'python'), ensuring strict adherence to the delegation model.
+- **Enhanced Mandate Enforcement:** Hardened filters and monitoring prevent bypass attempts (e.g., 'exec', 'ping', 'dir', 'python'), ensuring strict adherence to the delegation model.   
 
 ### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
