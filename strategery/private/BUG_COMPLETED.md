@@ -205,6 +205,12 @@ This file archives technical issues and regressions that have been resolved and 
 - **Progress:** Removed redundant orchestrator hint injection from `MemoryPatch` since it's already handled cleanly in `SubagentPatch._announce_result`.
 - **Description:** Subagent reports in session history were bloated with three separate sets of overlapping instructions.
 
+## **[BUG-045] Subagent: Sequential MCP Connection Latency**
+- **Status:** FIXED & VERIFIED
+- **Priority:** MEDIUM
+- **Progress:** Parallelized MCP server initialization in `StrategicMcpManager` using `asyncio.gather`. Added `_ensure_connection` helper with fine-grained locking to allow concurrent startup of different servers.
+- **Description:** Subagent startup was delayed by 10-15s because MCP servers were connecting one-by-one.
+
 ---
 *Archived on 2026-03-04 by nanobot 🐾*
 
