@@ -6,7 +6,7 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 ## **Key Features & Differences**
 
 ### **1. Hybrid Memory Architecture (RAG)**
-- **Hybrid Index:** Combines **SQLite FTS5 (Keyword)** and **ChromaDB (Vector)** for 100% precision on technical IDs (e.g., BUG-042) and high-recall semantic search.
+- **Hybrid Index:** Combines **SQLite FTS5 (Keyword)** and **ChromaDB (Vector)** for 100% precision on technical IDs and high-recall semantic search.
 - **Active RAG (search_memory):** Specialist subagents have explicit access to a `search_memory` tool for proactive, deep-dive context retrieval.
 - **Chronological Continuity:** Automated **Rolling Journal** injection provides seamless session-to-session awareness from daily journal snapshots.
 - **Modern Embeddings:** Integrated with the modern `google-genai` library using **`models/gemini-embedding-001`** (3072 dimensions).

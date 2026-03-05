@@ -19,7 +19,7 @@ __pycache__/
 poetry.lock
 .pytest_cache/
 botpy.log
-tests/
+/tests/
 
 # --- Strategic Edition (Local & Private) ---
 # Allow strategery while protecting private/
