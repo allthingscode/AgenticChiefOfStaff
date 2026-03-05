@@ -10,6 +10,8 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 | BUG-032 | Monitoring: Tool Stripping Initialization | High | Monitoring the `ToolRegistry` via diagnostic telemetry to ensure restricted tools are stripped across all session startup scenarios. |
 | BUG-038 | Google AI Search: Shallow Results | Medium | `search_ai` returning 0 citations/sources on valid queries. Fragility due to hard-coded selectors in `google-ai-mode-mcp` (npm package). |
 | BUG-045 | Subagent: Sequential MCP Connection Latency | Medium | MCP server connections during subagent startup occur sequentially, adding significant latency (10s+) before the first iteration. |
+| BUG-047 | Subagent: Behavioral Amnesia (False Success) | Critical | Specialist subagents are reporting "success" after reading instructions but without actually calling the required verification tools. |
+| BUG-048 | Researcher: Prompt Drowning (Context Bloat) | High | The `researcher` specialist (Flash Lite) is likely being overwhelmed by the injected strategic mandates + the full test suite instructions, leading to early termination. |
 
 ## **Completed / Resolved**
 

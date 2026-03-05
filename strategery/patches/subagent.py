@@ -297,13 +297,14 @@ class SubagentPatch(BasePatch):
             def _patched_build_subagent_prompt(self):
                 prompt = self._orig_build_subagent_prompt_strategic()
 
-                # Append Strategic Specialist Instructions
                 prompt += "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
-                prompt += "1. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
-                prompt += "2. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
-                prompt += "3. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS for all file operations (e.g., `D:\\Nanobot_Storage\\workspace\\memory\\MEMORY.md`). The file `HISTORY.md` is RETIRED.\n"
-                prompt += "4. **CALENDAR MANDATE:** When asked about scheduling, appointments, or events for 'today' or 'tomorrow', you MUST use the `mcp_google-surgical_list_calendar_events` tool with `calendar_id='all'` to ensure you capture events from all sub-calendars.\n"
-                prompt += "5. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
+                prompt += "1. **MANDATORY VERIFICATION:** You MUST NOT report 'success' after merely reading a plan or a file. You are only successful when you have executed all required tools (Search, FS, Workspace) and confirmed the outcome.\n"
+                prompt += "2. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
+                prompt += "3. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
+                prompt += "4. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS for all file operations (e.g., `D:\\Nanobot_Storage\\workspace\\memory\\MEMORY.md`). The file `HISTORY.md` is RETIRED.\n"
+                prompt += "5. **CALENDAR MANDATE:** When asked about scheduling, appointments, or events for 'today' or 'tomorrow', you MUST use the `mcp_google-surgical_list_calendar_events` tool with `calendar_id='all'` to ensure you capture events from all sub-calendars.\n"
+                prompt += "6. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
+                prompt += "7. **CHAIN OF THOUGHT:** You MUST show your reasoning process and clearly state which verification tool you are about to call."
                 return prompt
 
             SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
