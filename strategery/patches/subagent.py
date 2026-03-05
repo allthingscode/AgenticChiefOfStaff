@@ -26,7 +26,8 @@ class SubagentPatch(BasePatch):
         "email-reporter", 
         "strategic_", 
         "web_search",
-        "search_memory"
+        "search_memory",
+        "nanobot"
     ]
 
     @property
