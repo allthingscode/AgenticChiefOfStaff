@@ -107,3 +107,27 @@ async def test_subagent_prompt_patch(subagent_patch):
     assert "mcp_google-ai-search_search_ai" in prompt
     assert "NETWORK DIAGNOSTICS" in prompt
     assert "Do NOT use 'ping'" in prompt
+
+@pytest.mark.asyncio
+async def test_tool_registry_telemetry_logging(subagent_patch):
+    """Verify BUG-032 telemetry: logs tool names once per registry instance."""
+    subagent_patch._patch_tool_registry("test@example.com")
+    registry = ToolRegistry()
+    
+    with patch("strategery.patches.subagent.strategic_logger") as mock_logger:
+        # First call should log
+        registry.get_definitions()
+        mock_logger.info.assert_called()
+        log_msg = mock_logger.info.call_args[0][0]
+        assert "Telemetry [Main Agent ToolRegistry]" in log_msg
+        assert "Active tools initialized" in log_msg
+        
+        # Reset mock and call again - should NOT log a second time for the same instance
+        mock_logger.reset_mock()
+        registry.get_definitions()
+        mock_logger.info.assert_not_called()
+        
+        # New instance should log again
+        new_registry = ToolRegistry()
+        new_registry.get_definitions()
+        mock_logger.info.assert_called()

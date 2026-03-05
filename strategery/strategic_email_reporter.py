@@ -9,20 +9,43 @@ from email.message import EmailMessage
 import json
 import os
 import sys
+import logging
 from pathlib import Path
+from datetime import datetime
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from fastmcp import FastMCP
 
+# --- Logging Setup ---
+# Use the D: drive log directory if available, otherwise local
+LOG_DIR = Path(os.environ.get("STRATEGIC_LOG_DIR", "./logs"))
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    LOG_DIR = Path("./logs")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger("EmailReporter")
+logger.setLevel(logging.DEBUG)
+log_file = LOG_DIR / "email_reporter.log"
+fh = logging.FileHandler(log_file, encoding='utf-8')
+fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+logger.addHandler(fh)
+
+logger.info("Email Reporter MCP starting up...")
+
 # Detect config path
 def get_config():
     # Priority: System config, local fallback
     home_config = Path.home() / ".nanobot" / "config.json"
     if home_config.exists():
-        with open(home_config, "r", encoding="utf-8-sig") as f:
-            return json.load(f)
+        try:
+            with open(home_config, "r", encoding="utf-8-sig") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
     return {}
 
 CONFIG = get_config()
@@ -38,48 +61,112 @@ SECRETS_DIR = STORAGE_ROOT / "secrets"
 TOKEN_PATH = SECRETS_DIR / "token.json"
 CREDS_PATH = SECRETS_DIR / "credentials.json"
 
+logger.debug(f"Paths: STORAGE_ROOT={STORAGE_ROOT}, TOKEN_PATH={TOKEN_PATH}")
+
 def get_gmail_service():
     creds = None
     if TOKEN_PATH.exists():
-        with open(TOKEN_PATH, "r") as token:
-            creds_data = json.load(token)
-            creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
+        logger.debug(f"Found token at {TOKEN_PATH}")
+        try:
+            with open(TOKEN_PATH, "r") as token:
+                creds_data = json.load(token)
+                creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
+        except Exception as e:
+            logger.error(f"Error loading token.json: {e}")
             
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(TOKEN_PATH, "w") as token:
-                token.write(creds.to_json())
+            logger.info("Refreshing Gmail token...")
+            try:
+                creds.refresh(Request())
+                with open(TOKEN_PATH, "w") as token:
+                    token.write(creds.to_json())
+                logger.info("Token refreshed successfully.")
+            except Exception as e:
+                logger.error(f"Failed to refresh token: {e}")
+                # Don't raise here, allow the tool to catch it and fall back
+                return None
         else:
-            raise Exception(f"No valid credentials found at {TOKEN_PATH}. Please ensure token.json is valid.")
+            logger.error(f"No valid credentials found at {TOKEN_PATH}.")
+            return None
             
-    return build("gmail", "v1", credentials=creds)
+    try:
+        return build("gmail", "v1", credentials=creds, static_discovery=True)
+    except Exception as e:
+        logger.error(f"Failed to build gmail service: {e}")
+        return None
 
 mcp = FastMCP("Email Reporter")
 
+def fallback_notify(subject: str, body: str, recipient: str) -> str:
+    """Fallback: Writes the notification to a local file in the workspace."""
+    notif_file = STORAGE_ROOT / "workspace" / "NOTIFICATIONS.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    entry = f"\n---\n### 📬 [{timestamp}] {subject}\n**To:** {recipient}\n\n{body}\n"
+    
+    try:
+        # Ensure workspace exists
+        notif_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        mode = "a" if notif_file.exists() else "w"
+        with open(notif_file, mode, encoding="utf-8") as f:
+            if mode == "w":
+                f.write("# 📬 Strategic Notifications (Fallback)\n")
+            f.write(entry)
+            
+        msg = f"Gmail unavailable. Report saved to fallback: {notif_file}"
+        logger.warning(msg)
+        return msg
+    except Exception as e:
+        err = f"CRITICAL: Fallback notification failed: {e}"
+        logger.error(err)
+        return err
+
 @mcp.tool()
 def send_email_report(subject: str, body: str, to: str = None) -> str:
-    """Sends an email report to the user using the configured Gmail account."""
+    """Sends an email report to the user. Falls back to local disk if Gmail fails."""
     recipient = to if to else USER_EMAIL
+    logger.info(f"Tool Call: send_email_report(subject='{subject}', recipient='{recipient}')")
+    
+    service = None
     try:
         service = get_gmail_service()
+    except Exception as e:
+        logger.error(f"get_gmail_service exception: {e}")
+
+    if not service:
+        return fallback_notify(subject, body, recipient)
+
+    try:
+        logger.debug("Gmail service initialized.")
         
         message = EmailMessage()
         message.set_content(body)
         message["To"] = recipient
-        # The sender is the authenticated user 'me' in Gmail API
         message["Subject"] = subject
         
         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         create_message = {"raw": encoded_message}
         
+        logger.debug("Sending message via Gmail API...")
         send_message = service.users().messages().send(userId="me", body=create_message).execute()
-        return f"Email sent successfully to {recipient}. Message ID: {send_message['id']}"
+        
+        result = f"Email sent successfully to {recipient}. Message ID: {send_message['id']}"
+        logger.info(result)
+        return result
     except Exception as e:
-        return f"Failed to send email: {e}"
+        logger.error(f"Gmail delivery failed: {e}")
+        return fallback_notify(subject, body, recipient)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":
-        mcp.run()
+        logger.info("Starting FastMCP runner...")
+        try:
+            mcp.run()
+        except Exception as startup_err:
+            logger.critical(f"FastMCP runner crashed: {startup_err}", exc_info=True)
+            # Re-raise to ensure the process actually exits and doesn't hang
+            raise
     else:
         print("Run with 'mcp_wrapper' to start the MCP server.")

@@ -37,6 +37,8 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
 - **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.
+- **Logging Stability:** Specialized `UnicodeSafeStreamHandler` prevents application crashes when logging complex characters (emojis) to restricted Windows consoles.
+- **Notification Resilience:** The Email Reporter includes an automated disk-based fallback (`NOTIFICATIONS.md`) to prevent data loss during API outages or credential revocations.
 - **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
 
 ### **6. Graph Capabilities (NanoGraph)**

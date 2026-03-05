@@ -371,6 +371,28 @@ class SubagentPatch(BasePatch):
 
             ToolRegistry.register = _patched_register
 
+        if not hasattr(ToolRegistry, "_orig_get_definitions_strategic"):
+            ToolRegistry._orig_get_definitions_strategic = ToolRegistry.get_definitions
+            
+            def _patched_get_definitions(self):
+                definitions = self._orig_get_definitions_strategic()
+                
+                # Telemetry for BUG-032: Prove tool stripping during initialization
+                if not getattr(self, "_strategic_telemetry_logged", False):
+                    is_specialist = getattr(self, "_is_strategic_specialist", False)
+                    agent_type = "Specialist" if is_specialist else "Main Agent"
+                    
+                    try:
+                        tool_names = self.tool_names
+                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Active tools initialized - {tool_names}")
+                        self._strategic_telemetry_logged = True
+                    except Exception as e:
+                        strategic_logger.error(f"Telemetry error reading tool names: {e}")
+                    
+                return definitions
+                
+            ToolRegistry.get_definitions = _patched_get_definitions
+
         if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
             ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):

@@ -116,7 +116,7 @@ def test_email_reporter_send_success():
         assert kwargs["userId"] == "me"
 
 def test_email_reporter_failure():
-    """Verify error handling in email reporter."""
+    """Verify fallback behavior in email reporter when Gmail fails."""
     with patch("strategery.strategic_email_reporter.get_gmail_service", side_effect=Exception("API Error")):
         result = email_tool.send_email_report("Subject", "Body")
-        assert "Failed to send email: API Error" in result
+        assert "Gmail unavailable. Report saved to fallback" in result

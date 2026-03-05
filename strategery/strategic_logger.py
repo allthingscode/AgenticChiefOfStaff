@@ -9,6 +9,28 @@ from datetime import datetime
 LOG_DIR = Path(os.environ.get("STRATEGIC_LOG_DIR", "./logs"))
 LOG_FILE = LOG_DIR / "strategic.log"
 
+class UnicodeSafeStreamHandler(logging.StreamHandler):
+    """
+    A StreamHandler that handles UnicodeEncodeError gracefully on Windows.
+    If the stream's encoding doesn't support a character, it uses backslashreplace
+    instead of crashing or triggering a logging error.
+    """
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+                self.flush()
+            except UnicodeEncodeError:
+                # Fallback: manually encode with backslashreplace
+                encoding = getattr(stream, 'encoding', 'utf-8') or 'utf-8'
+                safe_text = msg.encode(encoding, errors='backslashreplace').decode(encoding)
+                stream.write(safe_text + self.terminator)
+                self.flush()
+        except Exception:
+            self.handleError(record)
+
 def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     """
     Sets up a unified logger for all strategic patches.
@@ -67,16 +89,26 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     except Exception as e:
         print(f"[Strategic] Warning: Could not initialize file logger: {e}")
 
-    # 2. Console Handler (only add if not already present)
-    has_console = any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in logger.handlers)
-    if not has_console:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_formatter = logging.Formatter(
-            '[Strategic] [PID:%(process)d] %(levelname)s: %(message)s'
-        )
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging.INFO)
-        logger.addHandler(console_handler)
+    # 2. Console Handler
+    # We look for an existing console handler
+    console_handler = next((h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)), None)
+    
+    # If it's already a UnicodeSafeStreamHandler and we don't need re-config, we're good
+    if isinstance(console_handler, UnicodeSafeStreamHandler) and not needs_reconfig:
+        return logger
+
+    # If it exists but is the wrong type or needs re-config, remove it
+    if console_handler:
+        logger.removeHandler(console_handler)
+
+    # Create new Unicode-safe console handler
+    console_handler = UnicodeSafeStreamHandler(sys.stdout)
+    console_formatter = logging.Formatter(
+        '[Strategic] [PID:%(process)d] %(levelname)s: %(message)s'
+    )
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
 
     return logger
 
