@@ -13,6 +13,8 @@ class MockTelegramChannel:
         
     async def _on_message(self, update, context):
         pass
+    async def _on_error(self, update, context):
+        pass
     def _stop_typing(self, chat_id):
         pass
     @staticmethod
@@ -97,3 +99,30 @@ async def test_telegram_polling_resilience():
 
     # Should have called at least 3 times
     assert start_polling_mock.call_count >= 3
+
+@pytest.mark.asyncio
+async def test_telegram_error_suppression():
+    """Verify that BUG-060 correctly suppresses NetworkError noise."""
+    channel = MockTelegramChannel()
+    patcher = TelegramPatch()
+    patcher._patch_telegram_channel(MockTelegramChannel, {})
+    
+    # 1. Test NetworkError Suppression
+    mock_context = MagicMock()
+    mock_context.error = NetworkError("Disconnected")
+    
+    with patch.object(MockTelegramChannel, "_orig_on_error_strategic", new_callable=AsyncMock) as mock_orig:
+        await channel._on_error(MagicMock(), mock_context)
+        mock_orig.assert_not_called()
+
+    # 2. Test RemoteProtocolError Suppression
+    mock_context.error = Exception("RemoteProtocolError: Server disconnected")
+    with patch.object(MockTelegramChannel, "_orig_on_error_strategic", new_callable=AsyncMock) as mock_orig:
+        await channel._on_error(MagicMock(), mock_context)
+        mock_orig.assert_not_called()
+
+    # 3. Test Real Error Propagation (should call original)
+    mock_context.error = ValueError("Actual bug")
+    with patch.object(MockTelegramChannel, "_orig_on_error_strategic", new_callable=AsyncMock) as mock_orig:
+        await channel._on_error(MagicMock(), mock_context)
+        mock_orig.assert_called_once()

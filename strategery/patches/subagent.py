@@ -27,7 +27,12 @@ class SubagentPatch(BasePatch):
         "strategic_", 
         "web_search",
         "search_memory",
-        "nanobot"
+        "nanobot",
+        "filesystem-d",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "list_dir"
     ]
 
     @property
@@ -191,12 +196,10 @@ class SubagentPatch(BasePatch):
                     
                     # MANDATE: Subagents MUST use the strategic workspace root on D:
                     subagent_workspace = strategic_workspace
-                    allowed_dir = subagent_workspace if self.restrict_to_workspace else None
                     
-                    tools.register(ReadFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
-                    tools.register(WriteFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
-                    tools.register(EditFileTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
-                    tools.register(ListDirTool(workspace=subagent_workspace, allowed_dir=allowed_dir))
+                    # MANDATE (BUG-055): Remove redundant core FS tools. 
+                    # We only register 'ExecTool' and 'WebFetchTool' from core.
+                    # FS operations (Read/Write/Edit/List) are handled by 'filesystem-d' MCP.
                     tools.register(ExecTool(
                         working_dir=str(subagent_workspace),
                         timeout=self.exec_config.timeout,
@@ -227,7 +230,7 @@ class SubagentPatch(BasePatch):
                         {"role": "user", "content": task},
                     ]
 
-                    max_iterations = 15
+                    max_iterations = 20
                     iteration = 0
                     final_result = None
 
@@ -357,17 +360,9 @@ class SubagentPatch(BasePatch):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
 
             def _patched_register(registry_self, tool):
-                name = str(getattr(tool, "name", tool)).lower()
-                is_high_power = any(hp.lower() in name for hp in patch_self.BLOCKED_PATTERNS)
-                is_specialist = getattr(registry_self, "_is_strategic_specialist", False)
-
-                if is_high_power:
-                    if not is_specialist:
-                        strategic_logger.debug(f"Tool Stripping: Blocked registration of '{name}' for Main Agent.")
-                        return
-                    else:
-                        strategic_logger.debug(f"Tool Stripping: ALLOWED registration of '{name}' for Specialist.")
-
+                # MANDATE (BUG-054): We ALLOW registration for all, to ensure
+                # host sessions are captured by the Strategic manager for bridging.
+                # Tool Stripping is now handled at the prompt level (get_definitions).
                 return registry_self._orig_register_strategic(tool)
 
             ToolRegistry.register = _patched_register
@@ -378,14 +373,30 @@ class SubagentPatch(BasePatch):
             def _patched_get_definitions(self):
                 definitions = self._orig_get_definitions_strategic()
                 
-                # Telemetry for BUG-032: Prove tool stripping during initialization
+                # 1. TOOL STRIPPING (BUG-053/054/059): 
+                # Hide high-power tools from Main Agent prompt while keeping sessions alive.
+                is_specialist = getattr(self, "_is_strategic_specialist", False)
+                if not is_specialist:
+                    filtered = []
+                    for d in definitions:
+                        # Extract name from OpenAI function schema
+                        name = d.get("function", {}).get("name", "").lower()
+                        if not any(hp.lower() in name for hp in patch_self.BLOCKED_PATTERNS):
+                            filtered.append(d)
+                    definitions = filtered
+
+                # 2. Telemetry for BUG-032: Prove tool stripping during initialization
                 if not getattr(self, "_strategic_telemetry_logged", False):
-                    is_specialist = getattr(self, "_is_strategic_specialist", False)
                     agent_type = "Specialist" if is_specialist else "Main Agent"
-                    
                     try:
-                        tool_names = self.tool_names
-                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Active tools initialized - {tool_names}")
+                        # We use the raw tools list names for telemetry
+                        tool_names = [getattr(t, "name", str(t)) for t in self._tools.values()]
+                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Active sessions registered - {tool_names}")
+                        
+                        # Log what is actually visible to the model
+                        model_names = [d.get("function", {}).get("name") for d in definitions]
+                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Tools visible to model - {model_names}")
+                        
                         self._strategic_telemetry_logged = True
                     except Exception as e:
                         strategic_logger.error(f"Telemetry error reading tool names: {e}")

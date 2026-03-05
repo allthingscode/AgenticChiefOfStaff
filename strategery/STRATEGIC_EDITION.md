@@ -33,7 +33,8 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 
 ### **5. Infrastructure & Resilience**
 - **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
-- **Persistent MCP Connections:** `StrategicMcpManager` maintains persistent server sessions across subagent spawns to eliminate startup latency.
+- **Specialist Subagent Persistence:** Utilizes host-bridged MCP sessions to enable near-instant subagent spawning and reuse of active server processes.
+- **Strategic Noise Suppression:** Automated suppression of transient network tracebacks (e.g. Telegram RemoteProtocolError) into single-line warnings for cleaner strategic logging.
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
 - **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.

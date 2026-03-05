@@ -223,3 +223,21 @@ class TelegramPatch(BasePatch):
                         await self._app.bot.send_message(**kwargs)
 
         TelegramChannel.send = _thread_aware_send
+
+        # 4. Patch Error Handler to suppress noise (BUG-060)
+        if not hasattr(TelegramChannel, "_orig_on_error_strategic"):
+            TelegramChannel._orig_on_error_strategic = TelegramChannel._on_error
+            
+            async def _strategic_on_error(self, update, context):
+                from telegram.error import NetworkError
+                
+                # Check for Network/Protocol errors
+                err_str = str(context.error)
+                if isinstance(context.error, NetworkError) or "RemoteProtocolError" in err_str:
+                    strategic_logger.warning(f"Telegram: Transient network noise suppressed: {err_str}")
+                    return
+                
+                # Fallback to original for real errors
+                return await self._orig_on_error_strategic(update, context)
+                
+            TelegramChannel._on_error = _strategic_on_error

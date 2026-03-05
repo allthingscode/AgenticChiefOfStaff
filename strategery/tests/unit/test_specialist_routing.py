@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.registry import ToolRegistry
@@ -36,7 +37,7 @@ async def test_subagent_manager_integrated_routing(mock_specialist_config):
     if hasattr(SubagentManager, "_orig_announce_result_strategic"):
         delattr(SubagentManager, "_orig_announce_result_strategic")
 
-    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", None)):
+    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
         # We also need to mock ToolRegistry.register to avoid loading real tools
         with patch.object(ToolRegistry, "register"):
             patch_inst.apply(mock_specialist_config)
@@ -70,10 +71,49 @@ async def test_subagent_manager_integrated_routing(mock_specialist_config):
     assert kwargs["model"] == "special-research-model"
 
 @pytest.mark.asyncio
+async def test_architect_routing_uses_pro_model(mock_specialist_config):
+    """Verify that the Architect specialist correctly uses the 'pro' model from config (BUG-056)."""
+    from nanobot.agent.subagent import SubagentManager
+    from nanobot.agent.tools.registry import ToolRegistry
+    
+    # Setup mock SubagentManager
+    mock_mgr = MagicMock(spec=SubagentManager)
+    mock_mgr.model = "default-model"
+    mock_mgr.provider = MagicMock()
+    mock_mgr.provider.chat = AsyncMock()
+    mock_mgr.provider.chat.return_value = MagicMock(has_tool_calls=False, content="Done")
+    mock_mgr.bus = MagicMock()
+    mock_mgr.workspace = "test-workspace"
+    mock_mgr.restrict_to_workspace = False
+    mock_mgr.exec_config = MagicMock()
+    mock_mgr.exec_config.timeout = 30
+    mock_mgr.exec_config.path_append = []
+    mock_mgr.web_proxy = None
+    mock_mgr.temperature = 0.7
+    mock_mgr.max_tokens = 4096
+    mock_mgr.reasoning_effort = None
+    
+    # Execute Architect Task (specialist="architect")
+    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
+        # We need to mock ToolRegistry.register to avoid loading real tools
+        with patch.object(ToolRegistry, "register"):
+            # The apply() was already called in previous test, but let's ensure it's patched for this test
+            SubagentPatch().apply(mock_specialist_config)
+            
+            await SubagentManager._run_subagent(
+                mock_mgr, "task-2", "design system", "Architect", {"channel": "test", "chat_id": "123"}, 
+                specialist="architect"
+            )
+
+    # Verify Architect Routing
+    args, kwargs = mock_mgr.provider.chat.call_args
+    assert kwargs["model"] == "special-architect-model"
+
+@pytest.mark.asyncio
 async def test_subagent_registry_tool_access(mock_specialist_config):
     """Verify that high-power tools are ALLOWED for specialists but BLOCKED for others."""
     patch_inst = SubagentPatch()
-    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", None)):
+    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
         patch_inst.apply(mock_specialist_config)
 
     from nanobot.agent.tools.registry import ToolRegistry
@@ -84,16 +124,21 @@ async def test_subagent_registry_tool_access(mock_specialist_config):
 
     mock_tool = MagicMock()
     mock_tool.name = "mcp_google-surgical_search"
+    mock_tool.to_schema.return_value = {"type": "function", "function": {"name": "mcp_google-surgical_search"}}
 
-    # Should be blocked
-    with patch("strategery.patches.subagent.strategic_logger") as mock_log:
-        main_reg.register(mock_tool)
-        mock_log.debug.assert_any_call("Tool Stripping: Blocked registration of 'mcp_google-surgical_search' for Main Agent.")
+    # Should be registered (for bridging) but hidden from definitions
+    main_reg.register(mock_tool)
+    assert "mcp_google-surgical_search" in main_reg.tool_names
+    
+    defs = main_reg.get_definitions()
+    assert "mcp_google-surgical_search" not in [d.get("function", {}).get("name") for d in defs]
 
     # 2. Specialist Registry (Tagged)
     spec_reg = ToolRegistry()
     spec_reg._is_strategic_specialist = True
     
-    # Manually reset the patched register if needed, but it should just work based on the flag
     spec_reg.register(mock_tool)
     assert "mcp_google-surgical_search" in spec_reg.tool_names
+    
+    spec_defs = spec_reg.get_definitions()
+    assert "mcp_google-surgical_search" in [d.get("function", {}).get("name") for d in spec_defs]

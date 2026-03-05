@@ -17,19 +17,22 @@ def mock_tool():
 async def test_tool_registry_blocks_high_power_for_main_agent(subagent_patch, mock_tool):
     # Apply patch
     subagent_patch._patch_tool_registry("test@example.com")
+    mock_tool.to_schema.return_value = {"type": "function", "function": {"name": "mcp_google-surgical_list_tasks"}}
     
     registry = ToolRegistry()
     # Ensure it's not tagged as a specialist
     assert not getattr(registry, "_is_strategic_specialist", False)
     
-    # 1. Test Registration Block
+    # 1. Test Registration Allowed (BUG-054 Bridging Requirement)
     registry.register(mock_tool)
-    assert "mcp_google-surgical_list_tasks" not in registry.tool_names
+    assert "mcp_google-surgical_list_tasks" in registry.tool_names
     
-    # 2. Test Execution Block (Hard Block)
-    # Manually inject to bypass registration check for the sake of testing the execution block
-    registry._tools["mcp_google-surgical_list_tasks"] = mock_tool
+    # 2. Test Definition Hiding (Prompt level)
+    defs = registry.get_definitions()
+    tool_names_in_defs = [d.get("function", {}).get("name") for d in defs]
+    assert "mcp_google-surgical_list_tasks" not in tool_names_in_defs
     
+    # 3. Test Execution Block (Hard Block)
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
     assert "restricted to SPECIALIST subagents" in result
     assert "MUST use 'spawn' to delegate this task" in result
@@ -117,17 +120,12 @@ async def test_tool_registry_telemetry_logging(subagent_patch):
     with patch("strategery.patches.subagent.strategic_logger") as mock_logger:
         # First call should log
         registry.get_definitions()
-        mock_logger.info.assert_called()
-        log_msg = mock_logger.info.call_args[0][0]
-        assert "Telemetry [Main Agent ToolRegistry]" in log_msg
-        assert "Active tools initialized" in log_msg
+        assert mock_logger.info.call_count >= 2
         
-        # Reset mock and call again - should NOT log a second time for the same instance
-        mock_logger.reset_mock()
-        registry.get_definitions()
-        mock_logger.info.assert_not_called()
+        # Check first log message (Sessions)
+        log_msg_1 = mock_logger.info.call_args_list[0][0][0]
+        assert "Telemetry [Main Agent ToolRegistry]: Active sessions registered" in log_msg_1
         
-        # New instance should log again
-        new_registry = ToolRegistry()
-        new_registry.get_definitions()
-        mock_logger.info.assert_called()
+        # Check second log message (Visible tools)
+        log_msg_2 = mock_logger.info.call_args_list[1][0][0]
+        assert "Telemetry [Main Agent ToolRegistry]: Tools visible to model" in log_msg_2

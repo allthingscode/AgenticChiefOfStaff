@@ -38,11 +38,15 @@ async def test_late_tool_registration_blocking():
     
     for tool in tools:
         main_registry.register(tool)
-        # 4. Verify it's NOT in the registry
-        assert tool.name not in main_registry.tool_names
+        # 4. Verify it IS in the registry (Change from BUG-054: We allow registration now)
+        assert tool.name in main_registry.tool_names
         
-        # 5. Verify EXECUTE blocks it
-        main_registry._tools[tool.name] = tool
+        # 5. Verify get_definitions HIDES it
+        defs = main_registry.get_definitions()
+        def_names = [d['function']['name'] for d in defs]
+        assert tool.name not in def_names
+        
+        # 6. Verify EXECUTE blocks it
         result = await main_registry.execute(tool.name, {})
         assert "ERROR" in result or "Access Denied" in result
         assert "SUCCESS" not in result
