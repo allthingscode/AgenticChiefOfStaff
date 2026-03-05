@@ -58,6 +58,29 @@ async def test_specialist_not_blocked_from_polling(subagent_patch):
         assert mock_orig.call_count == 3
 
 @pytest.mark.asyncio
+async def test_specialist_blocked_after_five_calls(subagent_patch):
+    """Tests that specialist subagents ARE blocked after 5 repeated exec status calls."""
+    subagent_patch._patch_tool_registry("test@example.com")
+    
+    registry = ToolRegistry()
+    registry._is_strategic_specialist = True
+    
+    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+        mock_orig.return_value = "Success"
+        cmd_args = {"command": "status"}
+        
+        # 1-4. Success
+        for _ in range(4):
+            res = await registry.execute("exec", cmd_args)
+            assert res == "Success"
+        
+        # 5. LOOP DETECTED
+        res5 = await registry.execute("exec", cmd_args)
+        assert "Loop Detected" in res5
+        assert "Specialist" in res5
+        assert mock_orig.call_count == 4
+
+@pytest.mark.asyncio
 async def test_exec_cli_bypass_blocking(subagent_patch):
     """Tests that attempts to call restricted tools via CLI are blocked."""
     subagent_patch._patch_tool_registry("test@example.com")

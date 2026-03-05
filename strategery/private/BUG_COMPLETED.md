@@ -181,3 +181,19 @@ This file archives technical issues and regressions that have been resolved and 
 - **Progress:** Implemented `CronPatch` to enhance `jobs.json` reload detection using file-size monitoring.
 - **Description:** Fixed flaky core tests on Windows where low mtime resolution caused missed reload triggers.
 
+## **[BUG-042] Subagent Startup Regression (SyntaxError)**
+- **Status:** FIXED & VERIFIED
+- **Priority:** HIGH
+- **Progress:** Fixed a SyntaxError in `SubagentPatch` introduced during security hardening of the `ToolRegistry.execute` patch.
+- **Description:** Subagent system was failing to initialize due to a malformed `if` statement in the `exec` bypass filter.
+
+## **[BUG-043] Subagent Iteration Timeout (System Health)**
+- **Status:** FIXED & VERIFIED
+- **Priority:** HIGH
+- **Progress:** Hardened `SubagentPatch` with specialist loop detection (limit 5) and blocked empty tool-call responses. Enhanced iteration logging for visibility.
+- **Description:** Researcher specialist was hitting the 15-iteration limit instantly due to a tight tool-call loop in the health suite.
+
+---
+*Archived on 2026-03-04 by nanobot 🐾*
+
+

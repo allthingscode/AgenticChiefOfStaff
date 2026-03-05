@@ -14,6 +14,7 @@ This file tracks technical issues, regressions, and internal bugs with this cust
 
 | ID | Title | Resolution |
 |---|---|---|
+| BUG-043 | Subagent: Iteration Timeout (System Health) | Fixed by implementing specialist loop detection (limit 5) and hardening the subagent loop against empty tool-call responses. Enhanced iteration logging. |
 | BUG-040 | Subagent: False Success on LLM Failure | Fixed error propagation in `SubagentPatch`. Fatal LLM errors (503) and timeouts are now correctly reported as failures. |
 | BUG-041 | Subagent: Workspace Root Confusion | Fixed by forcing `D:\Nanobot_Storage` workspace root in `SubagentPatch` for all subagent tool initializations. |
 | BUG-039 | Subagent Task Truncation (Logging) | Increased `display_label` length from 30 to 100 characters in `_patched_spawn`. |

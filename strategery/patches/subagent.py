@@ -226,6 +226,8 @@ class SubagentPatch(BasePatch):
 
                     while iteration < max_iterations:
                         iteration += 1
+                        strategic_logger.info(f"Subagent [{task_id}] iteration {iteration}/{max_iterations} starting...")
+                        
                         response = await self.provider.chat(
                             messages=messages,
                             tools=tools.get_definitions(),
@@ -236,6 +238,11 @@ class SubagentPatch(BasePatch):
                         )
 
                         if response.has_tool_calls:
+                            if not response.tool_calls:
+                                strategic_logger.warning(f"Subagent [{task_id}] returned has_tool_calls=True but tool_calls is EMPTY. Breaking loop to prevent amnesia.")
+                                final_result = response.content or "Error: LLM returned empty tool calls."
+                                break
+
                             tool_call_dicts = [
                                 {
                                     "id": tc.id,
@@ -254,7 +261,7 @@ class SubagentPatch(BasePatch):
                             })
 
                             for tool_call in response.tool_calls:
-                                strategic_logger.debug(f"Subagent [{task_id}] executing: {tool_call.name}")
+                                strategic_logger.info(f"Subagent [{task_id}] executing: {tool_call.name}")
                                 result = await tools.execute(tool_call.name, tool_call.arguments)
                                 messages.append({
                                     "role": "tool",
@@ -380,28 +387,31 @@ class SubagentPatch(BasePatch):
 
                 # 3. Loop Detection & CLI/File Bypass Prevention
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
-                if name_str == "exec" and not is_specialist:
+                if name_str == "exec":
                     cmd = str(args.get("command", "")).lower()
                     
-                    # A. CLI/File Bypass Detection
-                    bypass_patterns = [
-                        "nanobot mcp", "nanobot status", "history.md", "findstr", 
-                        "grep", "cat ", "type ", "tail ", "get-content", "read-host",
-                        "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod"
-                    ]
-                    if any(p in cmd for p in bypass_patterns):
-                        strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
-                        return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
+                    # A. CLI/File Bypass Detection (Main Agent Only)
+                    if not is_specialist:
+                        bypass_patterns = [
+                            "nanobot mcp", "nanobot status", "history.md", "findstr", 
+                            "grep", "cat ", "type ", "tail ", "get-content", "read-host",
+                            "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod"
+                        ]
+                        if any(p in cmd for p in bypass_patterns):
+                            strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
+                            return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
 
                     # B. Idle Polling Loop Detection (ping, status, etc.)
                     if any(x in cmd for x in ["status", "ping"]):
                         history = getattr(self, "_strategic_exec_history", [])
                         history.append(cmd)
-                        self._strategic_exec_history = history[-5:]
+                        self._strategic_exec_history = history[-10:]
                         
-                        if history.count(cmd) >= 3:
-                            strategic_logger.warning(f"LOOP DETECTED: Main Agent is polling '{cmd}'. Breaking loop.")
-                            return f"CRITICAL ERROR: Loop Detected. You have called '{cmd}' too many times. You MUST STOP polling the system and instead provide a final synthesis to the user based on the information you already have."
+                        limit = 5 if is_specialist else 3
+                        if history.count(cmd) >= limit:
+                            agent_type = "Specialist" if is_specialist else "Main Agent"
+                            strategic_logger.warning(f"LOOP DETECTED: {agent_type} is polling '{cmd}' (Attempt {history.count(cmd)}). Breaking loop.")
+                            return f"CRITICAL ERROR: Loop Detected. You ({agent_type}) have called '{cmd}' too many times. You MUST STOP polling the system and instead provide a final synthesis to the user based on the information you already have."
 
                 # 4. Surgical Tool Injection
                 if "google-surgical" in name_str and isinstance(args, dict):
