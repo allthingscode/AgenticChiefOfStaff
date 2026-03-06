@@ -126,6 +126,53 @@ def strategic_get_rolling_journal(storage_root, max_chars=1000):
         strategic_logger.error(f"Error reading rolling journal: {e}")
         return ""
 
+def strategic_write_journal_entry(storage_root, entry):
+    """Writes a consolidation entry to the daily journal."""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(journal_path, "a", encoding="utf-8-sig") as f:
+            ts = datetime.now().strftime("%H:%M:%S")
+            f.write(f"\n### CONSOLIDATION [{ts}]\n{entry}\n")
+        return True
+    except Exception as e:
+        strategic_logger.error(f"Failed to write journal entry: {e}")
+        return False
+
+async def strategic_inject_rag_context(content, provider, vec_store_factory=VectorStoreFactory):
+    """
+    Queries the vector store and returns formatted context to inject.
+    Returns (injected_block, count) or (None, 0).
+    """
+    # HARDENING: Avoid triggering RAG for short or generic messages that drown context
+    is_generic = content.lower().strip() in ["yes", "no", "ok", "okay", "hello", "hi", "thanks", "thank you", "confirmed"]
+    if len(content) <= 10 or is_generic or content == "[empty message]":
+        return None, 0
+
+    try:
+        vec_store = vec_store_factory.get_store(provider=provider)
+        results = await vec_store.query(content, n_results=3)
+        
+        if results:
+            # Filter out 'No summary available' and empty content
+            valid_results = [r for r in results if r.get('content') and "No summary available" not in r['content']]
+            
+            if valid_results:
+                context_lines = []
+                for r in valid_results:
+                    context_lines.append(f"- {r['content']}")
+                
+                # Warning about potentially stale data
+                warning = "[STRATEGIC MEMORY - MAY BE STALE OR OUTDATED. USE RESEARCH TOOLS TO VERIFY.]\n"
+                mem_block = "### RETRIEVED HISTORICAL CONTEXT:\n" + warning + "\n".join(context_lines)
+                return mem_block, len(valid_results)
+    except Exception as re:
+        strategic_logger.error(f"Semantic Retrieval error: {re}")
+    
+    return None, 0
+
 class MemoryPatch(BasePatch):
     """Handles memory consolidation, context pruning, and memory flush patches."""
     
@@ -185,8 +232,7 @@ class MemoryPatch(BasePatch):
 
 ### FINAL MANDATE:
 - Do NOT repeat yourself.
-- Do NOT provide conversational filler.
-- Output ONLY the raw JSON object. Any text outside the JSON will be considered a failure.
+- Output ONLY the raw JSON object.
 """
                 try:
                     response = await provider.chat(
@@ -205,46 +251,30 @@ class MemoryPatch(BasePatch):
                         strategic_logger.warning(f"Consolidator failed to parse response.")
                         return False
 
-                    # STRATEGIC EDITION: Vector Store + Daily Journal (Retiring HISTORY.md bloat)
                     try:
-                        from pathlib import Path
                         import asyncio
-                        
-                        p_type = type(provider).__name__ if provider else "NoneType"
-                        has_embed = hasattr(provider, "embed") if provider else False
-                        strategic_logger.debug(f"Memory Consolidation (Strategic): Provider type={p_type}, has_embed={has_embed}")
-
-                        # HARDENING (BUG-022): Ensure provider has the strategic embed method
+                        # Ensure provider has the strategic embed method
                         if not hasattr(provider, "embed"):
                             from strategery.patches.provider import strategic_litellm_embed
                             provider.embed = strategic_litellm_embed.__get__(provider, type(provider))
-                            strategic_logger.debug(f"Memory consolidation background task: Late-patched provider with embed.")
                         
                         vec_store = VectorStoreFactory.get_store(provider=provider)
-                        
                         entry = args.get("history_entry", "No summary available.")
                         update = args.get("memory_update", current_memory)
                         
-                        # 1. Push to Vector Store (Searchable Recall)
+                        # 1. Push to Vector Store
                         asyncio.create_task(vec_store.add_entry(str(entry), {"type": "history_summary", "source": "consolidation"}))
                         
-                        # 2. Write to Daily Journal (Human-Readable Log)
+                        # 2. Write to Daily Journal
                         _, _, storage_root = load_strategic_context()
-                        today = datetime.now().strftime("%Y-%m-%d")
-                        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
-                        journal_path.parent.mkdir(parents=True, exist_ok=True)
+                        strategic_write_journal_entry(storage_root, entry)
                         
-                        with open(journal_path, "a", encoding="utf-8-sig") as f:
-                            ts = datetime.now().strftime("%H:%M:%S")
-                            f.write(f"\n### CONSOLIDATION [{ts}]\n{entry}\n")
-                        
-                        # 3. Update Long-Term Memory (Gold Standard Facts)
+                        # 3. Update Long-Term Memory
                         if update and update != current_memory:
                             self.write_long_term(str(update))
-                            # Also index the updated memory block for semantic coverage
                             asyncio.create_task(vec_store.add_entry(f"UPDATED CORE MEMORY:\n{update}", {"type": "memory_fact_sheet"}))
 
-                        strategic_logger.info(f"Strategic Consolidation complete: Vector Store + Journal updated.")
+                        strategic_logger.info(f"Strategic Consolidation complete.")
                     except Exception as ve:
                         strategic_logger.error(f"Strategic Memory persistence error: {ve}")
 
@@ -263,18 +293,12 @@ class MemoryPatch(BasePatch):
             AgentLoop._orig_process_message_strategic = AgentLoop._process_message
 
             async def _patched_process_message(self, msg, session_key=None, on_progress=None):
-                # STRATEGIC: Redundant hint injection removed. Handled cleanly in SubagentPatch._announce_result.
-                
-                # 0. Rolling Journal Injection (F-008)
-                # This provides chronological continuity by injecting recent entries from today's journal.
+                # 0. Rolling Journal Injection
                 try:
-                    from .config import load_strategic_context
                     _, _, storage_root = load_strategic_context()
-                    
                     journal_snippet = strategic_get_rolling_journal(storage_root)
                     if journal_snippet:
                         msg.content = journal_snippet + "\n" + msg.content
-                        strategic_logger.debug("Rolling Journal: Injected chronological snippet.")
                 except Exception as je:
                     strategic_logger.error(f"Rolling Journal injection failed: {je}")
 
@@ -286,49 +310,15 @@ class MemoryPatch(BasePatch):
                     ttl_str = prune_cfg.get("ttl", "6h")
                     hours = int(ttl_str[:-1]) if ttl_str.endswith("h") else 6
                     keep_last = prune_cfg.get("keepLastAssistants", 3)
-                    
                     session.messages = strategic_prune_context(session.messages, hours, keep_last)
 
-            # 2. Semantic Retrieval (RAG)
+                # 2. Semantic Retrieval (RAG)
                 rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
-                content = msg.content or ""
-                # HARDENING: Avoid triggering RAG for short or generic messages that drown context
-                is_generic = content.lower().strip() in ["yes", "no", "ok", "okay", "hello", "hi", "thanks", "thank you", "confirmed"]
-                
-                if rag_cfg.get("enabled", True) and len(content) > 10 and not is_generic and content != "[empty message]":
-                    try:
-                        from .config import load_strategic_context
-                        _, _, storage_root = load_strategic_context()
-                        
-                        from .vsa import VectorStoreFactory
-                        vec_store = VectorStoreFactory.get_store(provider=self.provider)
-                        
-                        results = await vec_store.query(content, n_results=3)
-                        
-                        if results:
-                            # Filter out 'No summary available' and empty content
-                            valid_results = [r for r in results if r.get('content') and "No summary available" not in r['content']]
-                            
-                            if valid_results:
-                                key = session_key or msg.session_key
-                                session = self.sessions.get_or_create(key)
-                                
-                                # Format retrieved context
-                                context_lines = []
-                                for r in valid_results:
-                                    context_lines.append(f"- {r['content']}")
-                                
-                                # We inject a warning about stale data to force the agent to use Research tools if needed
-                                warning = "[STRATEGIC MEMORY - MAY BE STALE OR OUTDATED. USE RESEARCH TOOLS TO VERIFY.]\n"
-                                mem_block = "### RETRIEVED HISTORICAL CONTEXT:\n" + warning + "\n".join(context_lines)
-                                
-                                # Inject as a system-like hint before the current message
-                                msg.content = mem_block + "\n\n" + msg.content
-                                strategic_logger.info(f"RAG: Injected {len(valid_results)} relevant facts.")
-                            else:
-                                strategic_logger.debug("RAG: No high-quality matches found (filtered placeholders).")
-                    except Exception as re:
-                        strategic_logger.error(f"Semantic Retrieval error: {re}")
+                if rag_cfg.get("enabled", True):
+                    rag_block, count = await strategic_inject_rag_context(msg.content or "", self.provider)
+                    if rag_block:
+                        msg.content = rag_block + "\n\n" + msg.content
+                        strategic_logger.info(f"RAG: Injected {count} relevant facts.")
 
                 # 3. Memory Flush
                 flush_cfg = config_data.get("agents", {}).get("defaults", {}).get("compaction", {}).get("memoryFlush", {})
@@ -341,8 +331,6 @@ class MemoryPatch(BasePatch):
                         flush_prompt = flush_cfg.get("prompt", "Store durable memories now.")
                         sys_prompt = flush_cfg.get("systemPrompt", "Session nearing compaction.")
                         
-                        # HARDENING (BUG-024): Explicitly tell the agent NOT to use restricted tools during flush.
-                        # We append a mandate to the system prompt for the flush turn.
                         hardened_sys_prompt = (
                             f"{sys_prompt}\n\n"
                             "### ⚖️ STRATEGIC MANDATE (FLUSH MODE):\n"
@@ -364,12 +352,6 @@ class MemoryPatch(BasePatch):
                         if res and res != "NO_REPLY":
                             self._save_turn(session, all_msgs, 1 + len(history))
                         await self._consolidate_memory(session)
-
-                # Strip temporary timestamps
-                key = session_key or msg.session_key
-                session = self.sessions.get_or_create(key)
-                for m in session.messages:
-                    m.pop("_parsed_ts", None)
 
                 return await self._orig_process_message_strategic(msg, session_key, on_progress)
 

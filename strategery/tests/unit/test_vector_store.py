@@ -42,8 +42,11 @@ async def test_vector_store_add_entry(vector_store, mock_provider):
     """Verify adding an entry to the vector store."""
     mock_collection = MagicMock()
     
-    with patch("chromadb.PersistentClient") as mock_client_cls:
-        mock_client = mock_client_cls.return_value
+    # Mock chromadb in sys.modules to avoid import on Python 3.14 (Pydantic v1 issue)
+    mock_chroma = MagicMock()
+    mock_config = MagicMock()
+    with patch.dict("sys.modules", {"chromadb": mock_chroma, "chromadb.config": mock_config}):
+        mock_client = mock_chroma.PersistentClient.return_value
         mock_client.get_or_create_collection.return_value = mock_collection
         
         success = await vector_store.add_entry("Test text", metadata={"source": "test"})
@@ -66,8 +69,11 @@ async def test_vector_store_query(vector_store, mock_provider):
         "distances": [[0.1, 0.2]]
     }
     
-    with patch("chromadb.PersistentClient") as mock_client_cls:
-        mock_client = mock_client_cls.return_value
+    # Mock chromadb in sys.modules to avoid import on Python 3.14
+    mock_chroma = MagicMock()
+    mock_config = MagicMock()
+    with patch.dict("sys.modules", {"chromadb": mock_chroma, "chromadb.config": mock_config}):
+        mock_client = mock_chroma.PersistentClient.return_value
         mock_client.get_or_create_collection.return_value = mock_collection
         
         results = await vector_store.query("Search text", n_results=2)

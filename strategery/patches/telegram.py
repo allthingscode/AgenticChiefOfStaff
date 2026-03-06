@@ -1,6 +1,6 @@
 from pathlib import Path
 from functools import wraps
-from .base import BasePatch
+import asyncio
 from strategery.strategic_logger import strategic_logger
 
 def strategic_get_media_path(base_workspace, original_path):
@@ -26,6 +26,7 @@ def strategic_prepare_telegram_media(media_path, bot):
     Selects the correct sender method and parameter name based on media type.
     Returns: (sender_func, param_name, media_type)
     """
+    # Core import locally to avoid bootstrap failure
     from nanobot.channels.telegram import TelegramChannel
     mtype = TelegramChannel._get_media_type(media_path)
     sender = {
@@ -36,6 +37,119 @@ def strategic_prepare_telegram_media(media_path, bot):
     
     param = "photo" if mtype == "photo" else mtype if mtype in ("voice", "audio") else "document"
     return sender, param, mtype
+
+async def strategic_telegram_polling_loop(channel):
+    """Resilience Loop for Telegram start_polling."""
+    from telegram.error import NetworkError
+    retry_delay = 5
+    while channel._running:
+        try:
+            if channel._app and channel._app.updater and not channel._app.updater.running:
+                strategic_logger.info("Telegram: (Re)starting polling loop...")
+                await channel._app.updater.start_polling(
+                    allowed_updates=["message"],
+                    drop_pending_updates=True
+                )
+                retry_delay = 5 # Reset on success
+            
+            await asyncio.sleep(1)
+        except NetworkError as e:
+            strategic_logger.warning(f"Telegram: Network error during polling: {e}. Retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60) # Exponential backoff
+        except Exception as e:
+            strategic_logger.error(f"Telegram: Unexpected error in polling loop: {e}")
+            await asyncio.sleep(5)
+
+async def strategic_telegram_on_message(channel, update, context, orig_on_message):
+    """Patched message handler with Media Redirection and Topic support."""
+    strategic_logger.debug(f"Telegram: Received update {update.update_id}")
+    if update.message:
+        # Media Redirection
+        media_file = None
+        if update.message.photo: media_file = update.message.photo[-1]
+        elif update.message.voice: media_file = update.message.voice
+        elif update.message.audio: media_file = update.message.audio
+        elif update.message.document: media_file = update.message.document
+        
+        if media_file:
+            _orig_get_file = context.bot.get_file
+            async def _patched_get_file(file_id, *args, **kwargs):
+                file = await _orig_get_file(file_id, *args, **kwargs)
+                _orig_download = file.download_to_drive
+                async def _patched_download(custom_path=None, *args, **kwargs):
+                    workspace = getattr(channel.config, "workspace_path", None)
+                    new_path = strategic_get_media_path(workspace, custom_path)
+                    if new_path != custom_path:
+                        strategic_logger.info(f"Telegram Media Redirection: {new_path}")
+                    return await _orig_download(custom_path=new_path, *args, **kwargs)
+                file.download_to_drive = _patched_download
+                return file
+            context.bot.get_file = _patched_get_file
+
+    # STRATEGIC EDITION: Handle Telegram Topics (threads)
+    thread_meta = strategic_detect_thread_metadata(update.message, update.message.chat_id if update.message else None)
+    if thread_meta:
+        strategic_logger.debug(f"Telegram: Thread ID detected: {thread_meta['message_thread_id']}")
+        orig_hm = channel._handle_message
+        async def temp_hm(msg, chat_id, text=None, session_key=None, metadata=None):
+            metadata = dict(metadata or {})
+            metadata.update(thread_meta)
+            return await orig_hm(msg, chat_id, text=text, session_key=thread_meta["session_key_override"], metadata=metadata)
+        
+        channel._handle_message = temp_hm
+        try:
+            return await orig_on_message(update, context)
+        finally:
+            channel._handle_message = orig_hm
+    else:
+        try:
+            return await orig_on_message(update, context)
+        except Exception as e:
+            strategic_logger.error(f"Telegram: Error in original _on_message: {e}")
+            raise
+
+async def strategic_telegram_send(channel, msg):
+    """Thread-aware message and media sender."""
+    from nanobot.channels.telegram import _split_message, _markdown_to_telegram_html
+    from telegram import ReplyParameters
+    
+    if not channel._app: return
+    channel._stop_typing(msg.chat_id)
+    try: chat_id = int(msg.chat_id)
+    except: return
+
+    thread_id = msg.metadata.get("message_thread_id")
+    reply_params = None
+    if channel.config.reply_to_message:
+        if reply_to_id := msg.metadata.get("message_id"):
+            reply_params = ReplyParameters(message_id=reply_to_id, allow_sending_without_reply=True)
+
+    # Send media
+    for media_path in (msg.media or []):
+        try:
+            sender, param, mtype = strategic_prepare_telegram_media(media_path, channel._app.bot)
+            with open(media_path, 'rb') as f:
+                kwargs = {param: f, "chat_id": chat_id, "reply_parameters": reply_params}
+                if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                await sender(**kwargs)
+        except Exception as e:
+            strategic_logger.error(f"Failed to send media: {e}")
+
+    # Send text
+    if msg.content and msg.content != "[empty message]":
+        for chunk in _split_message(msg.content):
+            try:
+                html = _markdown_to_telegram_html(chunk)
+                kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}
+                if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                await channel._app.bot.send_message(**kwargs)
+            except Exception as e:
+                kwargs = {"chat_id": chat_id, "text": chunk, "reply_parameters": reply_params}
+                if thread_id: kwargs["message_thread_id"] = int(thread_id)
+                await channel._app.bot.send_message(**kwargs)
+
+from .base import BasePatch
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
@@ -54,12 +168,8 @@ class TelegramPatch(BasePatch):
             return False
 
     def _patch_telegram_channel(self, TelegramChannel, config_data):
-        from nanobot.channels.telegram import _split_message, _markdown_to_telegram_html
-        from nanobot.bus.events import OutboundMessage
-        from telegram import ReplyParameters
         from telegram.ext import CommandHandler
 
-        # 1. Handle command registration (clean interface)
         disable_commands = config_data.get("strategic_edition", {}).get("disable_bot_commands", False)
         
         if not hasattr(TelegramChannel, "_orig_start_strategic"):
@@ -68,63 +178,23 @@ class TelegramPatch(BasePatch):
             async def _strategic_start(self):
                 strategic_logger.info(f"Telegram: Starting strategic channel (disable_commands={disable_commands})...")
                 
-                # Import NetworkError and asyncio locally to avoid early import failures
-                from telegram.error import NetworkError
-                import asyncio
-                import time
-
                 if disable_commands:
                     strategic_logger.debug("Telegram: Disabling default bot commands...")
-                    # We patch the CommandHandler class temporarily during start!
                     _orig_init = CommandHandler.__init__
                     def _patched_init(handler_self, command, callback, *args, **kwargs):
                         if command in ["start", "new", "help"]:
-                            # Force a dummy callback or make it do nothing
                             return _orig_init(handler_self, "disabled_cmd_" + command, lambda u, c: None, *args, **kwargs)
                         return _orig_init(handler_self, command, callback, *args, **kwargs)
                     
                     CommandHandler.__init__ = _patched_init
                     try:
-                        # Original start method blocks in its own loop
-                        # We run it in a task so we can monitor/retry it here
                         asyncio.create_task(self._orig_start_strategic())
-                    except Exception as e:
-                        strategic_logger.error(f"Telegram: FATAL during start (with suppression): {e}")
-                        raise
                     finally:
                         CommandHandler.__init__ = _orig_init
                 else:
-                    try:
-                        # Original start method blocks in its own loop
-                        asyncio.create_task(self._orig_start_strategic())
-                    except Exception as e:
-                        strategic_logger.error(f"Telegram: FATAL during start: {e}")
-                        raise
+                    asyncio.create_task(self._orig_start_strategic())
 
-                # Resilience Loop for start_polling
-                # The original start() method enters a while self._running: loop after start_polling.
-                # However, if start_polling fails with a NetworkError, the app state might be inconsistent.
-                # python-telegram-bot's Updater usually handles retries, but BUG-034 shows it's crashing.
-                # We monitor self._app.updater.running and self._running to ensure continuity.
-                retry_delay = 5
-                while self._running:
-                    try:
-                        if self._app and self._app.updater and not self._app.updater.running:
-                            strategic_logger.info("Telegram: (Re)starting polling loop...")
-                            await self._app.updater.start_polling(
-                                allowed_updates=["message"],
-                                drop_pending_updates=True
-                            )
-                            retry_delay = 5 # Reset on success
-                        
-                        await asyncio.sleep(1)
-                    except NetworkError as e:
-                        strategic_logger.warning(f"Telegram: Network error during polling: {e}. Retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, 60) # Exponential backoff
-                    except Exception as e:
-                        strategic_logger.error(f"Telegram: Unexpected error in polling loop: {e}")
-                        await asyncio.sleep(5)
+                await strategic_telegram_polling_loop(self)
 
             TelegramChannel.start = _strategic_start
 
@@ -132,112 +202,24 @@ class TelegramPatch(BasePatch):
             TelegramChannel._orig_on_message_strategic = TelegramChannel._on_message
             
             async def _strategic_on_message(self, update, context):
-                strategic_logger.debug(f"Telegram: Received update {update.update_id}")
-                if update.message:
-                    # Media Redirection
-                    media_file = None
-                    if update.message.photo: media_file = update.message.photo[-1]
-                    elif update.message.voice: media_file = update.message.voice
-                    elif update.message.audio: media_file = update.message.audio
-                    elif update.message.document: media_file = update.message.document
-                    
-                    if media_file:
-                        _orig_get_file = context.bot.get_file
-                        async def _patched_get_file(file_id, *args, **kwargs):
-                            file = await _orig_get_file(file_id, *args, **kwargs)
-                            _orig_download = file.download_to_drive
-                            async def _patched_download(custom_path=None, *args, **kwargs):
-                                workspace = getattr(self.config, "workspace_path", None)
-                                new_path = strategic_get_media_path(workspace, custom_path)
-                                if new_path != custom_path:
-                                    strategic_logger.info(f"Telegram Media Redirection: {new_path}")
-                                return await _orig_download(custom_path=new_path, *args, **kwargs)
-                            file.download_to_drive = _patched_download
-                            return file
-                        context.bot.get_file = _patched_get_file
-
-                # STRATEGIC EDITION: Handle Telegram Topics (threads)
-                thread_meta = strategic_detect_thread_metadata(update.message, update.message.chat_id if update.message else None)
-                if thread_meta:
-                    strategic_logger.debug(f"Telegram: Thread ID detected: {thread_meta['message_thread_id']}")
-                    
-                    # Instead of patching self._handle_message, we just call orig_on_message
-                    # and ensure the session_key is passed correctly.
-                    # This relies on core TelegramChannel._on_message using self._handle_message.
-                    orig_hm = self._handle_message
-                    async def temp_hm(msg, chat_id, text=None, session_key=None, metadata=None):
-                        metadata = dict(metadata or {})
-                        metadata.update(thread_meta)
-                        return await orig_hm(msg, chat_id, text=text, session_key=thread_meta["session_key_override"], metadata=metadata)
-                    
-                    self._handle_message = temp_hm
-                    try:
-                        return await self._orig_on_message_strategic(update, context)
-                    finally:
-                        self._handle_message = orig_hm
-                else:
-                    # Fallback for standard messages (non-thread)
-                    try:
-                        return await self._orig_on_message_strategic(update, context)
-                    except Exception as e:
-                        strategic_logger.error(f"Telegram: Error in original _on_message: {e}")
-                        raise
+                return await strategic_telegram_on_message(self, update, context, self._orig_on_message_strategic)
             
             TelegramChannel._on_message = _strategic_on_message
 
-        # Complete rewrite of send to handle message_thread_id
-        async def _thread_aware_send(self, msg: OutboundMessage) -> None:
-            if not self._app: return
-            self._stop_typing(msg.chat_id)
-            try: chat_id = int(msg.chat_id)
-            except: return
+        async def _thread_aware_send_wrapper(self, msg):
+            return await strategic_telegram_send(self, msg)
 
-            thread_id = msg.metadata.get("message_thread_id")
-            reply_params = None
-            if self.config.reply_to_message:
-                if reply_to_id := msg.metadata.get("message_id"):
-                    reply_params = ReplyParameters(message_id=reply_to_id, allow_sending_without_reply=True)
+        TelegramChannel.send = _thread_aware_send_wrapper
 
-            # Send media
-            for media_path in (msg.media or []):
-                try:
-                    sender, param, mtype = strategic_prepare_telegram_media(media_path, self._app.bot)
-                    with open(media_path, 'rb') as f:
-                        kwargs = {param: f, "chat_id": chat_id, "reply_parameters": reply_params}
-                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
-                        await sender(**kwargs)
-                except Exception as e:
-                    strategic_logger.error(f"Failed to send media: {e}")
-
-            # Send text
-            if msg.content and msg.content != "[empty message]":
-                for chunk in _split_message(msg.content):
-                    try:
-                        html = _markdown_to_telegram_html(chunk)
-                        kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}
-                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
-                        await self._app.bot.send_message(**kwargs)
-                    except Exception as e:
-                        kwargs = {"chat_id": chat_id, "text": chunk, "reply_parameters": reply_params}
-                        if thread_id: kwargs["message_thread_id"] = int(thread_id)
-                        await self._app.bot.send_message(**kwargs)
-
-        TelegramChannel.send = _thread_aware_send
-
-        # 4. Patch Error Handler to suppress noise (BUG-060)
         if not hasattr(TelegramChannel, "_orig_on_error_strategic"):
             TelegramChannel._orig_on_error_strategic = TelegramChannel._on_error
             
             async def _strategic_on_error(self, update, context):
                 from telegram.error import NetworkError
-                
-                # Check for Network/Protocol errors
                 err_str = str(context.error)
                 if isinstance(context.error, NetworkError) or "RemoteProtocolError" in err_str:
                     strategic_logger.warning(f"Telegram: Transient network noise suppressed: {err_str}")
                     return
-                
-                # Fallback to original for real errors
                 return await self._orig_on_error_strategic(update, context)
                 
             TelegramChannel._on_error = _strategic_on_error

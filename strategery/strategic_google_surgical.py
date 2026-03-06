@@ -33,8 +33,7 @@ STORAGE_ROOT = Path(STRATEGIC.get("storage_root", _default_root))
 # Performance Optimization: In-memory service singleton cache
 _SERVICE_CACHE = {}
 
-# 1. Credentials Setup (Restricted to Tasks:Write, Calendar:Read-Only)
-# We use a subfolder in storage_root for surgical credentials
+# 1. Credentials Setup
 CREDS_DIR = STORAGE_ROOT / "google_surgical" / "credentials"
 CREDS_PATH = CREDS_DIR / f"{USER_EMAIL}.json"
 
@@ -73,10 +72,24 @@ def get_service(service_name):
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
             
-    # static_discovery=True prevents downloading the discovery doc every time
     service = build(service_name, "v1" if service_name == "tasks" else "v3", credentials=creds, static_discovery=True)
     _SERVICE_CACHE[cache_key] = service
     return service
+
+def strategic_merge_calendar_events(all_results, max_results):
+    """
+    Merges and sorts events from multiple calendars.
+    all_results: List of (calendar_name, events_list) tuples.
+    """
+    merged = []
+    for cal_name, events in all_results:
+        for ev in events:
+            ev["_calendar_name"] = cal_name
+            merged.append(ev)
+            
+    # Sort combined events by start time (dateTime or date)
+    merged.sort(key=lambda x: x.get("start", {}).get("dateTime") or x.get("start", {}).get("date") or "")
+    return merged[:max_results * 2]
 
 # 2. MCP Server Setup
 mcp = FastMCP("Google Surgical")
@@ -124,58 +137,40 @@ def list_calendar_events(calendar_id: str = "primary", max_results: int = 10):
     Use calendar_id='all' to fetch and merge events from ALL available calendars.
     """
     service = get_service("calendar")
-    # Use timezone-aware UTC datetime to avoid DeprecationWarning
     from datetime import UTC
     now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     
     if calendar_id == "all":
         calendars = list_calendars()
-        all_events = []
+        all_results = []
         for cal in calendars:
             cal_id = cal.get("id")
             cal_name = cal.get("summary", "Unknown")
             try:
                 results = service.events().list(
-                    calendarId=cal_id, 
-                    timeMin=now, 
-                    maxResults=max_results, 
-                    singleEvents=True, 
-                    orderBy='startTime'
+                    calendarId=cal_id, timeMin=now, maxResults=max_results, 
+                    singleEvents=True, orderBy='startTime'
                 ).execute()
-                events = results.get("items", [])
-                for ev in events:
-                    ev["_calendar_name"] = cal_name # Inject calendar name for context
-                all_events.extend(events)
-            except Exception as e:
-                # Skip calendars we can't access
+                all_results.append((cal_name, results.get("items", [])))
+            except Exception:
                 continue
-        
-        # Sort combined events by start time
-        all_events.sort(key=lambda x: x.get("start", {}).get("dateTime") or x.get("start", {}).get("date") or "")
-        return all_events[:max_results*2] # Return a bit more for the combined view
+        return strategic_merge_calendar_events(all_results, max_results)
     else:
         results = service.events().list(
-            calendarId=calendar_id, 
-            timeMin=now, 
-            maxResults=max_results, 
-            singleEvents=True, 
-            orderBy='startTime'
+            calendarId=calendar_id, timeMin=now, maxResults=max_results, 
+            singleEvents=True, orderBy='startTime'
         ).execute()
         return results.get("items", [])
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":
-        # Run as MCP Server
         mcp.run()
     elif len(sys.argv) > 1 and sys.argv[1] == "check_creds":
-        # Manual credential check
         print(f"Checking credentials for {USER_EMAIL}...")
-        print(f"CREDS_PATH: {CREDS_PATH}")
         try:
             get_service("tasks")
             print("[PASS] Credentials valid and service initialized.")
         except Exception as e:
             print(f"[FAIL] Credential check failed: {e}")
     else:
-        # Keep old CLI behavior for manual testing
-        print("Running in CLI mode. Use 'mcp_wrapper' to run as MCP server or 'check_creds' to verify.")
+        print("Run with 'mcp_wrapper' to start the MCP server.")
