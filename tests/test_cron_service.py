@@ -48,6 +48,8 @@ async def test_running_service_honors_external_disable(tmp_path) -> None:
     )
     await service.start()
     try:
+        # Wait slightly to ensure file mtime is definitively different
+        await asyncio.sleep(0.05)
         external = CronService(store_path)
         # Give service a moment to initialize and arm
         await asyncio.sleep(0.1)
