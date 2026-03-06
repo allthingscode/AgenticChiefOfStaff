@@ -111,7 +111,8 @@ async def strategic_telegram_on_message(channel, update, context, orig_on_messag
 
 async def strategic_telegram_send(channel, msg):
     """Thread-aware message and media sender."""
-    from nanobot.channels.telegram import _split_message, _markdown_to_telegram_html
+    from nanobot.channels.telegram import _markdown_to_telegram_html, TELEGRAM_MAX_MESSAGE_LEN
+    from nanobot.utils.helpers import split_message
     from telegram import ReplyParameters
     
     if not channel._app: return
@@ -138,7 +139,7 @@ async def strategic_telegram_send(channel, msg):
 
     # Send text
     if msg.content and msg.content != "[empty message]":
-        for chunk in _split_message(msg.content):
+        for chunk in split_message(msg.content, TELEGRAM_MAX_MESSAGE_LEN):
             try:
                 html = _markdown_to_telegram_html(chunk)
                 kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}

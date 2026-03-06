@@ -105,7 +105,7 @@ async def test_strategic_telegram_send_thread_aware():
     msg.media = []
     msg.metadata = {"message_thread_id": 123}
     
-    with patch("nanobot.channels.telegram._split_message", return_value=["Hello"]), \
+    with patch("nanobot.utils.helpers.split_message", return_value=["Hello"]), \
          patch("nanobot.channels.telegram._markdown_to_telegram_html", return_value="Hello"):
         await strategic_telegram_send(channel, msg)
         

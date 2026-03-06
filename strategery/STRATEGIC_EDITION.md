@@ -40,7 +40,8 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.
 - **Logging Stability:** Specialized `UnicodeSafeStreamHandler` prevents application crashes when logging complex characters (emojis) to restricted Windows consoles.
 - **Notification Resilience:** The Email Reporter includes an automated disk-based fallback (`NOTIFICATIONS.md`) to prevent data loss during API outages or credential revocations.
-- **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates.
+- **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates. (Latest Sync: 2026-03-06 - 98 commits merged from upstream/main).
+- **Utility Alignment:** Proactive maintenance and alignment of strategic patches with upstream utility refactoring (e.g., `split_message` migration) to ensure long-term stability.
 
 ### **6. Graph Capabilities (NanoGraph)**
 - **Semantic Overlay:** The memory system is augmented with a semantic graph overlay for relationship-based recall.
