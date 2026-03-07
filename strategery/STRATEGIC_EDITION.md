@@ -37,11 +37,11 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Strategic Noise Suppression:** Automated suppression of transient network tracebacks (e.g. Telegram RemoteProtocolError) into single-line warnings for cleaner strategic logging.
 - **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
 - **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
-- **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors.
+- **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors. Now includes direct **Azure OpenAI Provider** support (API 2024-10-21) with strategic logging and formatted error interception.
 - **Logging Stability:** Specialized `UnicodeSafeStreamHandler` prevents application crashes when logging complex characters (emojis) to restricted Windows consoles.
 - **Notification Resilience:** The Email Reporter includes an automated disk-based fallback (`NOTIFICATIONS.md`) to prevent data loss during API outages or credential revocations.
-- **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates. (Latest Sync: 2026-03-06 - 98 commits merged from upstream/main).
-- **Utility Alignment:** Proactive maintenance and alignment of strategic patches with upstream utility refactoring (e.g., `split_message` migration) to ensure long-term stability.
+- **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates and enabling seamless synchronization with the main repository.
+- **Upstream Resilience:** Proactive maintenance and architectural alignment of strategic patches with core utility evolutions to ensure long-term stability and compatibility with upstream refactoring.
 
 ### **6. Automated Batch System (F-011)**
 - **Modular Task Loader:** Folder-based nightly processing where new tasks (maintenance, reporting, extraction) are defined as simple Markdown files in `D:/Nanobot_Storage/workspace/cron/items/`.

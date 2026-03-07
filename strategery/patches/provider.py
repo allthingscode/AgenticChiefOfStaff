@@ -79,11 +79,57 @@ class ProviderPatch(BasePatch):
         try:
             self._patch_base_provider()
             self._patch_litellm_provider()
+            self._patch_azure_openai_provider()
             self._patch_agent_loop_cleaning()
             return True
         except Exception as e:
             strategic_logger.error(f"Provider patch error: {e}")
             return False
+
+    def _patch_azure_openai_provider(self):
+        try:
+            from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
+        except ImportError:
+            strategic_logger.debug("AzureOpenAIProvider not found in upstream. Skipping patch.")
+            return
+
+        if not hasattr(AzureOpenAIProvider, "_orig_chat_strategic"):
+            AzureOpenAIProvider._orig_chat_strategic = AzureOpenAIProvider.chat
+            
+            async def _patched_chat(self, *args, **kwargs):
+                model = kwargs.get("model") or (args[2] if len(args) > 2 else self.default_model)
+                strategic_log_provider_request("AzureOpenAI", model)
+                
+                max_retries = 3
+                retry_delay = 2.0
+                
+                for attempt in range(max_retries):
+                    try:
+                        response = await self._orig_chat_strategic(*args, **kwargs)
+                        if getattr(response, "finish_reason", None) == "error":
+                            raw_content = str(response.content)
+                            is_transient = any(x in raw_content for x in ["500", "503", "504", "InternalServerError", "ServiceUnavailable", "RateLimitError", "429", "timeout"])
+                            if is_transient and attempt < max_retries - 1:
+                                strategic_logger.warning(f"Transient Azure error detected ({raw_content[:50]}). Attempt {attempt + 1}/{max_retries}. Retrying in {retry_delay}s...")
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 2
+                                continue
+                            response.content = strategic_format_error(raw_content)
+                        return response
+                    except Exception as e:
+                        err_str = str(e)
+                        is_transient = any(x in err_str for x in ["500", "503", "InternalServerError", "ServiceUnavailable", "RateLimit", "429", "Timeout"])
+                        if is_transient and attempt < max_retries - 1:
+                            strategic_logger.warning(f"AzureOpenAI Exception (Transient): {err_str[:50]}. Retrying...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+                            continue
+                        strategic_logger.error(f"AzureOpenAI Fatal Crash: {e}")
+                        from nanobot.providers.base import LLMResponse
+                        return LLMResponse(content=strategic_format_error(err_str), finish_reason="error")
+            
+            AzureOpenAIProvider.chat = _patched_chat
+            strategic_logger.debug("Patched AzureOpenAIProvider with strategic logging and retries.")
 
     def _patch_base_provider(self):
         from nanobot.providers.base import LLMProvider
