@@ -216,11 +216,23 @@ class TelegramPatch(BasePatch):
             TelegramChannel._orig_on_error_strategic = TelegramChannel._on_error
             
             async def _strategic_on_error(self, update, context):
-                from telegram.error import NetworkError
+                from telegram.error import NetworkError, TimedOut
                 err_str = str(context.error)
-                if isinstance(context.error, NetworkError) or "RemoteProtocolError" in err_str:
+                
+                # SUPPRESS NOISY TRANSIENT NETWORK ERRORS (BUG-060, BUG-092)
+                # These often happen during polling and produce massive multi-page tracebacks.
+                suppress_patterns = [
+                    "ReadError", 
+                    "RemoteProtocolError", 
+                    "Timed out", 
+                    "ConnectError",
+                    "Connection reset by peer"
+                ]
+                
+                if isinstance(context.error, (NetworkError, TimedOut)) or any(p in err_str for p in suppress_patterns):
                     strategic_logger.warning(f"Telegram: Transient network noise suppressed: {err_str}")
                     return
+                
                 return await self._orig_on_error_strategic(update, context)
                 
             TelegramChannel._on_error = _strategic_on_error
