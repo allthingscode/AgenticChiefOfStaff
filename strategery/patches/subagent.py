@@ -19,8 +19,8 @@ class SubagentPatch(BasePatch):
     - Turn termination is ENFORCED after subagent spawn.
     """
     
-    # patterns to block for main agent (case-insensitive)
-    BLOCKED_PATTERNS = [
+    # Tools blocked for the Main Agent (Orchestrator)
+    MAIN_AGENT_BLOCKED = [
         "google", 
         "ai-search", 
         "email-reporter", 
@@ -32,7 +32,17 @@ class SubagentPatch(BasePatch):
         "read_file",
         "write_file",
         "edit_file",
-        "list_dir"
+        "list_dir",
+        "ls ",
+        "dir ",
+        "D:"
+    ]
+
+    # Tools blocked for Specialists (to prevent recursive overkill and fire-and-forget loops)
+    SPECIALIST_BLOCKED = [
+        "spawn",
+        "nanobot",
+        "strategic_hello" # Example of a specialist-restricted management tool
     ]
 
     @property
@@ -106,7 +116,7 @@ class SubagentPatch(BasePatch):
 
             SpawnTool.parameters = _patched_parameters
 
-        # 2. Update Tool Execution to pass 'specialist'
+        # 2. Update Tool Execution to pass 'specialist' AND 'registry' (host tools)
         if not hasattr(SpawnTool, "_orig_execute_strategic"):
             SpawnTool._orig_execute_strategic = SpawnTool.execute
             
@@ -121,7 +131,8 @@ class SubagentPatch(BasePatch):
                     origin_channel=self._origin_channel,
                     origin_chat_id=self._origin_chat_id,
                     session_key=self._session_key,
-                    specialist=specialist
+                    specialist=specialist,
+                    host_tools=getattr(self, "_registry", None) # Bridge host tools (BUG-071)
                 )
             
             SpawnTool.execute = _patched_execute
@@ -135,17 +146,17 @@ class SubagentPatch(BasePatch):
         from nanobot.config.schema import Config
         from contextlib import AsyncExitStack
 
-        # 1. Update spawn signature to accept specialist type
+        # 1. Update spawn signature to accept specialist type and host tools
         if not hasattr(SubagentManager, "_orig_spawn_strategic"):
             SubagentManager._orig_spawn_strategic = SubagentManager.spawn
             
-            async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher"):
+            async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher", host_tools=None):
                 task_id = str(uuid.uuid4())[:8]
                 display_label = label or task[:100] + ("..." if len(task) > 100 else "")
                 origin = {"channel": origin_channel, "chat_id": origin_chat_id}
 
                 bg_task = asyncio.create_task(
-                    self._run_subagent(task_id, task, display_label, origin, specialist)
+                    self._run_subagent(task_id, task, display_label, origin, specialist, host_tools)
                 )
                 self._running_tasks[task_id] = bg_task
                 if session_key:
@@ -164,8 +175,8 @@ class SubagentPatch(BasePatch):
 
             SubagentManager.spawn = _patched_spawn
 
-        # 2. Replace the entire _run_subagent to inject MCP and Specialist Logic
-        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher"):
+        # 2. Replace the entire _run_subagent to inject MCP, Specialist Logic, and bridged host tools
+        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
             from .config import load_strategic_context
             from .vsa import VectorStoreFactory
             _, _, storage_root = load_strategic_context()
@@ -186,7 +197,6 @@ class SubagentPatch(BasePatch):
             strategic_logger.info(f"Subagent Specialist Assigned: {specialist} (model='{final_model}')")
 
             # MANDATE (F-007): Ensure VectorStore singleton is initialized with this subagent's provider
-            # This ensures that tools like 'search_memory' have access to embeddings.
             VectorStoreFactory.get_store(provider=self.provider)
 
             try:
@@ -197,9 +207,7 @@ class SubagentPatch(BasePatch):
                     # MANDATE: Subagents MUST use the strategic workspace root on D:
                     subagent_workspace = strategic_workspace
                     
-                    # MANDATE (BUG-055): Remove redundant core FS tools. 
-                    # We only register 'ExecTool' and 'WebFetchTool' from core.
-                    # FS operations (Read/Write/Edit/List) are handled by 'filesystem-d' MCP.
+                    # Core Tools
                     tools.register(ExecTool(
                         working_dir=str(subagent_workspace),
                         timeout=self.exec_config.timeout,
@@ -208,6 +216,19 @@ class SubagentPatch(BasePatch):
                     ))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     
+                    # 1. Bridge Host Tools (Skills) (BUG-071)
+                    if host_tools and hasattr(host_tools, "_tools"):
+                        for name, tool in host_tools._tools.items():
+                            # Skip high-power or already registered tools
+                            if name in tools._tools: continue
+                            if any(bp.lower() in name.lower() for bp in SubagentPatch.MAIN_AGENT_BLOCKED):
+                                continue
+                            
+                            # Bridge the tool instance
+                            tools.register(tool)
+                            strategic_logger.debug(f"Subagent [{task_id}] Bridged host tool: {name}")
+
+                    # 2. Bridge MCP Tools
                     try:
                         from .config import strategic_migrate_config
                         from .infra import strategic_mcp_manager
@@ -219,6 +240,7 @@ class SubagentPatch(BasePatch):
                     except Exception as mcp_err:
                         strategic_logger.error(f"Subagent [{task_id}] MCP setup failed: {mcp_err}")
                     
+                    # 3. Load Strategic Tools
                     SubagentPatch()._load_strategic_tools(tools)
 
                     system_prompt = self._build_subagent_prompt()
@@ -314,7 +336,8 @@ class SubagentPatch(BasePatch):
                 prompt += "4. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS for all file operations (e.g., `D:\\Nanobot_Storage\\workspace\\memory\\MEMORY.md`). The file `HISTORY.md` is RETIRED.\n"
                 prompt += "5. **CALENDAR MANDATE:** When asked about scheduling, appointments, or events for 'today' or 'tomorrow', you MUST use the `mcp_google-surgical_list_calendar_events` tool with `calendar_id='all'` to ensure you capture events from all sub-calendars.\n"
                 prompt += "6. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
-                prompt += "7. **CHAIN OF THOUGHT:** You MUST show your reasoning process and clearly state which verification tool you are about to call."
+                prompt += "7. **CHAIN OF THOUGHT:** You MUST show your reasoning process and clearly state which verification tool you are about to call.\n"
+                prompt += "8. **EFFICIENT EXECUTION:** You are equipped with a full suite of surgical tools. You MUST perform direct investigations (file checks, searches, edits) yourself. Do NOT attempt to delegate to other specialists. The 'spawn' tool is strictly RESTRICTED for subagents. If you encounter a security block when attempting to use 'spawn', it is a policy enforcement, NOT a system bug. You must complete your task using your own tools."
                 return prompt
 
             SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
@@ -328,7 +351,7 @@ class SubagentPatch(BasePatch):
 
                 announce_content = f"""### 🛡️ SPECIALIST SUBAGENT REPORT (FINAL)
 [Subagent '{label}' {status_text}]
-
+**ID:** {task_id}
 **Original Task:** {task}
 
 **Result Data:**
@@ -336,10 +359,10 @@ class SubagentPatch(BasePatch):
 
 ---
 ### ⚖️ ORCHESTRATOR DIRECTIVE (CRITICAL)
-1. **TERMINATE TURN:** You have received the specialist's report. You MUST now provide a final response to the user.
-2. **DO NOT VERIFY:** You are strictly forbidden from calling ANY tools (exec, status, google, etc.) to "verify" this result. The specialist has already performed the work.
-3. **SYNTHESIZE ONLY:** Your ONLY remaining responsibility is to present this data to the user in a natural, helpful summary.
-4. **TASK CLOSED:** This specific task is now CLOSED.
+1. **TERMINATE TURN:** You have received a specialist's report.
+2. **CONTEXT AWARENESS:** If this report is a sub-task of a larger investigation (like a health check), SYNTHESIZE it into the ongoing context. Do not present it as a separate "out of the blue" event.
+3. **DO NOT VERIFY:** You are strictly forbidden from calling ANY tools to "verify" this result.
+4. **SYNTHESIZE ONLY:** Provide a natural summary to the user and END your response.
 """
                 msg = InboundMessage(
                     channel="system",
@@ -360,9 +383,12 @@ class SubagentPatch(BasePatch):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
 
             def _patched_register(registry_self, tool):
+                # Attach registry reference to the tool instance (BUG-071)
+                # This allows tools like 'spawn' to see the other registered skills
+                setattr(tool, "_registry", registry_self)
+                
                 # MANDATE (BUG-054): We ALLOW registration for all, to ensure
                 # host sessions are captured by the Strategic manager for bridging.
-                # Tool Stripping is now handled at the prompt level (get_definitions).
                 return registry_self._orig_register_strategic(tool)
 
             ToolRegistry.register = _patched_register
@@ -373,17 +399,17 @@ class SubagentPatch(BasePatch):
             def _patched_get_definitions(self):
                 definitions = self._orig_get_definitions_strategic()
                 
-                # 1. TOOL STRIPPING (BUG-053/054/059): 
-                # Hide high-power tools from Main Agent prompt while keeping sessions alive.
+                # 1. TOOL STRIPPING (BUG-053/054/059/086): 
+                # Use role-aware stripping to maintain Specialist Economy
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
-                if not is_specialist:
-                    filtered = []
-                    for d in definitions:
-                        # Extract name from OpenAI function schema
-                        name = d.get("function", {}).get("name", "").lower()
-                        if not any(hp.lower() in name for hp in patch_self.BLOCKED_PATTERNS):
-                            filtered.append(d)
-                    definitions = filtered
+                blocked_list = patch_self.SPECIALIST_BLOCKED if is_specialist else patch_self.MAIN_AGENT_BLOCKED
+                
+                filtered = []
+                for d in definitions:
+                    name = d.get("function", {}).get("name", "").lower()
+                    if not any(bp.lower() in name for bp in blocked_list):
+                        filtered.append(d)
+                definitions = filtered
 
                 # 2. Telemetry for BUG-032: Prove tool stripping during initialization
                 if not getattr(self, "_strategic_telemetry_logged", False):
@@ -409,22 +435,27 @@ class SubagentPatch(BasePatch):
             ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):
                 name_str = str(name).lower()
-                is_high_power = any(hp.lower() in name_str for hp in patch_self.BLOCKED_PATTERNS)
+                is_specialist = getattr(self, "_is_strategic_specialist", False)
+                
+                # 1. Role-Aware Pattern Enforcement (BUG-086)
+                blocked_list = patch_self.SPECIALIST_BLOCKED if is_specialist else patch_self.MAIN_AGENT_BLOCKED
+                is_blocked = any(bp.lower() in name_str for bp in blocked_list)
 
-                # 1. Main Agent Block & Circuit Breaker
-                if is_high_power and not getattr(self, "_is_strategic_specialist", False):
+                # 1a. Block Execution & Circuit Breaker
+                if is_blocked:
                     attempts = getattr(self, "_strategic_block_attempts", 0) + 1
                     self._strategic_block_attempts = attempts
-                    strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted restricted tool '{name}' (Attempt {attempts}).")
+                    agent_role = "Specialist" if is_specialist else "Main Agent"
+                    strategic_logger.warning(f"SECURITY ALERT: {agent_role} attempted restricted tool '{name}' (Attempt {attempts}).")
                     
                     if attempts >= 2:
-                        return f"CRITICAL ERROR: Access Denied. Your internal registry is HARD-LOCKED for tool '{name}'. You MUST STOP trying to call this tool directly and delegate via 'spawn'."
+                        return f"CRITICAL ERROR: Access Denied. Your internal registry is HARD-LOCKED for tool '{name}'. You MUST STOP trying to call this tool directly."
                     
-                    hint = " (Note: 'web_search' is DEPRECATED. Use 'mcp_google-ai-search_search_ai' via a specialist subagent.)" if name_str == "web_search" else ""
-                    return f"ERROR: The tool '{name}' is restricted to SPECIALIST subagents. You MUST use 'spawn' to delegate this task.{hint}"
+                    role_hint = "Specialists are forbidden from nested spawning to prevent state blindness." if is_specialist and name_str == "spawn" else f"The tool '{name}' is restricted for your role ({agent_role})."
+                    return f"ERROR: Access Denied. {role_hint}"
 
-                # 2. Forced Turn Termination for 'spawn'
-                if name_str == "spawn" and not getattr(self, "_is_strategic_specialist", False):
+                # 2. Forced Turn Termination for 'spawn' (Main Agent Only)
+                if name_str == "spawn" and not is_specialist:
                     # Call original execute to perform the spawn
                     result = await self._orig_tool_execute_strategic(name, args)
                     # Append Strategic Termination Directive
@@ -443,7 +474,7 @@ class SubagentPatch(BasePatch):
                             "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod",
                             "ls ", "dir ", "more ", "head ", "ping ", "iex ", "Invoke-Expression ",
                             "python ", "sh ", "bash ", "powershell ", "cmd ", "Get-ChildItem ",
-                            "Select-String ", "Get-Item ", "Get-Service "
+                            "Select-String ", "Get-Item ", "Get-Service ", "start ", "open ", "D:"
                         ]
                         if any(p in cmd + " " for p in bypass_patterns):
                             strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")

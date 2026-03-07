@@ -34,8 +34,7 @@ async def test_tool_registry_blocks_high_power_for_main_agent(subagent_patch, mo
     
     # 3. Test Execution Block (Hard Block)
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
-    assert "restricted to SPECIALIST subagents" in result
-    assert "MUST use 'spawn' to delegate this task" in result
+    assert "restricted for your role (Main Agent)" in result
 @pytest.mark.asyncio
 async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     # Apply patch
@@ -47,7 +46,7 @@ async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     
     # 1. First Attempt -> Normal Block
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
-    assert "restricted to SPECIALIST subagents" in result
+    assert "restricted for your role (Main Agent)" in result
     
     # 2. Second Attempt -> Circuit Breaker (Hard Lock)
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
@@ -80,8 +79,7 @@ async def test_web_search_deprecation(subagent_patch):
     registry = ToolRegistry()
     
     result = await registry.execute("web_search", {"query": "test"})
-    assert "restricted to SPECIALIST" in result
-    assert "mcp_google-ai-search_search_ai" in result
+    assert "restricted for your role (Main Agent)" in result
 
 @pytest.mark.asyncio
 async def test_subagent_prompt_patch(subagent_patch):

@@ -293,14 +293,18 @@ class MemoryPatch(BasePatch):
             AgentLoop._orig_process_message_strategic = AgentLoop._process_message
 
             async def _patched_process_message(self, msg, session_key=None, on_progress=None):
-                # 0. Rolling Journal Injection
-                try:
-                    _, _, storage_root = load_strategic_context()
-                    journal_snippet = strategic_get_rolling_journal(storage_root)
-                    if journal_snippet:
-                        msg.content = journal_snippet + "\n" + msg.content
-                except Exception as je:
-                    strategic_logger.error(f"Rolling Journal injection failed: {je}")
+                # Identify internal/system channels to skip noise injection (BUG-083)
+                is_internal = msg.channel in {"system", "cron", "heartbeat"} or msg.sender_id == "subagent"
+
+                # 0. Rolling Journal Injection (Skip for internal)
+                if not is_internal:
+                    try:
+                        _, _, storage_root = load_strategic_context()
+                        journal_snippet = strategic_get_rolling_journal(storage_root)
+                        if journal_snippet:
+                            msg.content = journal_snippet + "\n" + msg.content
+                    except Exception as je:
+                        strategic_logger.error(f"Rolling Journal injection failed: {je}")
 
                 # 1. Context Pruning
                 prune_cfg = config_data.get("agents", {}).get("defaults", {}).get("contextPruning", {})
@@ -312,9 +316,9 @@ class MemoryPatch(BasePatch):
                     keep_last = prune_cfg.get("keepLastAssistants", 3)
                     session.messages = strategic_prune_context(session.messages, hours, keep_last)
 
-                # 2. Semantic Retrieval (RAG)
+                # 2. Semantic Retrieval (RAG) (Skip for internal)
                 rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
-                if rag_cfg.get("enabled", True):
+                if rag_cfg.get("enabled", True) and not is_internal:
                     rag_block, count = await strategic_inject_rag_context(msg.content or "", self.provider)
                     if rag_block:
                         msg.content = rag_block + "\n\n" + msg.content

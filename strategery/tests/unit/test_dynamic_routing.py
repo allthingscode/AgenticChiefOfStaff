@@ -52,7 +52,8 @@ async def test_spawn_tool_parameter_injection(mock_config):
             origin_channel="cli",
             origin_chat_id="direct",
             session_key="cli:direct",
-            specialist="researcher"
+            specialist="researcher",
+            host_tools=None
         )
         
         # 3. Check Execution - Explicit architect
@@ -63,7 +64,8 @@ async def test_spawn_tool_parameter_injection(mock_config):
             origin_channel="cli",
             origin_chat_id="direct",
             session_key="cli:direct",
-            specialist="architect"
+            specialist="architect",
+            host_tools=None
         )
 
 @pytest.mark.asyncio

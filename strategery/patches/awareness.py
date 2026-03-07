@@ -44,6 +44,11 @@ class AwarenessPatch(BasePatch):
 - **Tool Fragility (search_ai):** The `mcp_google-ai-search_search_ai` tool is experimentally reliant on Google UI selectors. If it returns 0 citations, do NOT loop; assume a UI regression and report the "shallow" results as-is.
 
 ## ⚙️ SYSTEM STATE
+- **Automated Batch System (F-011):** Your nightly and scheduled tasks (maintenance, reporting, extraction) are modular. 
+- **Task Management:** You can read, modify, or create new tasks in `D:/Nanobot_Storage/workspace/cron/items/`. 
+- **Schema:** Files are Markdown with YAML front-matter (`id`, `name`, `schedule`, `specialist`). 
+- **Trigger:** The system automatically converts these into `CronJob` entries. You can adjust your own automation at any time.
+
 - **Retired Files (READ-ONLY):** `HISTORY.md` is **RETIRED**. You are strictly **FORBIDDEN** from attempting to read or write to `HISTORY.md` via `exec` or any other tool.
 - **Source of Truth:** Your long-term memory is managed via the **Vector Store (ChromaDB)** and the **Daily Journal** (`YYYY-MM-DD.md`).
 - **Chronological Continuity:** The system automatically injects a **Rolling Journal** snippet (the most recent entries from today's journal) into your context for every turn. This ensures you always have the immediate "state of play" without needing to query.
