@@ -33,8 +33,8 @@ STORAGE_ROOT = Path(STRATEGIC.get("storage_root", _default_root))
 # Performance Optimization: In-memory service singleton cache
 _SERVICE_CACHE = {}
 
-# 1. Credentials Setup
-CREDS_DIR = STORAGE_ROOT / "google_surgical" / "credentials"
+# 1. Credentials Setup (Standardized on C: drive)
+CREDS_DIR = Path.home() / ".nanobot" / "google_surgical" / "credentials"
 CREDS_PATH = CREDS_DIR / f"{USER_EMAIL}.json"
 
 # MANDATE (F-014): Added Drive scope for sandboxed backup management

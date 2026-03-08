@@ -56,10 +56,11 @@ USER_EMAIL = STRATEGIC.get("user_email", "admin@example.com")
 _default_root = str(Path.home() / ".nanobot")
 STORAGE_ROOT = Path(STRATEGIC.get("storage_root", _default_root))
 
+# 1. Credentials Setup (Standardized on C: drive for security and idiomatic Windows setup)
+SECRETS_ROOT = Path.home() / ".nanobot" / "secrets"
+TOKEN_PATH = SECRETS_ROOT / "token.json"
+CREDS_PATH = SECRETS_ROOT / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-SECRETS_DIR = STORAGE_ROOT / "secrets"
-TOKEN_PATH = SECRETS_DIR / "token.json"
-CREDS_PATH = SECRETS_DIR / "credentials.json"
 
 logger.debug(f"Paths: STORAGE_ROOT={STORAGE_ROOT}, TOKEN_PATH={TOKEN_PATH}")
 
