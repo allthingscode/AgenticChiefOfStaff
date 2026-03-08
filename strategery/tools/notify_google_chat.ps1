@@ -24,7 +24,6 @@ if (-not $webhookUrl) {
 }
 
 # 4. Construct Discord Payload (Rich Embed)
-$robot = [char]::ConvertFromUtf32(0x1F916) # Robot Emoji 🤖
 $color = 3447003 # Default Blue
 if ($inputJson.notification_type -match "Error") { $color = 15158332 } # Red
 if ($inputJson.notification_type -match "Permission") { $color = 15844367 } # Gold
@@ -42,7 +41,7 @@ $embed = @{
 
 $payload = @{
     username = "Gemini CLI"
-    content = "@everyone $robot Gemini needs attention: $($inputJson.message)"
+    content = "@everyone Gemini needs attention: $($inputJson.message)"
     embeds = @($embed)
 } | ConvertTo-Json -Depth 10
 
