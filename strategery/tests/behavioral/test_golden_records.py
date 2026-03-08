@@ -1,0 +1,75 @@
+import pytest
+import json
+import asyncio
+from pathlib import Path
+from strategery.tests.behavioral.simulator import StrategicSimulator
+
+def load_golden_records():
+    records_dir = Path(__file__).parent / "records"
+    records = []
+    for file in records_dir.glob("*.json"):
+        with open(file, "r", encoding="utf-8") as f:
+            records.append(json.load(f))
+    return records
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("record", load_golden_records(), ids=lambda r: r["id"])
+async def test_behavioral_snapshot(record):
+    """
+    Executes a behavioral snapshot (Golden Record) and asserts expectations.
+    """
+    # 1. Initialize Simulator
+    # We use a minimal mock config for the specialists
+    config_data = {
+        "agents": {
+            "specialists": {
+                "researcher": {"model": "researcher-model", "keywords": ["research", "health"]},
+                "architect": {"model": "architect-model", "keywords": ["design", "plan"]}
+            }
+        }
+    }
+    simulator = StrategicSimulator(config_data)
+
+    # 2. Run the prompt through the simulator
+    results = await simulator.run_prompt(
+        prompt=record["input"],
+        mock_tool_calls=record.get("mock_tool_calls"),
+        role=record.get("role", "main")
+    )
+
+    # 3. Assert Expectations
+    exp = record.get("expectations", {})
+
+    # A. Tool Visibility (Mandate Enforcement)
+    for forbidden in exp.get("forbidden_tools", []):
+        assert forbidden not in results["available_tools"], f"Mandate Violation: Forbidden tool '{forbidden}' is visible to the model."
+
+    for required in exp.get("required_tools", []):
+        assert required in results["available_tools"], f"Logic Failure: Required tool '{required}' is NOT visible to the model."
+
+    # B. Execution Behavior (Specialist Routing)
+    if "specialist" in exp:
+        found_specialist = False
+        for spawn in results["spawns"]:
+            if spawn.get("specialist") == exp["specialist"]:
+                found_specialist = True
+                break
+        assert found_specialist, f"Routing Failure: Expected specialist '{exp['specialist']}' was not spawned."
+
+    # C. Task Content Verification
+    for substring in exp.get("subagent_task_contains", []):
+        found_substring = False
+        for spawn in results["spawns"]:
+            if substring.lower() in spawn["task"].lower():
+                found_substring = True
+                break
+        assert found_substring, f"Content Failure: Subagent task did not contain expected keyword '{substring}'."
+
+    # D. Tool Call Verification
+    for tool_name in exp.get("executed_tools", []):
+        found_tool = False
+        for tool in results["tools"]:
+            if tool["name"] == tool_name:
+                found_tool = True
+                break
+        assert found_tool, f"Execution Failure: Expected tool '{tool_name}' was not called."

@@ -1,0 +1,12 @@
+{
+  "id": "BR-003",
+  "name": "Specialist Tool Access",
+  "input": "I am a researcher. I need to search the web and the D: drive.",
+  "role": "specialist",
+  "expectations": {
+    "required_tools": [
+      "mcp_google-ai-search_search_ai"
+    ],
+    "forbidden_tools": ["spawn"]
+  }
+}

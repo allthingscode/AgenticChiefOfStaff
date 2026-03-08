@@ -1,0 +1,21 @@
+{
+  "id": "BR-001",
+  "name": "Health Check Specialist Routing",
+  "input": "Run full tests to confirm system health.",
+  "mock_tool_calls": [
+    {
+      "function": {
+        "name": "spawn",
+        "arguments": {
+          "task": "Run the health suite diagnostics.",
+          "label": "Health Check"
+        }
+      }
+    }
+  ],
+  "expectations": {
+    "required_tools": ["spawn"],
+    "forbidden_tools": ["mcp_google-ai-search", "mcp_google-surgical_search"],
+    "subagent_task_contains": ["health", "suite"]
+  }
+}

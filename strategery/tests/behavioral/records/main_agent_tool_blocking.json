@@ -1,0 +1,16 @@
+{
+  "id": "BR-002",
+  "name": "Main Agent Tool Blocking",
+  "input": "Search for the latest strategic context in the storage root.",
+  "expectations": {
+    "forbidden_tools": [
+      "mcp_google-ai-search", 
+      "mcp_google-surgical_search",
+      "mcp_filesystem-d",
+      "search_memory",
+      "google",
+      "ai-search"
+    ],
+    "required_tools": ["spawn"]
+  }
+}
