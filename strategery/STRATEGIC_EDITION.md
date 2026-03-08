@@ -32,7 +32,7 @@ Optimized for stable long-term operation on Windows environments:
 - **Non-Blocking Persistence:** Asynchronous session saving offloads I/O to thread pools, eliminating latency spikes during large history saves.
 - **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery (exponential backoff) across all AI providers.
 - **Communication Fallbacks:** Automated disk-based logging for critical notifications ensures data persistence even during API or credential outages.
-- **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering (e.g., excluding `.venv`) and automated rotation. Managed via a generalized `BACKUP_MANIFEST.md` for maximum extensibility.
+- **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering and automated rotation. Managed via a **Disaster Recovery Manifest** that includes the `.gemini` brain, root launchers, and `.env` credentials to ensure 100% recovery on a new device.
 
 ## **5. NanoGraph Semantic Overlay**
 Augments standard memory with a semantic graph overlay for complex relationship-based recall, enabling the agent to navigate memory nodes via explicit entity connections (e.g., 'Project X' -- 'uses' --> 'Technology Y').
