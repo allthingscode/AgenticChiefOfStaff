@@ -111,13 +111,20 @@ class StrategicSimulator:
         )
         
         # Execute tool calls if any
+        executed_tool_results = []
         if response.has_tool_calls:
             for tc in response.tool_calls:
-                await loop.tools.execute(tc["function"]["name"], tc["function"]["arguments"])
+                res = await loop.tools.execute(tc["function"]["name"], tc["function"]["arguments"])
+                executed_tool_results.append({"name": tc["function"]["name"], "result": res})
         
+        # Identify the system prompt from context
+        system_prompt = next((m["content"] for m in context if m["role"] == "system"), "")
+
         return {
             "model_used": provider._last_model,
             "spawns": self.captured_spawns,
             "tools": self.captured_tools,
-            "available_tools": [d["function"]["name"] for d in loop.tools.get_definitions()]
+            "tool_results": executed_tool_results,
+            "available_tools": [d["function"]["name"] for d in loop.tools.get_definitions()],
+            "system_prompt": system_prompt
         }

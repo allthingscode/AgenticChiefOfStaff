@@ -73,3 +73,19 @@ async def test_behavioral_snapshot(record):
                 found_tool = True
                 break
         assert found_tool, f"Execution Failure: Expected tool '{tool_name}' was not called."
+
+    # E. Tool Result Verification (Mandates in tool output)
+    for substring in exp.get("tool_result_contains", []):
+        found_substring = False
+        for res in results["tool_results"]:
+            if substring.lower() in res["result"].lower():
+                found_substring = True
+                break
+        assert found_substring, f"Mandate Failure: Tool result did not contain expected directive '{substring}'."
+
+    # F. System Prompt Verification
+    for substring in exp.get("prompt_contains", []):
+        assert substring.lower() in results["system_prompt"].lower(), f"Prompt Failure: System prompt missing mandatory directive '{substring}'."
+
+    for substring in exp.get("prompt_excludes", []):
+        assert substring.lower() not in results["system_prompt"].lower(), f"Prompt Failure: System prompt contains forbidden directive '{substring}'."
