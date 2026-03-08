@@ -28,15 +28,19 @@ class CronPatch(BasePatch):
         def _patched_load_store(self):
             if not hasattr(self, "_last_size"):
                 self._last_size = 0
+            if not hasattr(self, "_last_items_mtime"):
+                self._last_items_mtime = 0
+
+            # Determine if we need to perform the strategic injection
+            # (Always on initial load, or if either store file or modular items changed)
+            needs_injection = (self._store is None)
 
             if self._store and self.store_path.exists():
                 stat = self.store_path.stat()
                 mtime = stat.st_mtime
                 size = stat.st_size
                 
-                # RELOAD IF:
-                # 1. mtime changed
-                # 2. size changed (mtime might be the same on high-speed writes)
+                # RELOAD IF jobs.json changed
                 if mtime != self._last_mtime or size != self._last_size:
                     if mtime == self._last_mtime:
                         logger.debug("Cron: jobs.json size changed while mtime remained identical ({}), reloading", size)
@@ -46,40 +50,59 @@ class CronPatch(BasePatch):
                     self._store = None
                     self._last_mtime = mtime
                     self._last_size = size
+                    needs_injection = True
+            
+            # Check modular items directory for changes (Hot Reload)
+            try:
+                from .config import load_strategic_context
+                _, _, storage_root = load_strategic_context()
+                items_dir = storage_root / "workspace" / "cron" / "items"
+                if items_dir.exists():
+                    # Simple change detection: sum of mtimes of all .md files
+                    current_items_state = sum(f.stat().st_mtime for f in items_dir.glob("*.md"))
+                    if current_items_state != self._last_items_mtime:
+                        # If modular jobs changed, we force injection even if jobs.json is same
+                        needs_injection = True
+                        self._last_items_mtime = current_items_state
+            except Exception as ce:
+                logger.debug(f"Batch: Change detection failed: {ce}")
             
             store = orig_load_store(self)
             
-            # STRATEGIC INJECTION: Load modular jobs from items folder
-            try:
-                _, _, storage_root = load_strategic_context()
-                modular_jobs = strategic_load_modular_jobs(storage_root)
-                
-                # Merge modular jobs into the store
-                # We update existing jobs if found, otherwise append
-                for mj in modular_jobs:
-                    # RESTORE STATE FROM CACHE (BUG-069)
-                    if mj.id in patch_cls._MODULAR_STATE_CACHE:
-                        mj.state = patch_cls._MODULAR_STATE_CACHE[mj.id]
+            # STRATEGIC INJECTION: Only perform if necessary (BUG-114 fix)
+            if needs_injection:
+                try:
+                    _, _, storage_root = load_strategic_context()
+                    modular_jobs = strategic_load_modular_jobs(storage_root)
                     
-                    # Find and update existing job, or append new one
-                    found = False
-                    for i, existing in enumerate(store.jobs):
-                        if existing.id == mj.id:
-                            # Update schedule and payload from modular definition (BUG-074)
-                            store.jobs[i].schedule = mj.schedule
-                            store.jobs[i].payload = mj.payload
-                            store.jobs[i].name = mj.name
-                            found = True
-                            break
-                    
-                    if not found:
-                        store.jobs.append(mj)
-            except Exception as be:
-                logger.error(f"Batch: Strategic modular job injection failed: {be}")
+                    # Merge modular jobs into the store
+                    # We update existing jobs if found, otherwise append
+                    for mj in modular_jobs:
+                        # RESTORE STATE FROM CACHE (BUG-069)
+                        if mj.id in patch_cls._MODULAR_STATE_CACHE:
+                            mj.state = patch_cls._MODULAR_STATE_CACHE[mj.id]
+                        
+                        # Find and update existing job, or append new one
+                        found = False
+                        for i, existing in enumerate(store.jobs):
+                            if existing.id == mj.id:
+                                # Update schedule and payload from modular definition (BUG-074)
+                                store.jobs[i].schedule = mj.schedule
+                                store.jobs[i].payload = mj.payload
+                                store.jobs[i].name = mj.name
+                                found = True
+                                break
+                        
+                        if not found:
+                            store.jobs.append(mj)
+                except Exception as be:
+                    logger.error(f"Batch: Strategic modular job injection failed: {be}")
             
-            # Ensure _last_size is synced after initial load or manual save
+            # Ensure mtime and size are synced after initial load or manual save
             if self.store_path.exists():
-                self._last_size = self.store_path.stat().st_size
+                stat = self.store_path.stat()
+                self._last_mtime = stat.st_mtime
+                self._last_size = stat.st_size
                 
             return store
 
