@@ -25,10 +25,32 @@ class AgentLoopPatch(BasePatch):
             
             def _patched_init(self, *args, **kwargs):
                 self._orig_init_strategic(*args, **kwargs)
-                # Initialize per-session lock dictionary on the instance
+                # Initialize per-session lock dictionary and subagent registry
                 self._strategic_session_locks = weakref.WeakValueDictionary()
-                
+                self._strategic_active_subagents = {} # Map[ID, {'start_time': datetime, 'task': str}]
+                self._strategic_monitor_task = None
+
+            async def _strategic_monitor_subagents(self):
+                """Background task to warn of 'Ghost' subagents that hang indefinitely."""
+                from datetime import datetime
+                while True:
+                    await asyncio.sleep(60) # Check every minute
+                    now = datetime.now()
+                    to_remove = []
+                    for sid, info in self._strategic_active_subagents.items():
+                        diff = (now - info['start_time']).total_seconds()
+                        if diff > 600: # 10 minutes (Threshold for 'Ghosting')
+                            logger.warning("STRATEGIC ALERT: Subagent [{}] has been running for {}s. Task: {}", sid, int(diff), info['task'][:50])
+                        # If extremely long (e.g. 1 hour), consider it dead
+                        if diff > 3600:
+                            to_remove.append(sid)
+
+                    for sid in to_remove:
+                        del self._strategic_active_subagents[sid]
+
+            AgentLoop._strategic_monitor_subagents = _strategic_monitor_subagents
             AgentLoop.__init__ = _patched_init
+
             logger.debug("Patched AgentLoop.__init__ for per-session locking")
 
         # 2. Patch _dispatch to use the per-session lock
@@ -40,6 +62,10 @@ class AgentLoopPatch(BasePatch):
                 # Initialize session locks if they don't exist (for instances created before patch)
                 if not hasattr(self, "_strategic_session_locks"):
                     self._strategic_session_locks = weakref.WeakValueDictionary()
+                
+                # Lazily start the heartbeat monitor task (BUG-104 fix)
+                if not getattr(self, "_strategic_monitor_task", None):
+                    self._strategic_monitor_task = asyncio.create_task(self._strategic_monitor_subagents())
 
                 session_key = msg.session_key
                 lock = self._strategic_session_locks.get(session_key)

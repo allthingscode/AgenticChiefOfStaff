@@ -155,6 +155,14 @@ class SubagentPatch(BasePatch):
                 display_label = label or task[:100] + ("..." if len(task) > 100 else "")
                 origin = {"channel": origin_channel, "chat_id": origin_chat_id}
 
+                # Register in Heartbeat (BUG-103)
+                if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
+                    from datetime import datetime
+                    self._loop._strategic_active_subagents[task_id] = {
+                        'start_time': datetime.now(),
+                        'task': task
+                    }
+
                 bg_task = asyncio.create_task(
                     self._run_subagent(task_id, task, display_label, origin, specialist, host_tools)
                 )
@@ -349,6 +357,10 @@ class SubagentPatch(BasePatch):
             SubagentManager._orig_announce_result_strategic = SubagentManager._announce_result
             
             async def _patched_announce_result(self, task_id, label, task, result, origin, status):
+                # Deregister from Heartbeat (BUG-103)
+                if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
+                    self._loop._strategic_active_subagents.pop(task_id, None)
+
                 from nanobot.bus.events import InboundMessage
                 status_text = "completed successfully" if status == "ok" else "failed"
 

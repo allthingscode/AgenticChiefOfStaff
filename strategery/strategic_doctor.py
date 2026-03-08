@@ -145,6 +145,29 @@ def check_batch_jobs(config):
             
     return all_ok
 
+def check_static_analysis():
+    """Validates Python syntax across all strategic files (No-NameError Shield)."""
+    strat_dir = Path(__file__).parent
+    all_ok = True
+    
+    # Check both the patches and the root strategic tools
+    targets = list((strat_dir / "patches").glob("*.py")) + list(strat_dir.glob("*.py"))
+    
+    for py_file in targets:
+        try:
+            with open(py_file, "r", encoding="utf-8-sig") as f:
+                content = f.read()
+            # This catches syntax errors and basic import issues (BUG-100)
+            compile(content, py_file, 'exec')
+            print_status("Linter", f"Syntax verified: {py_file.name}", "OK")
+        except SyntaxError as se:
+            print_status("Linter", f"Syntax ERROR in {py_file.name}: {se}", "FAIL")
+            all_ok = False
+        except Exception as e:
+            print_status("Linter", f"Analysis error in {py_file.name}: {e}", "WARN")
+            
+    return all_ok
+
 def main():
     print(f"\n{BOLD}Strategic Doctor: Diagnostic Run ({Path(__file__).name}){RESET}")
     print("="*50)
@@ -153,6 +176,7 @@ def main():
     if not config: sys.exit(1)
     
     if not check_storage(config): sys.exit(1)
+    if not check_static_analysis(): sys.exit(1)
     if not check_mcp_tools(config): sys.exit(1)
     if not check_batch_jobs(config): sys.exit(1)
     
