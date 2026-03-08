@@ -98,6 +98,98 @@ class AgentLoopPatch(BasePatch):
             AgentLoop._dispatch = _patched_dispatch
             logger.debug("Patched AgentLoop._dispatch for per-session locking")
             
+        # 3. Patch _run_agent_loop to implement "Silent Spawn" (BUG-111)
+        if not hasattr(AgentLoop, "_orig_run_agent_loop_strategic"):
+            AgentLoop._orig_run_agent_loop_strategic = AgentLoop._run_agent_loop
+            
+            async def _patched_run_agent_loop(self, initial_messages, on_progress=None):
+                """Strategic override of _run_agent_loop to prevent ID hallucination."""
+                from typing import Callable, Awaitable
+                import json
+                from loguru import logger
+                
+                messages = initial_messages
+                iteration = 0
+                final_content = None
+                tools_used: list[str] = []
+
+                while iteration < self.max_iterations:
+                    iteration += 1
+
+                    response = await self.provider.chat(
+                        messages=messages,
+                        tools=self.tools.get_definitions(),
+                        model=self.model,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        reasoning_effort=self.reasoning_effort,
+                    )
+
+                    if response.has_tool_calls:
+                        # STRATEGIC: Detect 'spawn' call (BUG-110/111)
+                        is_spawn = any(tc.name == "spawn" for tc in response.tool_calls)
+                        
+                        if on_progress:
+                            # If it's a spawn, we SUPPRESS the thought/hint entirely.
+                            # The user will only see the final acknowledgement after the tool returns.
+                            if not is_spawn:
+                                thought = self._strip_think(response.content)
+                                if thought:
+                                    await on_progress(thought)
+                                await on_progress(self._tool_hint(response.tool_calls), tool_hint=True)
+                            else:
+                                logger.debug("Silent Spawn: Suppressing progress content for subagent creation to prevent hallucination.")
+
+                        tool_call_dicts = [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False)
+                                }
+                            }
+                            for tc in response.tool_calls
+                        ]
+                        messages = self.context.add_assistant_message(
+                            messages, response.content, tool_call_dicts,
+                            reasoning_content=response.reasoning_content,
+                            thinking_blocks=response.thinking_blocks,
+                        )
+
+                        for tool_call in response.tool_calls:
+                            tools_used.append(tool_call.name)
+                            args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
+                            logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
+                            result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                            messages = self.context.add_tool_result(
+                                messages, tool_call.id, tool_call.name, result
+                            )
+                    else:
+                        clean = self._strip_think(response.content)
+                        if response.finish_reason == "error":
+                            logger.error("LLM returned error: {}", (clean or "")[:200])
+                            final_content = clean or "Sorry, I encountered an error calling the AI model."
+                            break
+                        messages = self.context.add_assistant_message(
+                            messages, clean, reasoning_content=response.reasoning_content,
+                            thinking_blocks=response.thinking_blocks,
+                        )
+                        final_content = clean
+                        break
+
+                if final_content is None and iteration >= self.max_iterations:
+                    logger.warning("Max iterations ({}) reached", self.max_iterations)
+                    final_content = (
+                        f"I reached the maximum number of tool call iterations ({self.max_iterations}) "
+                        "without completing the task. You can try breaking the task into smaller steps."
+                    )
+
+                return final_content, tools_used, messages
+
+            AgentLoop._run_agent_loop = _patched_run_agent_loop
+            logger.debug("Patched AgentLoop._run_agent_loop for 'Silent Spawn' (BUG-111)")
+
         return True
 
     def verify(self, config: dict) -> bool:
@@ -108,6 +200,8 @@ class AgentLoopPatch(BasePatch):
         if not hasattr(AgentLoop, "_strategic_monitor_subagents"):
             return False
         if not hasattr(AgentLoop, "_orig_dispatch_strategic"):
+            return False
+        if not hasattr(AgentLoop, "_orig_run_agent_loop_strategic"):
             return False
         
         return True

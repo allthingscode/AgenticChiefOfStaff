@@ -77,8 +77,8 @@ async def test_behavioral_snapshot(record):
     # E. Tool Result Verification (Mandates in tool output)
     for substring in exp.get("tool_result_contains", []):
         found_substring = False
-        for res in results["tool_results"]:
-            if substring.lower() in res["result"].lower():
+        for res_content in results["tool_results"]:
+            if substring.lower() in res_content.lower():
                 found_substring = True
                 break
         assert found_substring, f"Mandate Failure: Tool result did not contain expected directive '{substring}'."
@@ -89,3 +89,17 @@ async def test_behavioral_snapshot(record):
 
     for substring in exp.get("prompt_excludes", []):
         assert substring.lower() not in results["system_prompt"].lower(), f"Prompt Failure: System prompt contains forbidden directive '{substring}'."
+
+    # G. Progress Suppression Verification (Silent Spawn)
+    if exp.get("progress_suppressed", False):
+        # In a Silent Spawn, the progress updates (thoughts/hints) should NOT contain 'spawn' or any content
+        # unless it's the final turn which is handled by _run_agent_loop's return.
+        for progress in results["captured_progress"]:
+            content = progress.get("content", "")
+            # We allow tool hints (e.g. "Executing spawn...") if they are specifically exempted, 
+            # but usually we want to suppress everything for spawn turns.
+            assert not content, f"Progress Failure: Progress content was not suppressed during spawn turn: {content}"
+
+    # H. Final Content Verification
+    for substring in exp.get("final_content_contains", []):
+        assert substring.lower() in results["final_content"].lower(), f"Content Failure: Final content did not contain expected keyword '{substring}'."

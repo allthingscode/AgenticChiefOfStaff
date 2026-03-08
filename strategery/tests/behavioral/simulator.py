@@ -8,19 +8,41 @@ from nanobot.providers.base import LLMProvider
 from strategery.patches.subagent import SubagentPatch
 from strategery.patches.loop import AgentLoopPatch
 
+from nanobot.providers.base import LLMProvider, ToolCallRequest
+
 class BehavioralMockProvider(LLMProvider):
     """A mock provider that returns predefined tool calls to simulate behavioral flows."""
     def __init__(self, tool_calls=None, content="Mock response"):
         self.tool_calls = tool_calls or []
         self.content = content
         self._last_model = None
+        self._calls_returned = False
 
     async def chat(self, messages, tools=None, model=None, **kwargs):
         self._last_model = model
+        
+        # Convert dictionary tool calls to ToolCallRequest objects
+        requests = []
+        # ONLY return tool calls on the FIRST call to chat in this turn
+        if not self._calls_returned:
+            for tc in self.tool_calls:
+                if isinstance(tc, dict):
+                    requests.append(ToolCallRequest(
+                        id=tc.get("id", "mock-id"),
+                        name=tc.get("function", {}).get("name", tc.get("name")),
+                        arguments=tc.get("function", {}).get("arguments", tc.get("arguments", {}))
+                    ))
+                else:
+                    requests.append(tc)
+            self._calls_returned = True
+
         mock_response = MagicMock()
         mock_response.content = self.content
-        mock_response.has_tool_calls = len(self.tool_calls) > 0
-        mock_response.tool_calls = self.tool_calls
+        mock_response.has_tool_calls = len(requests) > 0
+        mock_response.tool_calls = requests
+        mock_response.finish_reason = "stop"
+        mock_response.reasoning_content = None
+        mock_response.thinking_blocks = None
         return mock_response
 
     def get_default_model(self) -> str:
@@ -83,6 +105,10 @@ class StrategicSimulator:
         # 4. Patch the subagents manager and registry to capture behavior
         loop.subagents.spawn = AsyncMock(side_effect=self._mock_spawn)
         
+        captured_progress = []
+        async def mock_on_progress(content, **kwargs):
+            captured_progress.append({"content": content, **kwargs})
+
         orig_execute = loop.tools.execute
         async def patched_execute(name, arguments, **kwargs):
             self.captured_tools.append({"name": name, "args": arguments})
@@ -90,12 +116,10 @@ class StrategicSimulator:
         
         loop.tools.execute = patched_execute
         
-        # 4. Build context and run one iteration of the loop
+        # 4. Build context
         from nanobot.bus.events import InboundMessage
-        from nanobot.session.manager import Session
         msg = InboundMessage(channel="test", chat_id="user1", content=prompt, sender_id="user1")
         
-        # Use ContextBuilder to build messages
         context = loop.context.build_messages(
             history=[],
             current_message=msg.content,
@@ -103,28 +127,25 @@ class StrategicSimulator:
             chat_id=msg.chat_id
         )
         
-        # Call provider (Simulating AgentLoop._process_message)
-        response = await provider.chat(
-            messages=context, 
-            tools=loop.tools.get_definitions(),
-            model=loop.model
+        # 5. Run the full agent loop (supporting multiple iterations)
+        # We need to capture the tool results manually since we're calling _run_agent_loop
+        final_content, tools_used, all_msgs = await loop._run_agent_loop(
+            context, on_progress=mock_on_progress
         )
-        
-        # Execute tool calls if any
-        executed_tool_results = []
-        if response.has_tool_calls:
-            for tc in response.tool_calls:
-                res = await loop.tools.execute(tc["function"]["name"], tc["function"]["arguments"])
-                executed_tool_results.append({"name": tc["function"]["name"], "result": res})
         
         # Identify the system prompt from context
         system_prompt = next((m["content"] for m in context if m["role"] == "system"), "")
+
+        # Extract tool results from all_msgs
+        tool_results = [m["content"] for m in all_msgs if m.get("role") == "tool"]
 
         return {
             "model_used": provider._last_model,
             "spawns": self.captured_spawns,
             "tools": self.captured_tools,
-            "tool_results": executed_tool_results,
+            "tool_results": tool_results,
             "available_tools": [d["function"]["name"] for d in loop.tools.get_definitions()],
-            "system_prompt": system_prompt
+            "system_prompt": system_prompt,
+            "captured_progress": captured_progress,
+            "final_content": final_content
         }

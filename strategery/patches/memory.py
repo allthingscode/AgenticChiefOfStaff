@@ -162,8 +162,26 @@ async def strategic_inject_rag_context(content, provider, vec_store_factory=Vect
         results = await vec_store.query(content, n_results=3)
         
         if results:
-            # Filter out 'No summary available' and empty content
-            valid_results = [r for r in results if r.get('content') and "No summary available" not in r['content']]
+            # Filter out 'No summary available', empty content, and subagent spawn noise (BUG-113)
+            valid_results = []
+            for r in results:
+                content = r.get('content', '')
+                if not content or "No summary available" in content:
+                    continue
+                
+                # Exclude orchestration noise that confuses the model
+                lower_content = content.lower()
+                noise_patterns = [
+                    "spawned subagent", 
+                    "i have spawned", 
+                    "specialist has been assigned id",
+                    "your turn is now over",
+                    "provide a single brief acknowledgement"
+                ]
+                if any(pattern in lower_content for pattern in noise_patterns):
+                    continue
+                    
+                valid_results.append(r)
             
             if valid_results:
                 context_lines = []
