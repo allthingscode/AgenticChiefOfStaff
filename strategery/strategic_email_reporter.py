@@ -98,12 +98,12 @@ def get_gmail_service():
 
 mcp = FastMCP("Email Reporter")
 
-def fallback_notify(subject: str, body: str, recipient: str) -> str:
+def fallback_notify(subject: str, body: str, recipient: str, reason: str = "Unknown error") -> str:
     """Fallback: Writes the notification to a local file in the workspace."""
     notif_file = STORAGE_ROOT / "workspace" / "NOTIFICATIONS.md"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    entry = f"\n---\n### 📬 [{timestamp}] {subject}\n**To:** {recipient}\n\n{body}\n"
+    entry = f"\n---\n### 📬 [{timestamp}] {subject}\n**To:** {recipient}\n**Fallback Reason:** {reason}\n\n{body}\n"
     
     try:
         # Ensure workspace exists
@@ -115,49 +115,56 @@ def fallback_notify(subject: str, body: str, recipient: str) -> str:
                 f.write("# 📬 Strategic Notifications (Fallback)\n")
             f.write(entry)
             
-        msg = f"Gmail unavailable. Report saved to fallback: {notif_file}"
+        msg = f"Gmail unavailable ({reason}). Report saved to fallback: {notif_file}"
         logger.warning(msg)
         return msg
     except Exception as e:
-        err = f"CRITICAL: Fallback notification failed: {e}"
+        err = f"CRITICAL: Fallback notification failed entirely. Original error: {reason}. Disk write error: {e}"
         logger.error(err)
         return err
 
 @mcp.tool()
 def send_email_report(subject: str, body: str, to: str = None) -> str:
     """Sends an email report to the user. Falls back to local disk if Gmail fails."""
-    recipient = to if to else USER_EMAIL
-    logger.info(f"Tool Call: send_email_report(subject='{subject}', recipient='{recipient}')")
-    
-    service = None
     try:
-        service = get_gmail_service()
-    except Exception as e:
-        logger.error(f"get_gmail_service exception: {e}")
+        recipient = to if to else USER_EMAIL
+        logger.info(f"Tool Call: send_email_report(subject='{subject}', recipient='{recipient}')")
+        
+        service = None
+        service_error = None
+        try:
+            service = get_gmail_service()
+        except Exception as e:
+            service_error = str(e)
+            logger.error(f"get_gmail_service exception: {e}")
 
-    if not service:
-        return fallback_notify(subject, body, recipient)
+        if not service:
+            return fallback_notify(subject, body, recipient, reason=service_error or "Service failed to initialize (Token expired?)")
 
-    try:
-        logger.debug("Gmail service initialized.")
-        
-        message = EmailMessage()
-        message.set_content(body)
-        message["To"] = recipient
-        message["Subject"] = subject
-        
-        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        create_message = {"raw": encoded_message}
-        
-        logger.debug("Sending message via Gmail API...")
-        send_message = service.users().messages().send(userId="me", body=create_message).execute()
-        
-        result = f"Email sent successfully to {recipient}. Message ID: {send_message['id']}"
-        logger.info(result)
-        return result
-    except Exception as e:
-        logger.error(f"Gmail delivery failed: {e}")
-        return fallback_notify(subject, body, recipient)
+        try:
+            logger.debug("Gmail service initialized.")
+            
+            message = EmailMessage()
+            message.set_content(body)
+            message["To"] = recipient
+            message["Subject"] = subject
+            
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            create_message = {"raw": encoded_message}
+            
+            logger.debug("Sending message via Gmail API...")
+            send_message = service.users().messages().send(userId="me", body=create_message).execute()
+            
+            result = f"Email sent successfully to {recipient}. Message ID: {send_message['id']}"
+            logger.info(result)
+            return result
+        except Exception as e:
+            logger.error(f"Gmail delivery failed: {e}")
+            return fallback_notify(subject, body, recipient, reason=str(e))
+    except Exception as fatal_e:
+        err = f"FATAL ERROR in MCP Tool (send_email_report): {fatal_e}"
+        logger.error(err)
+        return err
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":

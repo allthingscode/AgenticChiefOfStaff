@@ -62,6 +62,29 @@ class InfraPatch(BasePatch):
             os.environ["PYTHONIOENCODING"] = "utf-8"
             os.environ["PYTHONUTF8"] = "1"
 
+            # BUG-041/096: Harden standard logging handlers against UnicodeEncodeError, but skip pytest loggers
+            try:
+                import logging
+                root = logging.getLogger()
+                for handler in root.handlers:
+                    if isinstance(handler, logging.FileHandler) or "Capture" in handler.__class__.__name__:
+                        continue
+
+                    if isinstance(handler, logging.StreamHandler):
+                        if hasattr(handler.stream, 'encoding') and handler.stream:
+                            try:
+                                handler.stream = io.TextIOWrapper(
+                                    handler.stream.buffer, 
+                                    encoding=handler.stream.encoding, 
+                                    errors='backslashreplace',
+                                    line_buffering=True
+                                )
+                            except (AttributeError, io.UnsupportedOperation):
+                                pass
+                strategic_logger.debug("Hardened standard logging handlers with 'backslashreplace'")
+            except Exception as e:
+                strategic_logger.error(f"Failed to harden unicode logging: {e}")
+
         if sys.platform == 'win32':
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
             strategic_logger.debug("Set WindowsProactorEventLoopPolicy")

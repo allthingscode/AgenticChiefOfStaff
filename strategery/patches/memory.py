@@ -103,12 +103,18 @@ def strategic_get_rolling_journal(storage_root, max_chars=1000):
     try:
         today = datetime.now().strftime("%Y-%m-%d")
         journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
-        
-        if not journal_path.exists():
+
+        # BUG-095: Initialize the daily journal if it doesn't exist or is empty
+        if not journal_path.exists() or journal_path.stat().st_size == 0:
+            try:
+                journal_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(journal_path, "w", encoding="utf-8-sig") as f:
+                    f.write(f"# {today}\n\n")
+            except Exception as e:
+                strategic_logger.error(f"Failed to initialize daily journal: {e}")
             return ""
-            
-        with open(journal_path, "r", encoding="utf-8-sig") as f:
-            content = f.read()
+
+        with open(journal_path, "r", encoding="utf-8-sig") as f:            content = f.read()
             
         if not content:
             return ""
@@ -295,6 +301,7 @@ class MemoryPatch(BasePatch):
             async def _patched_process_message(self, msg, session_key=None, on_progress=None):
                 # Identify internal/system channels to skip noise injection (BUG-083)
                 is_internal = msg.channel in {"system", "cron", "heartbeat"} or msg.sender_id == "subagent"
+                original_content = msg.content or ""
 
                 # 0. Rolling Journal Injection (Skip for internal)
                 if not is_internal:
@@ -319,7 +326,8 @@ class MemoryPatch(BasePatch):
                 # 2. Semantic Retrieval (RAG) (Skip for internal)
                 rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
                 if rag_cfg.get("enabled", True) and not is_internal:
-                    rag_block, count = await strategic_inject_rag_context(msg.content or "", self.provider)
+                    # BUG FIX: Evaluate RAG skip against original content (BUG-097)
+                    rag_block, count = await strategic_inject_rag_context(original_content, self.provider)
                     if rag_block:
                         msg.content = rag_block + "\n\n" + msg.content
                         strategic_logger.info(f"RAG: Injected {count} relevant facts.")

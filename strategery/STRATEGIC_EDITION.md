@@ -49,6 +49,10 @@ The Strategic Edition is a modular, high-performance extension of the Nanobot Co
 - **Routable Delivery:** Integrated channel redirection ensuring batch reports are delivered to the most recent active user channel (e.g., Telegram) instead of the local CLI.
 - **Self-Correcting Schedules:** Strategic Cron patch monitors file state to automatically reload schedules without system restarts or configuration surgery.
 
+
+### **8. High-Performance Concurrency (F-012, F-013)**
+- **Concurrent Agent Loop (Per-Session Lock):** Replaces the global agent lock with a high-performance WeakValueDictionary of per-session locks. This allows the Strategic Edition to process messages from multiple users (e.g., separate Telegram users, CLI sessions, and Cron tasks) simultaneously while ensuring message ordering is strictly preserved for each individual user.
+- **Asynchronous Session Persistence:** Patched the session saving logic to use non-blocking asynchronous disk I/O (offloaded to a thread pool). This prevents large conversation histories or complex session metadata from blocking the main event loop, ensuring the system remains responsive even under heavy concurrent load.
 ### **7. Graph Capabilities (NanoGraph)**
 - **Semantic Overlay:** The memory system is augmented with a semantic graph overlay for relationship-based recall.
 - **Neighbor Querying:** Find related entities for a specific memory node using relationship types.

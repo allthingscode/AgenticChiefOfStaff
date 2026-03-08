@@ -13,6 +13,8 @@ from .memory import MemoryPatch
 from .subagent import SubagentPatch
 from .telegram import TelegramPatch
 from .cron import CronPatch
+from .loop import AgentLoopPatch
+from .session import SessionPatch
 from .awareness import AwarenessPatch
 from .vector_store import StrategicVectorStore
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
@@ -23,6 +25,8 @@ class PatchRegistry:
     def __init__(self):
         self._patches = [
             InfraPatch(),
+            AgentLoopPatch(),
+            SessionPatch(),
             ConfigPatch(),
             ProviderPatch(),
             MemoryPatch(),
