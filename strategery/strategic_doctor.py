@@ -145,6 +145,28 @@ def check_batch_jobs(config):
             
     return all_ok
 
+def check_patch_integrity(config):
+    """Verifies that all strategic monkey-patches are active and functionally correct."""
+    try:
+        from strategery.patches import registry
+        all_ok = True
+        
+        for patch in registry._patches:
+            try:
+                if patch.verify(config):
+                    print_status("Integrity", f"Patch verified: {patch.name}", "OK")
+                else:
+                    print_status("Integrity", f"Patch FAILED verification: {patch.name}", "FAIL")
+                    all_ok = False
+            except Exception as e:
+                print_status("Integrity", f"Error verifying patch {patch.name}: {e}", "FAIL")
+                all_ok = False
+        
+        return all_ok
+    except Exception as e:
+        print_status("Integrity", f"Major failure in integrity engine: {e}", "FAIL")
+        return False
+
 def check_static_analysis():
     """Validates Python syntax across all strategic files (No-NameError Shield)."""
     strat_dir = Path(__file__).parent
@@ -176,6 +198,7 @@ def main():
     if not config: sys.exit(1)
     
     if not check_storage(config): sys.exit(1)
+    if not check_patch_integrity(config): sys.exit(1)
     if not check_static_analysis(): sys.exit(1)
     if not check_mcp_tools(config): sys.exit(1)
     if not check_batch_jobs(config): sys.exit(1)

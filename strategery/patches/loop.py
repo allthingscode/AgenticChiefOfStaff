@@ -99,3 +99,15 @@ class AgentLoopPatch(BasePatch):
             logger.debug("Patched AgentLoop._dispatch for per-session locking")
             
         return True
+
+    def verify(self, config: dict) -> bool:
+        """Verifies that the AgentLoop class and instances are correctly patched."""
+        # 1. Check class-level patches
+        if not hasattr(AgentLoop, "_orig_init_strategic"):
+            return False
+        if not hasattr(AgentLoop, "_strategic_monitor_subagents"):
+            return False
+        if not hasattr(AgentLoop, "_orig_dispatch_strategic"):
+            return False
+        
+        return True

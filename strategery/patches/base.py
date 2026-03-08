@@ -16,3 +16,10 @@ class BasePatch(ABC):
         Returns True if successful, False otherwise.
         """
         pass
+
+    def verify(self, config_data: dict) -> bool:
+        """
+        Verifies that the patch was applied correctly and functions as expected.
+        Default implementation returns True.
+        """
+        return True

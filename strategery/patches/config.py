@@ -143,6 +143,21 @@ class ConfigPatch(BasePatch):
             print(f"[Launcher] Config patch error: {e}")
             return False
 
+    def verify(self, config_data: dict) -> bool:
+        """Verifies that the global 'open' and ContextBuilder patches are active."""
+        import builtins
+        import nanobot.agent.context
+        
+        # 1. Check builtins.open
+        if not hasattr(builtins, "_orig_open_strategic"):
+            return False
+            
+        # 2. Check ContextBuilder.build_system_prompt
+        if not hasattr(nanobot.agent.context.ContextBuilder, "_orig_build_system_prompt_strategic"):
+            return False
+            
+        return True
+
 def load_strategic_context():
     """Utility to load core strategic context (email, storage root)."""
     user_email = "admin@example.com"

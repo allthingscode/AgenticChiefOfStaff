@@ -35,5 +35,12 @@ Optimized for stable long-term operation on Windows environments:
 - **Communication Fallbacks:** Automated disk-based logging for critical notifications ensures data persistence even during API or credential outages.
 - **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering and automated rotation. Managed via a **Disaster Recovery Manifest** that includes the `.gemini` brain, root launchers, and `.env` credentials to ensure 100% recovery on a new device.
 
-## **5. NanoGraph Semantic Overlay**
+## **5. Strategic Stability Framework (Resilience Phase)**
+A dedicated "Self-Healing" pre-flight engine (the Strategic Doctor) that guards against regressions and environmental drift before every system launch:
+- **Active Patch Integrity Verification:** The Strategic Doctor programmatically verifies the functional "handshake" between modular patches and the Nanobot core, ensuring monkey-patches are active and functionally correct.
+- **Specialist Heartbeat Monitor:** Background monitoring detects and warns of "Ghost" subagents, preventing silent hangs and ensuring high-availability orchestration.
+- **No-NameError Shield:** Static syntax analysis across all strategic files catches syntax and import errors before they impact the production gateway.
+- **Win32 Headless Safety:** Fully automated, non-GUI health checks are enforced via direct Python execution, bypassing Windows Shell "Open With" triggers for 100% headless reliability.
+
+## **6. NanoGraph Semantic Overlay**
 Augments standard memory with a semantic graph overlay for complex relationship-based recall, enabling the agent to navigate memory nodes via explicit entity connections (e.g., 'Project X' -- 'uses' --> 'Technology Y').

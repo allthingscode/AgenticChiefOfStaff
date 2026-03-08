@@ -555,3 +555,34 @@ class SubagentPatch(BasePatch):
                 return messages
                 
             ContextBuilder.build_messages = _patched_build_messages
+
+    def verify(self, config_data: dict) -> bool:
+        """Verifies that all Subagent and Tool related patches are active."""
+        from nanobot.agent.subagent import SubagentManager
+        from nanobot.agent.tools.registry import ToolRegistry
+        from nanobot.heartbeat.service import HeartbeatService
+        from nanobot.agent.context import ContextBuilder
+
+        # 1. Check SubagentManager patches
+        if not hasattr(SubagentManager, "_orig_spawn_strategic"):
+            return False
+        if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
+            return False
+
+        # 2. Check ToolRegistry patches
+        if not hasattr(ToolRegistry, "_orig_register_strategic"):
+            return False
+        if not hasattr(ToolRegistry, "_orig_get_definitions_strategic"):
+            return False
+        if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
+            return False
+
+        # 3. Check Heartbeat patches
+        if not hasattr(HeartbeatService, "_orig_hb_init_strategic"):
+            return False
+
+        # 4. Check ContextBuilder patches
+        if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
+            return False
+
+        return True
