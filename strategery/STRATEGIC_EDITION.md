@@ -1,59 +1,38 @@
-﻿# Nanobot Strategic Edition
+# Nanobot Strategic Edition
 
-## **Overview**
-The Strategic Edition is a modular, high-performance extension of the Nanobot Core, specifically designed for deep integration with senior-level productivity workflows. It focuses on **Zero Core Pollution**, **Hybrid Memory**, and **Surgical Tooling**.
+## **Architectural Overview**
+The Strategic Edition is a modular extension of the Nanobot Core, architected for high-precision senior productivity. It differentiates itself from upstream Nanobot AI through three core pillars: **Zero Core Pollution**, **Hybrid Memory Integrity**, and a **Specialist-Driven Economy**.
 
-## **Key Features & Differences**
+---
 
-### **1. Hybrid Memory Architecture (RAG)**
-- **Hybrid Index:** Combines **SQLite FTS5 (Keyword)** and **ChromaDB (Vector)** for 100% precision on technical IDs and high-recall semantic search.
-- **Active RAG (search_memory):** Specialist subagents have explicit access to a `search_memory` tool for proactive, deep-dive context retrieval.
-- **Chronological Continuity:** Automated **Rolling Journal** injection provides seamless session-to-session awareness from daily journal snapshots.
-- **Modern Embeddings:** Integrated with the modern `google-genai` library using **`models/gemini-embedding-001`** (3072 dimensions).
-- **Proactive Warmup:** Initialized at startup to eliminate the 3-second "Cold Start" delay on first message.
-- **Hardened RAG:** Selective retrieval skips generic responses to preserve context window for complex queries.
-- **Junk Filtering:** Automated filtering of 'No summary available' placeholders from retrieved context before prompt injection.
+## **1. Hybrid Memory Architecture (RAG+)**
+Unlike the standard linear history or simple vector search in core Nanobot, the Strategic Edition implements a multi-layered recall system:
+- **Hybrid Index:** Simultaneous **SQLite FTS5 (Keyword)** and **ChromaDB (Vector)** search ensures 100% precision on technical IDs (e.g., project codes, bug IDs) while maintaining high-recall semantic search.
+- **Chronological Continuity (Rolling Journals):** Automatically injects the most recent daily journal snapshots into the prompt, providing the agent with seamless session-to-session awareness.
+- **Active RAG:** Specialist subagents utilize a dedicated `search_memory` tool for proactive, deep-dive retrieval beyond the immediate context window.
+- **High-Density Consolidation:** Linear history is aggressively summarized and vectorized into the "Source of Truth" to prevent context bloat.
 
-### **2. "Clean History" Consolidation**
-- **Bloat Prevention:** Replaces linear history files with high-density Vector Store summaries.
-- **Surgical Ingestion:** Summaries and memory updates are automatically vectorized during consolidation.
-- **Daily Journals:** Chronological journals provide human-readable snapshots without context window bloat.
+## **2. Specialist Economy & Delegation**
+The Strategic Edition enforces a strict hierarchy to maximize model efficiency and cost-effectiveness:
+- **Enforced Delegation:** The Main Agent (Orchestrator) is hard-blocked from executing high-power surgical tools (Google, AI Search, Email), mandating the use of Specialists.
+- **Role-Based Isolation:** Specialists are strictly routed by role (**'researcher'** vs **'architect'**) with automated model assignment (e.g., Flash-Lite for research, Pro for architecture).
+- **Hardened Path Awareness:** Specialist subagents are equipped with explicit mandates for absolute path discovery and recursive storage audits, eliminating "Storage Depth Blindness."
+- **Orchestrator Synthesis:** A specialized report protocol ensures the Main Agent only synthesizes specialist findings rather than re-verifying them, preserving turn efficiency.
 
-### **3. Advanced Telegram Integration**
-- **Topic/Thread Awareness:** Full support for Telegram Topics (sessions map correctly to thread IDs).
-- **Redirection Logic:** Automatically redirects all media (photos, voice, documents) to a dedicated local storage directory.
+## **3. Autonomous Batch Operations**
+A unique automation layer that operates independently of real-time user interaction:
+- **Modular Task Loader:** Dynamic, folder-based task definitions (`.md` files) allow for complex maintenance and reporting routines without modifying core configuration.
+- **Self-Correcting Schedules:** A strategic runtime patch enables automated schedule reloading and state preservation across system restarts.
+- **Routable Batch Delivery:** Batch results are dynamically redirected to the most recent active user channel (e.g., Telegram), ensuring background tasks remain visible.
 
-### **4. Specialist Economy & Delegation**
-- **Enforced Delegation:** The Main Agent is strictly blocked from executing high-power surgical tools (Google, AI Search, Email).
-- **Explicit Specialist Routing:** Orchestrator-driven delegation where the agent chooses between **'researcher'** (default) or **'architect'** types.
-- **Model Isolation:** Specialist models are strictly assigned by the system (e.g., `gemini-3-flash-preview` for researchers, `gemini-3-pro-preview` for architects).
-- **Hardened Execution:** Integrated circuit breakers and loop detection prevent amnesia loops or tool abuse by both the Main Agent and Specialists.
-- **Orchestrator Reports:** Formatted specialist reports with directive-driven hint injection to ensure the Main Agent only synthesizes subagent work.
-- **Enhanced Mandate Enforcement:** Hardened filters and monitoring prevent bypass attempts (e.g., 'exec', 'ping', 'dir', 'python'), ensuring strict adherence to the delegation model.   
+## **4. Infrastructure & Resilience**
+Optimized for stable long-term operation on Windows environments:
+- **Zero Core Pollution:** 100% of strategic logic is applied via runtime monkey-patches and wrappers, ensuring seamless synchronization with upstream core updates.
+- **Concurrent Agent Loop:** Replaces global locking with high-performance per-session locks, enabling simultaneous multi-user processing.
+- **Non-Blocking Persistence:** Asynchronous session saving offloads I/O to thread pools, eliminating latency spikes during large history saves.
+- **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery (exponential backoff) across all AI providers.
+- **Communication Fallbacks:** Automated disk-based logging for critical notifications ensures data persistence even during API or credential outages.
+- **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering (e.g., excluding `.venv`) and automated rotation. Managed via a generalized `BACKUP_MANIFEST.md` for maximum extensibility.
 
-### **5. Infrastructure & Resilience**
-- **Unified CLI Wrapper:** The `strategery\nanobot.cmd` script enforces all strategic patches across ALL commands (e.g., `nanobot status`, `nanobot gateway`).
-- **Specialist Subagent Persistence:** Utilizes host-bridged MCP sessions to enable near-instant subagent spawning and reuse of active server processes.
-- **Strategic Noise Suppression:** Automated suppression of transient network tracebacks (e.g. Telegram RemoteProtocolError) into single-line warnings for cleaner strategic logging.
-- **Self-Awareness Context:** Tracks environmental changes and architectural updates to keep the agent informed of its own state.
-- **BOM Safety:** Global monkey-patch for `builtins.open` ensures all JSON/JSONL files are read correctly on Windows.
-- **Resilient Provider Stack:** Universal embedding access across all provider types via base-class patching and robust retry loops with exponential backoff for transient upstream errors. Now includes direct **Azure OpenAI Provider** support (API 2024-10-21) with strategic logging and formatted error interception.
-- **Logging Stability:** Specialized `UnicodeSafeStreamHandler` prevents application crashes when logging complex characters (emojis) to restricted Windows consoles.
-- **Notification Resilience:** The Email Reporter includes an automated disk-based fallback (`NOTIFICATIONS.md`) to prevent data loss during API outages or credential revocations.
-- **Zero Core Pollution:** 100% of strategic logic is contained in `strategery/patches/`, ensuring zero impact on upstream `nanobot/` core updates and enabling seamless synchronization with the main repository.
-- **Upstream Resilience:** Proactive maintenance and architectural alignment of strategic patches with core utility evolutions to ensure long-term stability and compatibility with upstream refactoring.
-
-### **6. Automated Batch System (F-011)**
-- **Modular Task Loader:** Folder-based nightly processing where new tasks (maintenance, reporting, extraction) are defined as simple Markdown files in `D:/Nanobot_Storage/workspace/cron/items/`.
-- **Specialist Orchestration:** Automated tasks leverage the Specialist Economy, spawning targeted subagents (Researcher/Architect) to perform deep-dive work.
-- **Routable Delivery:** Integrated channel redirection ensuring batch reports are delivered to the most recent active user channel (e.g., Telegram) instead of the local CLI.
-- **Self-Correcting Schedules:** Strategic Cron patch monitors file state to automatically reload schedules without system restarts or configuration surgery.
-
-
-### **8. High-Performance Concurrency (F-012, F-013)**
-- **Concurrent Agent Loop (Per-Session Lock):** Replaces the global agent lock with a high-performance WeakValueDictionary of per-session locks. This allows the Strategic Edition to process messages from multiple users (e.g., separate Telegram users, CLI sessions, and Cron tasks) simultaneously while ensuring message ordering is strictly preserved for each individual user.
-- **Asynchronous Session Persistence:** Patched the session saving logic to use non-blocking asynchronous disk I/O (offloaded to a thread pool). This prevents large conversation histories or complex session metadata from blocking the main event loop, ensuring the system remains responsive even under heavy concurrent load.
-### **7. Graph Capabilities (NanoGraph)**
-- **Semantic Overlay:** The memory system is augmented with a semantic graph overlay for relationship-based recall.
-- **Neighbor Querying:** Find related entities for a specific memory node using relationship types.
-- **Surgical Tools:** Accessible via `python D:\Nanobot_Storage\workspace\skills\memory\scripts\graph_query.py`.
+## **5. NanoGraph Semantic Overlay**
+Augments standard memory with a semantic graph overlay for complex relationship-based recall, enabling the agent to navigate memory nodes via explicit entity connections (e.g., 'Project X' -- 'uses' --> 'Technology Y').
