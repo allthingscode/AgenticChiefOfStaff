@@ -70,8 +70,10 @@ class ConfigPatch(BasePatch):
                 setattr(Base, "model_config", {**Base.model_config, "extra": "ignore"})
 
             # 2. Patch get_data_dir to point to strategic storage (D: drive)
-            if not hasattr(nanobot.config.loader, "_orig_get_data_dir_strategic"):
-                nanobot.config.loader._orig_get_data_dir_strategic = nanobot.config.loader.get_data_dir
+            # MANDATE: Upstream moved get_data_dir from loader.py to paths.py in v0.1.4.post4
+            import nanobot.config.paths
+            if not hasattr(nanobot.config.paths, "_orig_get_data_dir_strategic"):
+                nanobot.config.paths._orig_get_data_dir_strategic = nanobot.config.paths.get_data_dir
 
                 # Derivation helper to avoid circular imports of STORAGE_ROOT from .
                 def _get_strategic_data_dir():
@@ -79,7 +81,22 @@ class ConfigPatch(BasePatch):
                     _, _, storage_root = load_strategic_context()
                     return storage_root
 
-                nanobot.config.loader.get_data_dir = _get_strategic_data_dir
+                nanobot.config.paths.get_data_dir = _get_strategic_data_dir
+
+                # Also patch get_workspace_path to be safe (it often uses defaults.workspace)
+                # This ensures any code using nanobot.config.paths.get_workspace_path also sees the strategic root
+                if hasattr(nanobot.config.paths, "get_workspace_path"):
+                    nanobot.config.paths._orig_get_workspace_path_strategic = nanobot.config.paths.get_workspace_path
+                    def _get_strategic_workspace_path(workspace=None):
+                        # If an explicit workspace is passed, respect it
+                        if workspace:
+                            return Path(workspace).expanduser()
+                        # Otherwise, use the strategic storage root
+                        from .config import load_strategic_context
+                        _, _, storage_root = load_strategic_context()
+                        return storage_root / "workspace"
+                    
+                    nanobot.config.paths.get_workspace_path = _get_strategic_workspace_path
 
                 # Also patch Config.workspace_path to be safe (it often uses defaults.workspace)
                 # This ensures any code using config.workspace_path also sees the strategic root
@@ -144,9 +161,10 @@ class ConfigPatch(BasePatch):
             return False
 
     def verify(self, config_data: dict) -> bool:
-        """Verifies that the global 'open' and ContextBuilder patches are active."""
+        """Verifies that the global 'open', ContextBuilder, and Path patches are active."""
         import builtins
         import nanobot.agent.context
+        import nanobot.config.paths
         
         # 1. Check builtins.open
         if not hasattr(builtins, "_orig_open_strategic"):
@@ -154,6 +172,10 @@ class ConfigPatch(BasePatch):
             
         # 2. Check ContextBuilder.build_system_prompt
         if not hasattr(nanobot.agent.context.ContextBuilder, "_orig_build_system_prompt_strategic"):
+            return False
+            
+        # 3. Check nanobot.config.paths.get_data_dir
+        if not hasattr(nanobot.config.paths, "_orig_get_data_dir_strategic"):
             return False
             
         return True

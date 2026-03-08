@@ -9,7 +9,7 @@ import os
 import zipfile
 import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 # MANDATE (F-014): Added Drive scope for sandboxed backup management
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -151,7 +151,7 @@ async def list_calendar_events(calendar_id: str = "primary", max_results: int = 
         return strategic_merge_calendar_events(all_results, max_results=max_results)
 
     service = get_service('calendar', 'v3')
-    now = datetime.utcnow().isoformat() + 'Z'
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     events_result = service.events().list(calendarId=calendar_id, timeMin=now,
                                         maxResults=max_results, singleEvents=True,
                                         orderBy='startTime').execute()
