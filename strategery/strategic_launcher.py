@@ -69,6 +69,15 @@ def transform_args(argv):
 
 def main():
     """Main entry point for the launcher."""
+    # 1. Run Strategic Doctor (Pre-flight diagnostics)
+    try:
+        from strategery.strategic_doctor import main as run_doctor
+        run_doctor()
+    except Exception as de:
+        print(f"\n[Launcher] CRITICAL: Diagnostic check failed: {de}")
+        sys.exit(1)
+
+    # 2. Perform cleanup and warmup
     pre_start_cleanup()
     warmup_vector_store()
     

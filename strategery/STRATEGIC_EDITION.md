@@ -31,6 +31,7 @@ Optimized for stable long-term operation on Windows environments:
 - **Concurrent Agent Loop:** Replaces global locking with high-performance per-session locks, enabling simultaneous multi-user processing.
 - **Non-Blocking Persistence:** Asynchronous session saving offloads I/O to thread pools, eliminating latency spikes during large history saves.
 - **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery (exponential backoff) across all AI providers.
+- **Strategic Doctor (Pre-Flight Diagnostics):** Automated diagnostic engine (`strategic_doctor.py`) integrated into the launch sequence. Validates configuration, storage access, MCP tool connectivity, and batch job metadata before every start to prevent silent failures.
 - **Communication Fallbacks:** Automated disk-based logging for critical notifications ensures data persistence even during API or credential outages.
 - **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering and automated rotation. Managed via a **Disaster Recovery Manifest** that includes the `.gemini` brain, root launchers, and `.env` credentials to ensure 100% recovery on a new device.
 
