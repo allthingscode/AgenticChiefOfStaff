@@ -18,8 +18,9 @@ class AwarenessPatch(BasePatch):
     def apply(self, config_data: dict) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
-            from . import STORAGE_ROOT
-            self._generate_awareness_file(STORAGE_ROOT)
+            from .config import load_strategic_context
+            _, _, storage_root = load_strategic_context()
+            self._generate_awareness_file(storage_root)
             result.affected_symbols.append("D:/Nanobot_Storage/workspace/AWARENESS.md")
             
             self._patch_context_builder()

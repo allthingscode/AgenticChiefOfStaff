@@ -149,6 +149,29 @@ def check_batch_jobs(config):
             
     return all_ok
 
+def check_patch_application(config):
+    """Explicitly applies patches and verifies the results."""
+    from strategery.patches import registry
+    from strategery.patches.config import load_strategic_context
+    
+    # Load context and apply
+    raw_cfg, user_email, storage_root = load_strategic_context()
+    results = registry.apply_all(raw_cfg, storage_root=storage_root, user_email=user_email)
+    
+    if not results:
+        # If results is empty, it might mean already initialized, which is OK for doctor
+        return True
+        
+    all_ok = True
+    for res in results:
+        if not res.success:
+            print(f"{RED}[FAIL] Patch failed: {res.patch_name} - {res.error_msg}{RESET}")
+            all_ok = False
+        else:
+            # We don't need to print every success here, the integrity check handles it
+            pass
+    return all_ok
+
 def check_patch_integrity(config):
     """Verifies that all strategic monkey-patches are active and functionally correct."""
     try:
@@ -202,6 +225,7 @@ def main():
     if not config: sys.exit(1)
     
     if not check_storage(config): sys.exit(1)
+    if not check_patch_application(config): sys.exit(1)
     if not check_patch_integrity(config): sys.exit(1)
     if not check_static_analysis(): sys.exit(1)
     if not check_mcp_tools(config): sys.exit(1)

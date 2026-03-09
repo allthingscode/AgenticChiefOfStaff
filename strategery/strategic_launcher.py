@@ -14,8 +14,12 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Import everything from patches; initialization happens on import!
-from strategery.patches import RAW_CONFIG, USER_EMAIL, STORAGE_ROOT
+# Import strategic registry and context helpers
+from strategery.patches import registry
+from strategery.patches.config import load_strategic_context
+
+# Load context WITHOUT applying patches yet
+RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
 
 def pre_start_cleanup(config=None, storage_root=None):
     """Performs necessary cleanup before starting."""
@@ -79,6 +83,11 @@ def main():
 
     # 2. Perform cleanup and warmup
     pre_start_cleanup()
+    
+    # 3. Apply Strategic Patches
+    # MANDATE: This is the ONLY place patches should be applied for the main bot.
+    registry.apply_all(RAW_CONFIG, halt_on_error=True, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
+    
     warmup_vector_store()
     
     sys.argv = transform_args(sys.argv)

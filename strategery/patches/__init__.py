@@ -86,14 +86,5 @@ class PatchRegistry:
 # Initialize global registry
 registry = PatchRegistry()
 
-# Auto-apply patches on import to ensure environment is set up correctly
-# MANDATE: This will be moved to explicit application in F-019.
-RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
-
-# Re-initialize logger with strategic storage root if available
-if STORAGE_ROOT:
-    setup_strategic_logger(log_dir=STORAGE_ROOT / "logs")
-
-if not getattr(sys, "_STRATEGIC_INITIALIZED", False):
-    # For now, we don't halt on error during auto-application to maintain current behavior
-    registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
+# MANDATE: Auto-application removed in F-019. 
+# Strategic components MUST explicitly call registry.apply_all() to modify the environment.
