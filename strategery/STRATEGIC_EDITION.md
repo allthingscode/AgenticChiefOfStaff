@@ -30,8 +30,9 @@ Optimized for stable long-term operation on Windows environments:
 - **Zero Core Pollution:** 100% of strategic logic is applied via runtime monkey-patches and wrappers, ensuring seamless synchronization with upstream core updates.
 - **Thin Patch Mandate:** Strategic logic is decoupled from runtime shims into a standalone `strategery/logic/` module, ensuring 100% unit-testability and zero-risk refactoring.
 - **Concurrent Agent Loop:** Replaces global locking with high-performance per-session locks, enabling simultaneous multi-user processing.
-- **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery across all AI providers.
-- **Strategic Doctor (Pre-Flight Diagnostics):** Automated diagnostic engine (`strategic_doctor.py`) validated before every start to prevent silent failures.
+- **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated tier-based **Model Escalation** to bypass safety filter roadblocks.
+- **Fail-Fast Symbol Guard:** Proactive pre-patch signature verification ensures the system detects upstream code changes before they cause runtime instability.
+- **Strategic Doctor (Pre-Flight Diagnostics):** Explicit application flow and rich `PatchResult` diagnostics validate the system state before every launch.
 
 ---
 
@@ -39,6 +40,8 @@ Optimized for stable long-term operation on Windows environments:
 
 | Feature | Status | Impact |
 |---|---|---|
+| **Symbol Guard (F-025)** | **LIVE** | **Resilience:** Proactive detection of upstream incompatibilities before monkey-patching. |
+| **Model Escalation** | **LIVE** | **Stability:** Automatic tier-jumping (Lite -> Pro) to bypass safety filter roadblocks. |
 | **Modular Nightly Batch** | **COMPLETED** | **Master Orchestrator:** Single master task scheduled for 3 AM handles all health, extraction, and reporting. |
 | **The Thin Patch Mandate** | **COMPLETED** | **Stability:** Decoupled strategic logic from runtime shims for 100% testability and zero-risk refactoring. |
 | **High-Fidelity Telemetry** | **LIVE** | **Observability:** Real-time visibility into thoughts, tool arguments, and result snippets across all agents. |
