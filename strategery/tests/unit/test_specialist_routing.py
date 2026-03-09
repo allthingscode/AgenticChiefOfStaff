@@ -23,11 +23,21 @@ def mock_specialist_config():
     }
 
 @pytest.mark.asyncio
-async def test_subagent_manager_integrated_routing(mock_specialist_config):
+async def test_subagent_manager_integrated_routing(mock_context):
     """
     Integrated test to verify that SubagentManager temporarily switches models
     and uses the StrategicSubagentRegistry during execution.
     """
+    # Override default context config for this test
+    mock_context.config = {
+        "agents": {
+            "specialists": {
+                "architect": {"model": "special-architect-model"},
+                "researcher": {"model": "special-research-model"}
+            }
+        }
+    }
+
     # 1. Apply the patch
     patch_inst = SubagentPatch()
 
@@ -37,10 +47,9 @@ async def test_subagent_manager_integrated_routing(mock_specialist_config):
     if hasattr(SubagentManager, "_orig_announce_result_strategic"):
         delattr(SubagentManager, "_orig_announce_result_strategic")
 
-    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
-        # We also need to mock ToolRegistry.register to avoid loading real tools
-        with patch.object(ToolRegistry, "register"):
-            patch_inst.apply(mock_specialist_config)
+    # We also need to mock ToolRegistry.register to avoid loading real tools
+    with patch.object(ToolRegistry, "register"):
+        patch_inst.apply(mock_context)
 
     # 2. Setup mock SubagentManager
     mock_mgr = MagicMock(spec=SubagentManager)
@@ -71,11 +80,20 @@ async def test_subagent_manager_integrated_routing(mock_specialist_config):
     assert kwargs["model"] == "special-research-model"
 
 @pytest.mark.asyncio
-async def test_architect_routing_uses_pro_model(mock_specialist_config):
+async def test_architect_routing_uses_pro_model(mock_context):
     """Verify that the Architect specialist correctly uses the 'pro' model from config (BUG-056)."""
     from nanobot.agent.subagent import SubagentManager
     from nanobot.agent.tools.registry import ToolRegistry
     
+    mock_context.config = {
+        "agents": {
+            "specialists": {
+                "architect": {"model": "special-architect-model"},
+                "researcher": {"model": "special-research-model"}
+            }
+        }
+    }
+
     # Setup mock SubagentManager
     mock_mgr = MagicMock(spec=SubagentManager)
     mock_mgr.model = "default-model"
@@ -94,27 +112,22 @@ async def test_architect_routing_uses_pro_model(mock_specialist_config):
     mock_mgr.reasoning_effort = None
     
     # Execute Architect Task (specialist="architect")
-    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
-        # We need to mock ToolRegistry.register to avoid loading real tools
-        with patch.object(ToolRegistry, "register"):
-            # The apply() was already called in previous test, but let's ensure it's patched for this test
-            SubagentPatch().apply(mock_specialist_config)
-            
-            await SubagentManager._run_subagent(
-                mock_mgr, "task-2", "design system", "Architect", {"channel": "test", "chat_id": "123"}, 
-                specialist="architect"
-            )
+    with patch.object(ToolRegistry, "register"):
+        SubagentPatch().apply(mock_context)
+        
+        await SubagentManager._run_subagent(
+            mock_mgr, "task-2", "design system", "Architect", {"channel": "test", "chat_id": "123"}, 
+            specialist="architect"
+        )
 
     # Verify Architect Routing
     args, kwargs = mock_mgr.provider.chat.call_args
     assert kwargs["model"] == "special-architect-model"
 
 @pytest.mark.asyncio
-async def test_subagent_registry_tool_access(mock_specialist_config):
+async def test_subagent_registry_tool_access(mock_context):
     """Verify that high-power tools are ALLOWED for specialists but BLOCKED for others."""
-    patch_inst = SubagentPatch()
-    with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
-        patch_inst.apply(mock_specialist_config)
+    SubagentPatch().apply(mock_context)
 
     from nanobot.agent.tools.registry import ToolRegistry
 

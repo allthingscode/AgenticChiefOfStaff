@@ -150,7 +150,7 @@ async def strategic_telegram_send(channel, msg):
                 if thread_id: kwargs["message_thread_id"] = int(thread_id)
                 await channel._app.bot.send_message(**kwargs)
 
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
@@ -159,11 +159,11 @@ class TelegramPatch(BasePatch):
     def name(self) -> str:
         return "Telegram Advanced Integration"
 
-    def apply(self, config_data: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             from nanobot.channels.telegram import TelegramChannel
-            self._patch_telegram_channel(TelegramChannel, config_data)
+            self._patch_telegram_channel(TelegramChannel, context.config)
             result.affected_symbols.extend([
                 "TelegramChannel.start", 
                 "TelegramChannel._on_message", 

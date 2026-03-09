@@ -4,7 +4,7 @@ import io
 import asyncio
 from typing import Any, List
 from functools import wraps
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from .lifecycle import lifecycle_manager
 from strategery.strategic_logger import strategic_logger
 
@@ -58,7 +58,7 @@ class InfraPatch(BasePatch):
             "nanobot.agent.tools.filesystem.ReadFileTool.execute"
         ]
 
-    def apply(self, config: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             if sys.platform == 'win32':

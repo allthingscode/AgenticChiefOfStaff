@@ -8,8 +8,12 @@ from nanobot.agent.tools.registry import ToolRegistry
 from strategery.patches.subagent import SubagentPatch
 
 @pytest.fixture
-def registry_factory():
+def registry_factory(mock_context):
     """Returns a factory for creating role-aware registries."""
+    # MANDATE: We must apply the patch so that get_definitions is monkey-patched
+    patch_inst = SubagentPatch()
+    patch_inst.apply(mock_context)
+
     def _create(role="main"):
         reg = ToolRegistry()
         if role == "specialist":

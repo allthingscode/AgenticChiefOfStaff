@@ -5,8 +5,9 @@ without modifying the core Nanobot codebase.
 """
 
 import sys
+from pathlib import Path
 from typing import List
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from .infra import InfraPatch
 from .config import ConfigPatch, load_strategic_context
 from .provider import ProviderPatch
@@ -42,8 +43,28 @@ class PatchRegistry:
         if getattr(sys, "_STRATEGIC_INITIALIZED", False):
             return []
             
+        # 1. Resolve Global Context
+        storage_root = kwargs.get("storage_root")
+        user_email = kwargs.get("user_email", "admin@example.com")
+        
+        # Fallback resolution if not provided by launcher
+        if not storage_root:
+            _, _email, _root = load_strategic_context()
+            storage_root = _root
+            user_email = _email
+            
+        app_root = Path(__file__).parent.parent.parent
+        
+        # 2. Initialize Patch Context (F-018)
+        context = PatchContext(
+            config=config_data,
+            storage_root=storage_root,
+            user_email=user_email,
+            app_root=app_root
+        )
+            
         # Ensure logger is correctly configured for the current environment/storage root
-        setup_strategic_logger()
+        setup_strategic_logger(log_dir=storage_root / "logs" if storage_root else None)
         strategic_logger.info("Applying Nanobot Strategic Edition patches...")
         
         results = []
@@ -63,8 +84,8 @@ class PatchRegistry:
                         break
                     continue
 
-                # 2. Apply Patch
-                res = patch.apply(config_data)
+                # 2. Apply Patch with formal Context (F-018)
+                res = patch.apply(context)
                 
                 # Handle legacy boolean returns for backward compatibility
                 if isinstance(res, bool):

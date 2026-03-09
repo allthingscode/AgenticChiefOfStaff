@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from strategery.strategic_logger import strategic_logger
 
 class AwarenessPatch(BasePatch):
@@ -15,12 +15,10 @@ class AwarenessPatch(BasePatch):
     def name(self) -> str:
         return "Identity & Awareness"
 
-    def apply(self, config_data: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
-            from .config import load_strategic_context
-            _, _, storage_root = load_strategic_context()
-            self._generate_awareness_file(storage_root)
+            self._generate_awareness_file(context.storage_root)
             result.affected_symbols.append("D:/Nanobot_Storage/workspace/AWARENESS.md")
             
             self._patch_context_builder()

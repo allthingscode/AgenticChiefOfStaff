@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 import importlib
 
 @dataclass
@@ -16,6 +17,18 @@ class PatchResult:
     def __bool__(self) -> bool:
         """Allow the result to be used in boolean contexts for backward compatibility."""
         return self.success
+
+@dataclass
+class PatchContext:
+    """Encapsulates the environment and configuration for a strategic patch."""
+    config: Dict[str, Any]
+    storage_root: Path
+    user_email: str
+    app_root: Path
+    
+    @property
+    def workspace_root(self) -> Path:
+        return self.storage_root / "workspace"
 
 class BasePatch(ABC):
     """Base class for all strategic patches."""
@@ -35,9 +48,9 @@ class BasePatch(ABC):
         return []
 
     @abstractmethod
-    def apply(self, config_data: dict) -> PatchResult | bool:
+    def apply(self, context: PatchContext) -> PatchResult | bool:
         """
-        Applies the patch using the provided configuration.
+        Applies the patch using the provided context.
         Returns a PatchResult object (preferred) or True/False.
         """
         pass

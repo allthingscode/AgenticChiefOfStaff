@@ -1,5 +1,5 @@
 from nanobot.cron.service import CronService
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import cron_logic
 
@@ -13,11 +13,10 @@ class CronPatch(BasePatch):
     def name(self) -> str:
         return "Cron Service Reliability"
 
-    def apply(self, config: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             from .batch import strategic_load_modular_jobs
-            from .config import load_strategic_context
             
             orig_load_store = CronService._load_store
             patch_cls = self.__class__
@@ -40,8 +39,7 @@ class CronPatch(BasePatch):
                 
                 # modular items reload check
                 try:
-                    _, _, storage_root = load_strategic_context()
-                    items_dir = storage_root / "workspace" / "cron" / "items"
+                    items_dir = context.workspace_root / "cron" / "items"
                     changed, new_mtime = cron_logic.detect_modular_change(items_dir, self._last_items_mtime)
                     if changed:
                         needs_injection = True
@@ -53,8 +51,7 @@ class CronPatch(BasePatch):
                 
                 if needs_injection:
                     try:
-                        _, _, storage_root = load_strategic_context()
-                        modular_jobs = strategic_load_modular_jobs(storage_root)
+                        modular_jobs = strategic_load_modular_jobs(context.storage_root)
                         store.jobs = cron_logic.merge_modular_jobs(store.jobs, modular_jobs, patch_cls._MODULAR_STATE_CACHE)
                     except Exception as be:
                         strategic_logger.error(f"Batch: Modular injection failed: {be}")
@@ -66,8 +63,7 @@ class CronPatch(BasePatch):
                 
                 # First-load edge case: if we just injected, ensure items_mtime is up to date
                 try:
-                    _, _, storage_root = load_strategic_context()
-                    items_dir = storage_root / "workspace" / "cron" / "items"
+                    items_dir = context.workspace_root / "cron" / "items"
                     _, self._last_items_mtime = cron_logic.detect_modular_change(items_dir, 0)
                 except: pass
                     
@@ -90,8 +86,7 @@ class CronPatch(BasePatch):
             if not hasattr(CronService, "_orig_execute_job_strategic"):
                 CronService._orig_execute_job_strategic = CronService._execute_job
                 async def _patched_execute_job(self, job):
-                    _, _, storage_root = load_strategic_context()
-                    new_chan, new_to = cron_logic.resolve_routable_channel(job.payload.channel, storage_root)
+                    new_chan, new_to = cron_logic.resolve_routable_channel(job.payload.channel, context.storage_root)
                     if new_chan and new_chan != job.payload.channel:
                         job.payload.channel = new_chan
                         if new_to: job.payload.to = new_to

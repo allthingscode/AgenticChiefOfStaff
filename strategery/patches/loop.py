@@ -2,7 +2,7 @@ import asyncio
 import json
 import weakref
 from typing import List
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.events import OutboundMessage
 from loguru import logger
@@ -27,7 +27,7 @@ class AgentLoopPatch(BasePatch):
             "nanobot.bus.events.OutboundMessage"
         ]
 
-    def apply(self, config: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             # 1. Patch __init__ to initialize our strategic lock dictionary

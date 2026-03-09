@@ -22,8 +22,22 @@ except Exception:
 
 import pytest
 from unittest.mock import patch, MagicMock
-
+from strategery.patches.base import PatchContext
 from strategery.tests.mocks.mock_config import get_mock_config_json
+
+@pytest.fixture
+def mock_context(tmp_path):
+    """Provides a valid PatchContext object for unit tests."""
+    storage_root = tmp_path / "storage"
+    storage_root.mkdir()
+    (storage_root / "workspace").mkdir()
+    
+    return PatchContext(
+        config=json.loads(get_mock_config_json()),
+        storage_root=storage_root,
+        user_email="test@user.com",
+        app_root=Path(__file__).parent.parent.parent
+    )
 
 @pytest.fixture(autouse=True)
 def global_config_patch():

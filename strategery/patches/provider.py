@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any, List
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import provider_logic
 
@@ -24,7 +24,7 @@ class ProviderPatch(BasePatch):
             "nanobot.agent.loop.AgentLoop._strip_think"
         ]
 
-    def apply(self, config_data: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             self._patch_base_provider()

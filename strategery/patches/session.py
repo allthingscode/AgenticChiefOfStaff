@@ -2,7 +2,7 @@ import asyncio
 import json
 import inspect
 import textwrap
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from nanobot.session.manager import SessionManager, Session
 from nanobot.agent.loop import AgentLoop
 from loguru import logger
@@ -18,7 +18,7 @@ class SessionPatch(BasePatch):
     def name(self) -> str:
         return "Async Session Management"
 
-    def apply(self, config: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             # 1. Patch SessionManager.save

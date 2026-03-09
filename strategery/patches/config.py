@@ -3,7 +3,7 @@ import os
 import builtins
 from pathlib import Path
 from functools import wraps
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 
 def strategic_migrate_config(data, config_data_capture=None):
     """
@@ -50,7 +50,7 @@ class ConfigPatch(BasePatch):
     def name(self) -> str:
         return "Configuration & Schema Overrides"
 
-    def apply(self, config_data: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
             import nanobot.config.loader
@@ -74,9 +74,7 @@ class ConfigPatch(BasePatch):
                 nanobot.config.paths._orig_get_data_dir_strategic = nanobot.config.paths.get_data_dir
 
                 def _get_strategic_data_dir():
-                    from .config import load_strategic_context
-                    _, _, storage_root = load_strategic_context()
-                    return storage_root
+                    return context.storage_root
 
                 nanobot.config.paths.get_data_dir = _get_strategic_data_dir
                 result.affected_symbols.append("nanobot.config.paths.get_data_dir")
@@ -86,9 +84,7 @@ class ConfigPatch(BasePatch):
                     def _get_strategic_workspace_path(workspace=None):
                         if workspace:
                             return Path(workspace).expanduser()
-                        from .config import load_strategic_context
-                        _, _, storage_root = load_strategic_context()
-                        return storage_root / "workspace"
+                        return context.workspace_root
                     
                     nanobot.config.paths.get_workspace_path = _get_strategic_workspace_path
                     result.affected_symbols.append("nanobot.config.paths.get_workspace_path")
@@ -96,9 +92,7 @@ class ConfigPatch(BasePatch):
                 if hasattr(Config, "workspace_path"):
                     @property
                     def _strategic_workspace_path(self):
-                        from .config import load_strategic_context
-                        _, _, storage_root = load_strategic_context()
-                        return storage_root / "workspace"
+                        return context.workspace_root
 
                     Config.workspace_path = _strategic_workspace_path
                     result.affected_symbols.append("Config.workspace_path")
@@ -124,7 +118,7 @@ class ConfigPatch(BasePatch):
                 
                 def _patched_migrate(data):
                     data = nanobot.config.loader._orig_migrate_strategic(data)
-                    return strategic_migrate_config(data, config_data)
+                    return strategic_migrate_config(data, context.config)
                 
                 nanobot.config.loader._migrate_config = _patched_migrate
                 result.affected_symbols.append("nanobot.config.loader._migrate_config")

@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from contextlib import AsyncExitStack
 from typing import List
-from .base import BasePatch, PatchResult
+from .base import BasePatch, PatchResult, PatchContext
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import subagent_logic
 
@@ -27,21 +27,19 @@ class SubagentPatch(BasePatch):
             "nanobot.agent.context.ContextBuilder.build_messages"
         ]
 
-    def apply(self, config_data: dict) -> PatchResult:
+    def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
-        from .config import load_strategic_context
-        _, user_email, _ = load_strategic_context()
         try:
             self._patch_spawn_tool()
             result.affected_symbols.append("nanobot.agent.tools.spawn.SpawnTool")
             
-            self._patch_subagent_manager(config_data)
+            self._patch_subagent_manager(context)
             result.affected_symbols.append("nanobot.agent.subagent.SubagentManager")
             
-            self._patch_tool_registry(user_email)
+            self._patch_tool_registry(context.user_email)
             result.affected_symbols.append("nanobot.agent.tools.registry.ToolRegistry")
             
-            self._patch_heartbeat(config_data)
+            self._patch_heartbeat(context.config)
             result.affected_symbols.append("nanobot.heartbeat.service.HeartbeatService")
             
             self._patch_context_builder()
@@ -106,14 +104,14 @@ class SubagentPatch(BasePatch):
                     host_tools=getattr(self, "_registry", None))
             SpawnTool.execute = _patched_execute
 
-    def _patch_subagent_manager(self, config_data):
+    def _patch_subagent_manager(self, context: PatchContext):
         from nanobot.agent.subagent import SubagentManager
         from nanobot.agent.tools.registry import ToolRegistry
         from nanobot.agent.tools.shell import ExecTool
         from nanobot.agent.tools.web import WebFetchTool
         from nanobot.config.schema import Config
         from .vsa import VectorStoreFactory
-        from .config import load_strategic_context, strategic_migrate_config
+        from .config import strategic_migrate_config
         from .infra import strategic_mcp_manager
 
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
@@ -147,8 +145,7 @@ class SubagentPatch(BasePatch):
             SubagentManager.spawn = _patched_spawn
 
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
-            _, _, storage_root = load_strategic_context()
-            final_model = subagent_logic.get_specialist_model(specialist, config_data, self.model)
+            final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
             VectorStoreFactory.get_store(provider=self.provider)
             try:
                 async with AsyncExitStack() as stack:
@@ -156,14 +153,14 @@ class SubagentPatch(BasePatch):
                     tools._is_strategic_specialist = True
                     tools._task_id = task_id # For telemetry identification
                     
-                    tools.register(ExecTool(working_dir=str(storage_root / "workspace"), timeout=self.exec_config.timeout))
+                    tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=self.exec_config.timeout))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     if host_tools and hasattr(host_tools, "_tools"):
                         for name, tool in host_tools._tools.items():
                             if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
                                 tools.register(tool)
                     try:
-                        pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(config_data)))
+                        pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(context.config)))
                         validated_config = Config.model_validate(pydantic_cfg)
                         if validated_config.tools.mcp_servers:
                             await strategic_mcp_manager.get_tools_for_subagent(validated_config.tools.mcp_servers, tools, task_id)
