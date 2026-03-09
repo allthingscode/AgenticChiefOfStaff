@@ -1,12 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
-from strategery.patches.memory import (
-    strategic_prune_context,
-    strategic_inject_rag_context,
-    strategic_write_journal_entry,
-    strategic_get_rolling_journal
-)
+from strategery.logic import memory_logic
+from strategery.patches.memory import strategic_inject_rag_context
 
 def test_strategic_prune_context():
     """Verify that context pruning respects TTL and mandatory assistant retention."""
@@ -22,7 +18,7 @@ def test_strategic_prune_context():
     # Prune with 6h TTL, keep last 2 assistants
     # Expected: "New user" (new), "Old user" (user always kept), "Old assistant 3" (last 1), "Old assistant 2" (last 2)
     # "Old assistant 1" should be dropped.
-    pruned = strategic_prune_context(messages, ttl_hours=6, keep_last_assistants=2)
+    pruned = memory_logic.prune_context(messages, ttl_hours=6, keep_last_assistants=2)
     
     contents = [m["content"] for m in pruned]
     assert "Old user" in contents
@@ -68,7 +64,8 @@ async def test_strategic_inject_rag_context_generic_filter():
 def test_strategic_write_journal_entry(tmp_path):
     """Verify that consolidation entries are written to the daily journal."""
     entry = "Test consolidation summary."
-    success = strategic_write_journal_entry(tmp_path, entry)
+    # Wrap tmp_path in Path if needed, but it should work
+    success = memory_logic.write_journal_entry(tmp_path, entry)
     
     assert success is True
     today = datetime.now().strftime("%Y-%m-%d")
@@ -89,6 +86,6 @@ def test_strategic_get_rolling_journal(tmp_path):
     journal_path.write_text(text, encoding="utf-8-sig")
     
     # Requesting a small amount should return the end of the file
-    snippet = strategic_get_rolling_journal(tmp_path, max_chars=10)
+    snippet = memory_logic.get_journal_continuity(tmp_path, max_chars=10)
     assert "Line 3" in snippet
     assert "Line 1" not in snippet

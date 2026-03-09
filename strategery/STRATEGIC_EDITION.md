@@ -17,30 +17,30 @@ The Strategic Edition enforces a strict hierarchy to maximize model efficiency a
 - **Enforced Delegation:** The Main Agent (Orchestrator) is hard-blocked from executing high-power surgical tools (Google, AI Search, Email), mandating the use of Specialists.
 - **Role-Based Isolation:** Specialists are strictly routed by role (**'researcher'** vs **'architect'**) with automated model assignment (e.g., Flash-Lite for research, Pro for architecture).
 - **Hardened Path Awareness:** Specialist subagents are equipped with explicit mandates for absolute path discovery and recursive storage audits, eliminating "Storage Depth Blindness."
-- **Orchestrator Synthesis:** A specialized report protocol ensures the Main Agent only synthesizes specialist findings rather than re-verifying them, preserving turn efficiency.
+- **High-Fidelity Telemetry:** The system provides real-time visibility into the Agent's reasoning, tool arguments, and results for both the Main Agent and Specialists, formatted for human scanability.
 
 ## **3. Autonomous Batch Operations**
 A unique automation layer that operates independently of real-time user interaction:
 - **Modular Task Loader:** Dynamic, folder-based task definitions (`.md` files) allow for complex maintenance and reporting routines without modifying core configuration.
+- **Master Strategic Orchestrator:** A single master task scheduled for 3 AM handles all daily health checks, knowledge extraction, and morning briefing synthesis in a synchronous, ordered sequence.
 - **Self-Correcting Schedules:** A strategic runtime patch enables automated schedule reloading and state preservation across system restarts.
-- **Routable Batch Delivery:** Batch results are dynamically redirected to the most recent active user channel (e.g., Telegram), ensuring background tasks remain visible.
 
 ## **4. Infrastructure & Resilience**
 Optimized for stable long-term operation on Windows environments:
 - **Zero Core Pollution:** 100% of strategic logic is applied via runtime monkey-patches and wrappers, ensuring seamless synchronization with upstream core updates.
+- **Thin Patch Mandate:** Strategic logic is decoupled from runtime shims into a standalone `strategery/logic/` module, ensuring 100% unit-testability and zero-risk refactoring.
 - **Concurrent Agent Loop:** Replaces global locking with high-performance per-session locks, enabling simultaneous multi-user processing.
-- **Non-Blocking Persistence:** Asynchronous session saving offloads I/O to thread pools, eliminating latency spikes during large history saves.
-- **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery (exponential backoff) across all AI providers.
-- **Strategic Doctor (Pre-Flight Diagnostics):** Automated diagnostic engine (`strategic_doctor.py`) integrated into the launch sequence. Validates configuration, storage access, MCP tool connectivity, and batch job metadata before every start to prevent silent failures.
-- **Communication Fallbacks:** Automated disk-based logging for critical notifications ensures data persistence even during API or credential outages.
-- **Cloud-First Backup (F-014):** Automated, off-site redundancy on Google Drive with intelligent filtering and automated rotation. Managed via a **Disaster Recovery Manifest** that includes the `.gemini` brain, root launchers, and `.env` credentials to ensure 100% recovery on a new device.
+- **Universal Provider Resilience:** Global base-class patching provides unified embedding access, Unicode-safe logging, and automated transient error recovery across all AI providers.
+- **Strategic Doctor (Pre-Flight Diagnostics):** Automated diagnostic engine (`strategic_doctor.py`) validated before every start to prevent silent failures.
 
-## **5. Strategic Stability Framework (Resilience Phase)**
-A dedicated "Self-Healing" pre-flight engine (the Strategic Doctor) that guards against regressions and environmental drift before every system launch:
-- **Active Patch Integrity Verification:** The Strategic Doctor programmatically verifies the functional "handshake" between modular patches and the Nanobot core, ensuring monkey-patches are active and functionally correct.
-- **Specialist Heartbeat Monitor:** Background monitoring detects and warns of "Ghost" subagents, preventing silent hangs and ensuring high-availability orchestration.
-- **No-NameError Shield:** Static syntax analysis across all strategic files catches syntax and import errors before they impact the production gateway.
-- **Win32 Headless Safety:** Fully automated, non-GUI health checks are enforced via direct Python execution, bypassing Windows Shell "Open With" triggers for 100% headless reliability.
+---
 
-## **6. NanoGraph Semantic Overlay**
-Augments standard memory with a semantic graph overlay for complex relationship-based recall, enabling the agent to navigate memory nodes via explicit entity connections (e.g., 'Project X' -- 'uses' --> 'Technology Y').
+### **Roadmap & Achievement Log**
+
+| Feature | Status | Impact |
+|---|---|---|
+| **Modular Nightly Batch** | **COMPLETED** | **Master Orchestrator:** Single master task scheduled for 3 AM handles all health, extraction, and reporting. |
+| **The Thin Patch Mandate** | **COMPLETED** | **Stability:** Decoupled strategic logic from runtime shims for 100% testability and zero-risk refactoring. |
+| **High-Fidelity Telemetry** | **LIVE** | **Observability:** Real-time visibility into thoughts, tool arguments, and result snippets across all agents. |
+| **NanoGraph Phase 2** | Research | **Intelligence:** Multi-hop reasoning and Personalized PageRank (HippoRAG) for deterministic retrieval. |
+| **Readability Reports** | Planning | **UX:** High-readability HTML email templates for 3 AM briefings. |

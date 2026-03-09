@@ -3,6 +3,7 @@ import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from pathlib import Path
 from strategery.patches.memory import MemoryPatch
+from strategery.logic import memory_logic
 
 @pytest.mark.asyncio
 async def test_rag_skips_short_generic():
@@ -112,8 +113,6 @@ async def test_rag_filters_junk_summaries():
 
 def test_strategic_get_rolling_journal(tmp_path):
     """Verify that the rolling journal correctly reads the last part of a file."""
-    from strategery.patches.memory import strategic_get_rolling_journal
-    
     # Setup mock journal directory
     journal_dir = tmp_path / "workspace" / "memory"
     journal_dir.mkdir(parents=True)
@@ -123,12 +122,12 @@ def test_strategic_get_rolling_journal(tmp_path):
     journal_file = journal_dir / f"{today}.md"
     
     # 1. Test non-existent file
-    assert strategic_get_rolling_journal(tmp_path) == ""
+    assert memory_logic.get_journal_continuity(tmp_path) == ""
     
     # 2. Test small file
     content = "Entry 1: Started the project.\nEntry 2: Added some patches."
     journal_file.write_text(content, encoding="utf-8-sig")
-    result = strategic_get_rolling_journal(tmp_path)
+    result = memory_logic.get_journal_continuity(tmp_path)
     assert "RECENT CONTINUITY" in result
     assert "Entry 1" in result
     assert "Entry 2" in result
@@ -137,10 +136,9 @@ def test_strategic_get_rolling_journal(tmp_path):
     long_content = "Header\n" + ("A" * 500) + "\nSplit Point\n" + ("B" * 600)
     journal_file.write_text(long_content, encoding="utf-8-sig")
     # Should get last 1000 chars, then split at first newline
-    result = strategic_get_rolling_journal(tmp_path, max_chars=1000)
+    result = memory_logic.get_journal_continuity(tmp_path, max_chars=1000)
     assert "RECENT CONTINUITY" in result
     assert "Header" not in result
     assert "Split Point" in result
     assert "B" * 600 in result
     assert result.startswith("\n### RECENT CONTINUITY (FROM DAILY JOURNAL):\n...")
-

@@ -1,50 +1,17 @@
-import sys
-import os
 import importlib.util
 import re
 import asyncio
 import json
 import uuid
 from pathlib import Path
+from contextlib import AsyncExitStack
 from .base import BasePatch
 from strategery.strategic_logger import strategic_logger
+from strategery.logic import subagent_logic
 
 class SubagentPatch(BasePatch):
-    """
-    Enforces a Specialist Economy:
-    - High-power tools are BLOCKED from the Main Agent.
-    - Subagents are granted Surgical Tools (including MCP) and assigned specialist models.
-    - Dynamic Specialist Routing: Orchestrator chooses 'researcher' or 'architect'.
-    - Specialist models are strictly tied to type; Orchestrator cannot dictate models.
-    - Turn termination is ENFORCED after subagent spawn.
-    """
+    """Thin Bridge for Specialist Economy orchestration and tool security."""
     
-    # Tools blocked for the Main Agent (Orchestrator)
-    MAIN_AGENT_BLOCKED = [
-        "google", 
-        "ai-search", 
-        "email-reporter", 
-        "strategic_", 
-        "web_search",
-        "search_memory",
-        "nanobot",
-        "filesystem-d",
-        "read_file",
-        "write_file",
-        "edit_file",
-        "list_dir",
-        "ls ",
-        "dir ",
-        "D:"
-    ]
-
-    # Tools blocked for Specialists (to prevent recursive overkill and fire-and-forget loops)
-    SPECIALIST_BLOCKED = [
-        "spawn",
-        "nanobot",
-        "strategic_hello" # Example of a specialist-restricted management tool
-    ]
-
     @property
     def name(self) -> str:
         return "Subagent & Tool Orchestration"
@@ -52,13 +19,13 @@ class SubagentPatch(BasePatch):
     def apply(self, config_data: dict) -> bool:
         from .config import load_strategic_context
         _, user_email, _ = load_strategic_context()
-        
         try:
             self._patch_spawn_tool()
             self._patch_subagent_manager(config_data)
             self._patch_tool_registry(user_email)
             self._patch_heartbeat(config_data)
             self._patch_context_builder()
+            strategic_logger.info("SubagentPatch: All sub-patches applied successfully.")
             return True
         except Exception as e:
             strategic_logger.error(f"Subagent patch error: {e}")
@@ -68,7 +35,6 @@ class SubagentPatch(BasePatch):
         from nanobot.agent.tools.base import Tool
         tools_dir = Path(__file__).parent.parent / "tools"
         if not tools_dir.exists(): return
-
         for file in tools_dir.glob("*.py"):
             if file.name == "__init__.py": continue
             try:
@@ -87,442 +53,202 @@ class SubagentPatch(BasePatch):
 
     def _patch_spawn_tool(self):
         from nanobot.agent.tools.spawn import SpawnTool
-        
-        # 1. Update Tool Definition with 'specialist' parameter
         if not hasattr(SpawnTool, "_orig_parameters_strategic"):
             SpawnTool._orig_parameters_strategic = SpawnTool.parameters
-            
             @property
             def _patched_parameters(self):
                 return {
                     "type": "object",
                     "properties": {
-                        "task": {
-                            "type": "string",
-                            "description": "The task for the subagent to complete",
-                        },
-                        "label": {
-                            "type": "string",
-                            "description": "Optional short label for the task (for display)",
-                        },
+                        "task": {"type": "string", "description": "The task for the subagent to complete"},
+                        "label": {"type": "string", "description": "Optional short label for the task"},
                         "specialist": {
                             "type": "string",
                             "enum": ["researcher", "architect"],
-                            "description": "The type of specialist required. Default: researcher. Use 'architect' for design, NanoGraph, or complex reasoning.",
+                            "description": "The type of specialist required. Default: researcher.",
                         },
                     },
                     "required": ["task"],
                 }
-
             SpawnTool.parameters = _patched_parameters
 
-        # 2. Update Tool Execution to pass 'specialist' AND 'registry' (host tools)
         if not hasattr(SpawnTool, "_orig_execute_strategic"):
             SpawnTool._orig_execute_strategic = SpawnTool.execute
-            
-            async def _patched_execute(self, task: str, label: str | None = None, specialist: str = "researcher", **kwargs):
-                # Ensure specialist is one of the allowed types, otherwise default to researcher
-                if specialist not in ["researcher", "architect"]:
-                    specialist = "researcher"
-                    
-                return await self._manager.spawn(
-                    task=task,
-                    label=label,
-                    origin_channel=self._origin_channel,
-                    origin_chat_id=self._origin_chat_id,
-                    session_key=self._session_key,
-                    specialist=specialist,
-                    host_tools=getattr(self, "_registry", None) # Bridge host tools (BUG-071)
-                )
-            
+            async def _patched_execute(self, task, label=None, specialist="researcher", **kwargs):
+                return await self._manager.spawn(task=task, label=label, origin_channel=self._origin_channel,
+                    origin_chat_id=self._origin_chat_id, session_key=self._session_key, specialist=specialist,
+                    host_tools=getattr(self, "_registry", None))
             SpawnTool.execute = _patched_execute
 
     def _patch_subagent_manager(self, config_data):
         from nanobot.agent.subagent import SubagentManager
         from nanobot.agent.tools.registry import ToolRegistry
-        from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
         from nanobot.agent.tools.shell import ExecTool
         from nanobot.agent.tools.web import WebFetchTool
         from nanobot.config.schema import Config
-        from contextlib import AsyncExitStack
+        from .vsa import VectorStoreFactory
+        from .config import load_strategic_context, strategic_migrate_config
+        from .infra import strategic_mcp_manager
 
-        # 1. Update spawn signature to accept specialist type and host tools
+        if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
+            SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
+            def _patched_build_subagent_prompt(self):
+                base = self._orig_build_subagent_prompt_strategic()
+                return subagent_logic.build_specialist_instructions(base, "researcher")
+            SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
+
         if not hasattr(SubagentManager, "_orig_spawn_strategic"):
             SubagentManager._orig_spawn_strategic = SubagentManager.spawn
-            
             async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher", host_tools=None):
                 task_id = str(uuid.uuid4())[:8]
                 display_label = label or task[:100] + ("..." if len(task) > 100 else "")
-                origin = {"channel": origin_channel, "chat_id": origin_chat_id}
-
-                # Register in Heartbeat (BUG-103)
+                origin = {"channel": origin_channel, "chat_id": subagent_logic.clean_chat_id(origin_chat_id)}
+                
                 if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
                     from datetime import datetime
-                    self._loop._strategic_active_subagents[task_id] = {
-                        'start_time': datetime.now(),
-                        'task': task
-                    }
+                    self._loop._strategic_active_subagents[task_id] = {'start_time': datetime.now(), 'task': task}
 
-                bg_task = asyncio.create_task(
-                    self._run_subagent(task_id, task, display_label, origin, specialist, host_tools)
-                )
+                bg_task = asyncio.create_task(self._run_subagent(task_id, task, display_label, origin, specialist, host_tools))
                 self._running_tasks[task_id] = bg_task
-                if session_key:
-                    self._session_tasks.setdefault(session_key, set()).add(task_id)
-
+                if session_key: self._session_tasks.setdefault(session_key, set()).add(task_id)
                 def _cleanup(_: asyncio.Task) -> None:
                     self._running_tasks.pop(task_id, None)
                     if session_key and (ids := self._session_tasks.get(session_key)):
                         ids.discard(task_id)
-                        if not ids:
-                            del self._session_tasks[session_key]
-
+                        if not ids: del self._session_tasks[session_key]
                 bg_task.add_done_callback(_cleanup)
-                strategic_logger.info(f"Spawned subagent [{task_id}]: {display_label} (specialist={specialist})")
                 return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
-
             SubagentManager.spawn = _patched_spawn
 
-        # 2. Replace the entire _run_subagent to inject MCP, Specialist Logic, and bridged host tools
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
-            from .config import load_strategic_context
-            from .vsa import VectorStoreFactory
             _, _, storage_root = load_strategic_context()
-            strategic_workspace = storage_root / "workspace"
-
-            strategic_logger.info(f"Subagent [{task_id}] starting task: {label}")
-            
-            # Specialist model selection from config
-            specialists_cfg = config_data.get("agents", {}).get("specialists", {})
-            # Default to researcher if specialist is invalid
-            if specialist not in ["researcher", "architect"]:
-                specialist = "researcher"
-                
-            selected_model = specialists_cfg.get(specialist, {}).get("model")
-            
-            # Final fallback to manager default model if config is missing
-            final_model = selected_model or self.model
-            strategic_logger.info(f"Subagent Specialist Assigned: {specialist} (model='{final_model}')")
-
-            # MANDATE (F-007): Ensure VectorStore singleton is initialized with this subagent's provider
+            final_model = subagent_logic.get_specialist_model(specialist, config_data, self.model)
             VectorStoreFactory.get_store(provider=self.provider)
-
             try:
                 async with AsyncExitStack() as stack:
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
+                    tools._task_id = task_id # For telemetry identification
                     
-                    # MANDATE: Subagents MUST use the strategic workspace root on D:
-                    subagent_workspace = strategic_workspace
-                    
-                    # Core Tools
-                    tools.register(ExecTool(
-                        working_dir=str(subagent_workspace),
-                        timeout=self.exec_config.timeout,
-                        restrict_to_workspace=self.restrict_to_workspace,
-                        path_append=self.exec_config.path_append,
-                    ))
+                    tools.register(ExecTool(working_dir=str(storage_root / "workspace"), timeout=self.exec_config.timeout))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
-                    
-                    # 1. Bridge Host Tools (Skills) (BUG-071)
                     if host_tools and hasattr(host_tools, "_tools"):
                         for name, tool in host_tools._tools.items():
-                            # Skip high-power or already registered tools
-                            if name in tools._tools: continue
-                            if any(bp.lower() in name.lower() for bp in SubagentPatch.MAIN_AGENT_BLOCKED):
-                                continue
-                            
-                            # Bridge the tool instance
-                            tools.register(tool)
-                            strategic_logger.debug(f"Subagent [{task_id}] Bridged host tool: {name}")
-
-                    # 2. Bridge MCP Tools
+                            if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
+                                tools.register(tool)
                     try:
-                        from .config import strategic_migrate_config
-                        from .infra import strategic_mcp_manager
                         pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(config_data)))
                         validated_config = Config.model_validate(pydantic_cfg)
-                        mcp_configs = validated_config.tools.mcp_servers
-                        if mcp_configs:
-                            await strategic_mcp_manager.get_tools_for_subagent(mcp_configs, tools, task_id)
-                    except Exception as mcp_err:
-                        strategic_logger.error(f"Subagent [{task_id}] MCP setup failed: {mcp_err}")
-                    
-                    # 3. Load Strategic Tools
+                        if validated_config.tools.mcp_servers:
+                            await strategic_mcp_manager.get_tools_for_subagent(validated_config.tools.mcp_servers, tools, task_id)
+                    except Exception as mcp_err: strategic_logger.error(f"MCP setup failed: {mcp_err}")
                     SubagentPatch()._load_strategic_tools(tools)
-
-                    system_prompt = self._build_subagent_prompt()
-                    is_pro = "pro" in str(final_model).lower()
-                    specialist_header = f"\n## {specialist.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
                     
-                    messages = [
-                        {"role": "system", "content": system_prompt + specialist_header},
-                        {"role": "user", "content": task},
-                    ]
-
+                    system_prompt = subagent_logic.build_specialist_instructions(self._orig_build_subagent_prompt_strategic(), specialist)
+                    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
+                    
                     max_iterations = 20
                     iteration = 0
                     final_result = None
-
                     while iteration < max_iterations:
                         iteration += 1
-                        strategic_logger.info(f"Subagent [{task_id}] iteration {iteration}/{max_iterations} starting...")
                         
-                        response = await self.provider.chat(
-                            messages=messages,
-                            tools=tools.get_definitions(),
-                            model=final_model,
-                            temperature=self.temperature,
-                            max_tokens=self.max_tokens,
-                            reasoning_effort=self.reasoning_effort,
-                        )
-
-                        if response.has_tool_calls:
-                            if not response.tool_calls:
-                                strategic_logger.warning(f"Subagent [{task_id}] returned has_tool_calls=True but tool_calls is EMPTY. Breaking loop to prevent amnesia.")
-                                final_result = response.content or "Error: LLM returned empty tool calls."
-                                break
-
-                            tool_call_dicts = [
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.name,
-                                        "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                                    },
-                                }
-                                for tc in response.tool_calls
-                            ]
-                            messages.append({
-                                "role": "assistant",
-                                "content": response.content or "",
-                                "tool_calls": tool_call_dicts,
-                            })
-
+                        response = await self.provider.chat(messages=messages, tools=tools.get_definitions(), model=final_model,
+                            temperature=self.temperature, max_tokens=self.max_tokens, reasoning_effort=self.reasoning_effort)
+                        
+                        subagent_logic.log_subagent_turn(task_id, iteration, response.content)
+                        
+                        if response.has_tool_calls and response.tool_calls:
+                            tool_call_dicts = [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)}} for tc in response.tool_calls]
+                            messages.append({"role": "assistant", "content": response.content or "", "tool_calls": tool_call_dicts})
+                            
                             for tool_call in response.tool_calls:
-                                strategic_logger.info(f"Subagent [{task_id}] executing: {tool_call.name}")
+                                # log_tool_execution handled by registry.execute bridge now
                                 result = await tools.execute(tool_call.name, tool_call.arguments)
-                                messages.append({
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "name": tool_call.name,
-                                    "content": result,
-                                })
+                                messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
                         else:
-                            final_result = response.content
-                            if not final_result:
-                                final_result = "Error: LLM returned empty response without tool calls."
-                            if response.finish_reason == "error":
-                                raise Exception(f"Subagent LLM Error: {final_result}")
+                            final_result = response.content or "Error: Empty response."
+                            subagent_logic.log_subagent_completion(task_id, final_result)
                             break
-
-                    if final_result is None and iteration >= max_iterations:
-                        raise Exception(f"Subagent Task Timeout: No final response generated after {max_iterations} iterations.")
-                    elif final_result is None:
-                        final_result = "Error: Subagent exited loop unexpectedly with no result."
-
-                    strategic_logger.info(f"Subagent [{task_id}] completed successfully.")
-                    await self._announce_result(task_id, label, task, final_result, origin, "ok")
-
+                    await self._announce_result(task_id, label, task, final_result or "Timeout", origin, "ok" if final_result else "error")
             except Exception as e:
-                strategic_logger.error(f"Subagent [{task_id}] failed: {e}", exc_info=True)
+                strategic_logger.error(f"Subagent [{task_id}] failed: {e}")
                 await self._announce_result(task_id, label, task, f"Error: {str(e)}", origin, "error")
-
         SubagentManager._run_subagent = _strategic_run_subagent
-
-        if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
-            SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
-            
-            def _patched_build_subagent_prompt(self):
-                prompt = self._orig_build_subagent_prompt_strategic()
-
-                prompt += "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
-                prompt += "1. **MANDATORY VERIFICATION:** You MUST NOT report 'success' after merely reading a plan or a file. You are only successful when you have executed all required tools (Search, FS, Workspace) and confirmed the outcome.\n"
-                prompt += "2. **SEARCH MANDATE:** Use 'mcp_google-ai-search_search_ai' for all web research. The 'web_search' tool is deprecated.\n"
-                prompt += "3. **NETWORK DIAGNOSTICS:** Do NOT use 'ping' via 'exec'. It fails with 'Access denied' on this environment. Assume network connectivity is ACTIVE for MCP and LLM calls.\n"
-                prompt += "4. **MEMORY ACCESS (D: DRIVE):** Long-term memory and conversation journals are stored at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS for all file operations (e.g., `D:\\Nanobot_Storage\\workspace\\memory\\MEMORY.md`). The file `HISTORY.md` is RETIRED.\n"
-                prompt += "   - **CHROMA DB:** The Vector Store database is always named `chroma.sqlite3` and is located in the `chroma/` subdirectory. Do NOT search for `*.db` patterns; search for the exact filename.\n"
-                prompt += "   - **JOURNALS:** Daily journals are named using `YYYY-MM-DD.md` format (e.g., `2026-03-08.md`).\n"
-                prompt += "   - **RECURSION MANDATE:** When auditing storage, you MUST use recursive search tools (like `mcp_filesystem-d_search_files`) or list subdirectories to ensure you don't miss hidden files in the memory structure.\n"
-                prompt += "5. **CALENDAR MANDATE:** When asked about scheduling, appointments, or events for 'today' or 'tomorrow', you MUST use the `mcp_google-surgical_list_calendar_events` tool with `calendar_id='all'` to ensure you capture events from all sub-calendars.\n"
-                prompt += "6. **SURGICAL PRECISION:** Exhaustively verify facts. Use 'read_file' to examine project configuration or history if needed.\n"
-                prompt += "7. **CHAIN OF THOUGHT:** You MUST show your reasoning process and clearly state which verification tool you are about to call.\n"
-                prompt += "8. **EFFICIENT EXECUTION:** You are equipped with a full suite of surgical tools. You MUST perform direct investigations (file checks, searches, edits) yourself. Do NOT attempt to delegate to other specialists. The 'spawn' tool is strictly RESTRICTED for subagents. If you encounter a security block when attempting to use 'spawn', it is a policy enforcement, NOT a system bug. You must complete your task using your own tools."
-                return prompt
-
-            SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
 
         if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
             SubagentManager._orig_announce_result_strategic = SubagentManager._announce_result
-            
             async def _patched_announce_result(self, task_id, label, task, result, origin, status):
-                # Deregister from Heartbeat (BUG-103)
                 if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
                     self._loop._strategic_active_subagents.pop(task_id, None)
 
                 from nanobot.bus.events import InboundMessage
-                status_text = "completed successfully" if status == "ok" else "failed"
-
-                announce_content = f"""### 🛡️ SPECIALIST SUBAGENT REPORT (FINAL)
-[Subagent '{label}' {status_text}]
-**ID:** {task_id}
-**Original Task:** {task}
-
-**Result Data:**
-{result}
-
----
-### ⚖️ ORCHESTRATOR DIRECTIVE (CRITICAL)
-1. **TERMINATE TURN:** You have received a specialist's report.
-2. **CONTEXT AWARENESS:** If this report is a sub-task of a larger investigation (like a health check), SYNTHESIZE it into the ongoing context. Do not present it as a separate "out of the blue" event.
-3. **DO NOT VERIFY:** You are strictly forbidden from calling ANY tools to "verify" this result.
-4. **SYNTHESIZE ONLY:** Provide a natural summary to the user and END your response.
-"""
-                msg = InboundMessage(
-                    channel="system",
-                    sender_id="subagent",
-                    chat_id=f"{origin['channel']}:{origin['chat_id']}",
-                    content=announce_content,
-                )
+                routing_id = f"{origin['channel']}:{subagent_logic.clean_chat_id(origin['chat_id'])}"
+                msg = InboundMessage(channel="system", sender_id="subagent", chat_id=routing_id,
+                    content=subagent_logic.format_subagent_report(label, status, task_id, task, result))
                 await self.bus.publish_inbound(msg)
-                strategic_logger.debug(f"Subagent [{task_id}] announced result.")
-
             SubagentManager._announce_result = _patched_announce_result
 
     def _patch_tool_registry(self, user_email):
         from nanobot.agent.tools.registry import ToolRegistry
-        patch_self = self
-
         if not hasattr(ToolRegistry, "_orig_register_strategic"):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
-
             def _patched_register(registry_self, tool):
-                # Attach registry reference to the tool instance (BUG-071)
-                # This allows tools like 'spawn' to see the other registered skills
                 setattr(tool, "_registry", registry_self)
-                
-                # MANDATE (BUG-054): We ALLOW registration for all, to ensure
-                # host sessions are captured by the Strategic manager for bridging.
                 return registry_self._orig_register_strategic(tool)
-
             ToolRegistry.register = _patched_register
 
         if not hasattr(ToolRegistry, "_orig_get_definitions_strategic"):
             ToolRegistry._orig_get_definitions_strategic = ToolRegistry.get_definitions
-            
             def _patched_get_definitions(self):
-                definitions = self._orig_get_definitions_strategic()
-                
-                # 1. TOOL STRIPPING (BUG-053/054/059/086): 
-                # Use role-aware stripping to maintain Specialist Economy
-                is_specialist = getattr(self, "_is_strategic_specialist", False)
-                blocked_list = patch_self.SPECIALIST_BLOCKED if is_specialist else patch_self.MAIN_AGENT_BLOCKED
-                
-                filtered = []
-                for d in definitions:
-                    name = d.get("function", {}).get("name", "").lower()
-                    if not any(bp.lower() in name for bp in blocked_list):
-                        filtered.append(d)
-                definitions = filtered
+                if not hasattr(self, "_strategic_logged_once"):
+                    self._strategic_logged_once = True
+                    strategic_logger.info(f"ToolRegistry ({id(self)}): Initialized definitions.")
+                    for t_name in self.tool_names:
+                        strategic_logger.info(f"  - Registered: {t_name}")
 
-                # 2. Telemetry for BUG-032: Prove tool stripping during initialization
-                if not getattr(self, "_strategic_telemetry_logged", False):
-                    agent_type = "Specialist" if is_specialist else "Main Agent"
-                    try:
-                        # We use the raw tools list names for telemetry
-                        tool_names = [getattr(t, "name", str(t)) for t in self._tools.values()]
-                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Active sessions registered - {tool_names}")
-                        
-                        # Log what is actually visible to the model
-                        model_names = [d.get("function", {}).get("name") for d in definitions]
-                        strategic_logger.info(f"Telemetry [{agent_type} ToolRegistry]: Tools visible to model - {model_names}")
-                        
-                        self._strategic_telemetry_logged = True
-                    except Exception as e:
-                        strategic_logger.error(f"Telemetry error reading tool names: {e}")
-                    
-                return definitions
-                
+                is_specialist = getattr(self, "_is_strategic_specialist", False)
+                return subagent_logic.filter_tool_definitions(self._orig_get_definitions_strategic(), is_specialist)
             ToolRegistry.get_definitions = _patched_get_definitions
 
         if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
             ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):
-                name_str = str(name).lower()
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
                 
-                # 1. Role-Aware Pattern Enforcement (BUG-086)
-                blocked_list = patch_self.SPECIALIST_BLOCKED if is_specialist else patch_self.MAIN_AGENT_BLOCKED
-                is_blocked = any(bp.lower() in name_str for bp in blocked_list)
-
-                # 1a. Block Execution & Circuit Breaker
-                if is_blocked:
-                    attempts = getattr(self, "_strategic_block_attempts", 0) + 1
-                    self._strategic_block_attempts = attempts
-                    agent_role = "Specialist" if is_specialist else "Main Agent"
-                    strategic_logger.warning(f"SECURITY ALERT: {agent_role} attempted restricted tool '{name}' (Attempt {attempts}).")
+                # High-Fidelity Logging (Main Agent & Specialists)
+                subagent_logic.log_tool_execution(self, name, args)
+                
+                if subagent_logic.is_tool_blocked(name, is_specialist):
+                    res = subagent_logic.get_block_message(self, name, is_specialist)
+                    subagent_logic.log_tool_result_general(self, name, res)
+                    return res
                     
-                    if attempts >= 2:
-                        return f"CRITICAL ERROR: Access Denied. Your internal registry is HARD-LOCKED for tool '{name}'. You MUST STOP trying to call this tool directly."
-                    
-                    role_hint = "Specialists are forbidden from nested spawning to prevent state blindness." if is_specialist and name_str == "spawn" else f"The tool '{name}' is restricted for your role ({agent_role})."
-                    return f"ERROR: Access Denied. {role_hint}"
-
-                # 2. Forced Turn Termination for 'spawn' (Main Agent Only)
-                if name_str == "spawn" and not is_specialist:
-                    # Call original execute to perform the spawn
+                if str(name).lower() == "spawn" and not is_specialist:
                     result = await self._orig_tool_execute_strategic(name, args)
-                    
-                    # Extract task_id from result (format: "Subagent [label] started (id: task_id). ...")
-                    task_id = "UNKNOWN"
                     match = re.search(r"\(id: ([a-f0-9]+)\)", result)
-                    if match:
-                        task_id = match.group(1)
-
-                    # Append Strategic Termination Directive
-                    return f"{result}\n\n### ⚖️ STRATEGIC MANDATE: STOP Turn\nThe specialist has been successfully spawned and assigned ID: `{task_id}`. Your turn is now OVER. Provide a SINGLE brief acknowledgement to the user using this EXACT ID and then END your response. Do NOT call any more tools."
-
-                # 3. Loop Detection & CLI/File Bypass Prevention
-                is_specialist = getattr(self, "_is_strategic_specialist", False)
-                if name_str == "exec":
-                    cmd = str(args.get("command", "")).lower()
+                    task_id = match.group(1) if match else "UNKNOWN"
+                    final_res = subagent_logic.format_spawn_termination_directive(result, task_id)
+                    subagent_logic.log_tool_result_general(self, name, final_res)
+                    return final_res
                     
-                    # A. CLI/File Bypass Detection (Main Agent Only)
-                    if not is_specialist:
-                        bypass_patterns = [
-                            "nanobot mcp", "nanobot status", "history.md", "findstr ", 
-                            "grep ", "cat ", "type ", "tail ", "get-content", "read-host",
-                            "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod",
-                            "ls ", "dir ", "more ", "head ", "ping ", "iex ", "Invoke-Expression ",
-                            "python ", "sh ", "bash ", "powershell ", "cmd ", "Get-ChildItem ",
-                            "Select-String ", "Get-Item ", "Get-Service ", "start ", "open ", "D:"
-                        ]
-                        if any(p in cmd + " " for p in bypass_patterns):
-                            strategic_logger.warning(f"SECURITY ALERT: Main Agent attempted Mandate Bypass via 'exec': {cmd}")
-                            return f"CRITICAL ERROR: Access Denied. You are attempting to bypass Strategic Mandates (e.g. by polling HISTORY.md or calling the CLI directly). This is a severe violation. You MUST STOP and wait for the subagent to report back. HISTORY.md is RETIRED; use the message bus."
+                if str(name).lower() == "exec":
+                    if not is_specialist and subagent_logic.detect_mandate_bypass(args.get("command", "")):
+                        res = subagent_logic.get_bypass_message(args.get("command", ""))
+                        subagent_logic.log_tool_result_general(self, name, res)
+                        return res
+                    loop_err = subagent_logic.check_exec_loop(self, args.get("command", ""))
+                    if loop_err:
+                        subagent_logic.log_tool_result_general(self, name, loop_err)
+                        return loop_err
                         
-                        # Monitor non-flagged exec calls for the Main Agent
-                        strategic_logger.info(f"Monitoring: Main Agent executing 'exec': {cmd}")
-
-                    # B. Idle Polling Loop Detection (ping, status, etc.)
-                    if any(x in cmd for x in ["status", "ping"]):
-                        history = getattr(self, "_strategic_exec_history", [])
-                        history.append(cmd)
-                        self._strategic_exec_history = history[-10:]
-                        
-                        limit = 5 if is_specialist else 3
-                        if history.count(cmd) >= limit:
-                            agent_type = "Specialist" if is_specialist else "Main Agent"
-                            strategic_logger.warning(f"LOOP DETECTED: {agent_type} is polling '{cmd}' (Attempt {history.count(cmd)}). Breaking loop.")
-                            return f"CRITICAL ERROR: Loop Detected. You ({agent_type}) have called '{cmd}' too many times. You MUST STOP polling the system and instead provide a final synthesis to the user based on the information you already have."
-
-                # 4. Surgical Tool Injection
-                if "google-surgical" in name_str and isinstance(args, dict):
+                if "google-surgical" in str(name).lower() and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
-                    if "email" in args: args["email"] = user_email
-
-                return await self._orig_tool_execute_strategic(name, args)
+                
+                result = await self._orig_tool_execute_strategic(name, args)
+                subagent_logic.log_tool_result_general(self, name, result)
+                return result
+                
             ToolRegistry.execute = _patched_tool_execute
 
     def _patch_heartbeat(self, config_data):
@@ -530,12 +256,10 @@ class SubagentPatch(BasePatch):
         if not hasattr(HeartbeatService, "_orig_hb_init_strategic"):
             HeartbeatService._orig_hb_init_strategic = HeartbeatService.__init__
             def _patched_hb_init(self, *args, **kwargs):
-                config_model = config_data.get("agents", {}).get("heartbeat", {}).get("model")
-                if config_model:
-                    if len(args) >= 2:
-                        args = list(args)
-                        args[1] = config_model
-                    else: kwargs["model"] = config_model
+                model = config_data.get("agents", {}).get("heartbeat", {}).get("model")
+                if model:
+                    if len(args) >= 2: args = list(args); args[1] = model
+                    else: kwargs["model"] = model
                 self._orig_hb_init_strategic(*args, **kwargs)
             HeartbeatService.__init__ = _patched_hb_init
 
@@ -543,53 +267,10 @@ class SubagentPatch(BasePatch):
         from nanobot.agent.context import ContextBuilder
         if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
             ContextBuilder._orig_build_messages_strategic = ContextBuilder.build_messages
-            
             def _patched_build_messages(self, history, current_message, **kwargs):
                 messages = self._orig_build_messages_strategic(history, current_message, **kwargs)
-                
-                # Identify System Message
                 for msg in messages:
                     if msg.get("role") == "system":
-                        msg["content"] += "\n\n## ⚖️ DELEGATION & SPECIALIST ECONOMY\n"
-                        msg["content"] += "1. **DELEGATE BY DEFAULT:** For any background, research, or complex architectural task, use the 'spawn' tool.\n"
-                        msg["content"] += "2. **CHOOSE YOUR SPECIALIST:**\n"
-                        msg["content"] += "   - **'researcher' (DEFAULT):** Use for general facts, search, data collection, and simple file operations.\n"
-                        msg["content"] += "   - **'architect':** Use for design, NanoGraph extraction, high-level structural planning, or complex reasoning.\n"
-                        msg["content"] += "3. **NO MODEL CONTROL:** You choose the TYPE of specialist, but you have NO say in which AI model is used. The system handles model assignment automatically.\n"
-                        msg["content"] += "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear or the specialist choice is not obvious, STOP and ask the user for a directive.\n"
-                        msg["content"] += "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately after the tool call. You MUST NOT mention a subagent ID in this initial turn (e.g. 'I have spawned ID-123'), as the ID is only generated by the system AFTER your turn. Simply state your intent to spawn and end the turn. DO NOT look at previous messages in this session for ID patterns; every subagent ID is unique and unpredictable."
-                
+                        msg["content"] = subagent_logic.inject_delegation_mandate(msg["content"])
                 return messages
-                
             ContextBuilder.build_messages = _patched_build_messages
-
-    def verify(self, config_data: dict) -> bool:
-        """Verifies that all Subagent and Tool related patches are active."""
-        from nanobot.agent.subagent import SubagentManager
-        from nanobot.agent.tools.registry import ToolRegistry
-        from nanobot.heartbeat.service import HeartbeatService
-        from nanobot.agent.context import ContextBuilder
-
-        # 1. Check SubagentManager patches
-        if not hasattr(SubagentManager, "_orig_spawn_strategic"):
-            return False
-        if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
-            return False
-
-        # 2. Check ToolRegistry patches
-        if not hasattr(ToolRegistry, "_orig_register_strategic"):
-            return False
-        if not hasattr(ToolRegistry, "_orig_get_definitions_strategic"):
-            return False
-        if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
-            return False
-
-        # 3. Check Heartbeat patches
-        if not hasattr(HeartbeatService, "_orig_hb_init_strategic"):
-            return False
-
-        # 4. Check ContextBuilder patches
-        if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
-            return False
-
-        return True

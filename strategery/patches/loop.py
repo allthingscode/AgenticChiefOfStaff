@@ -135,6 +135,10 @@ class AgentLoopPatch(BasePatch):
                             if not is_spawn:
                                 thought = self._strip_think(response.content)
                                 if thought:
+                                    # Log thought process strategically (F-015 high-fidelity)
+                                    from strategery.logic import subagent_logic
+                                    # We simulate a 'turn' log for the main agent
+                                    subagent_logic.log_subagent_turn("MAIN", iteration, response.content)
                                     await on_progress(thought)
                                 await on_progress(self._tool_hint(response.tool_calls), tool_hint=True)
                             else:
@@ -159,8 +163,6 @@ class AgentLoopPatch(BasePatch):
 
                         for tool_call in response.tool_calls:
                             tools_used.append(tool_call.name)
-                            args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
-                            logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
                             result = await self.tools.execute(tool_call.name, tool_call.arguments)
                             messages = self.context.add_tool_result(
                                 messages, tool_call.id, tool_call.name, result

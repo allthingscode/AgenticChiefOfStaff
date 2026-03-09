@@ -1,6 +1,7 @@
 import pytest
 from nanobot.agent.loop import AgentLoop
 from strategery.patches.provider import ProviderPatch
+from strategery.logic import provider_logic
 
 def test_reasoning_stripper_basic():
     """Test basic stripping of <think> tags."""
@@ -59,18 +60,16 @@ def test_reasoning_stripper_case_insensitivity():
 
 def test_strategic_error_formatting():
     """Test that raw technical errors are converted to Strategic format."""
-    from strategery.patches.provider import strategic_format_error
-    
     e500 = "Error calling LLM: litellm.InternalServerError: Gemini 500"
-    result = strategic_format_error(e500)
+    result = provider_logic.format_strategic_error(e500)
     assert "[STRATEGIC] Upstream Service Error (500)" in result
     
     e429 = "Rate limit exceeded (429)"
-    result2 = strategic_format_error(e429)
+    result2 = provider_logic.format_strategic_error(e429)
     assert "[STRATEGIC] Capacity Limit Reached (429)" in result2
     
     e400 = "Too many tokens in context window"
-    result3 = strategic_format_error(e400)
+    result3 = provider_logic.format_strategic_error(e400)
     assert "[STRATEGIC] Context Overflow (400)" in result3
 
 def test_provider_base_patch():

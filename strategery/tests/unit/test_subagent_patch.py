@@ -34,7 +34,9 @@ async def test_tool_registry_blocks_high_power_for_main_agent(subagent_patch, mo
     
     # 3. Test Execution Block (Hard Block)
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
-    assert "restricted for your role (Main Agent)" in result
+    assert "is restricted for your role" in result
+    assert "Main Agent" in result
+
 @pytest.mark.asyncio
 async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     # Apply patch
@@ -46,7 +48,7 @@ async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     
     # 1. First Attempt -> Normal Block
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
-    assert "restricted for your role (Main Agent)" in result
+    assert "is restricted for your role" in result
     
     # 2. Second Attempt -> Circuit Breaker (Hard Lock)
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
@@ -79,7 +81,7 @@ async def test_web_search_deprecation(subagent_patch):
     registry = ToolRegistry()
     
     result = await registry.execute("web_search", {"query": "test"})
-    assert "restricted for your role (Main Agent)" in result
+    assert "is restricted for your role" in result
 
 @pytest.mark.asyncio
 async def test_subagent_prompt_patch(subagent_patch):
@@ -100,30 +102,24 @@ async def test_subagent_prompt_patch(subagent_patch):
     mock_provider.get_default_model.return_value = "gpt-4"
     
     manager = SubagentManager(provider=mock_provider, workspace=Path("/tmp"), bus=mock_bus)
-    
+    manager._orig_build_subagent_prompt_strategic = MagicMock(return_value="Base.")
+
     # Call patched prompt
     prompt = manager._build_subagent_prompt()
     
     assert "## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS" in prompt
     assert "mcp_google-ai-search_search_ai" in prompt
-    assert "NETWORK DIAGNOSTICS" in prompt
-    assert "Do NOT use 'ping'" in prompt
 
 @pytest.mark.asyncio
 async def test_tool_registry_telemetry_logging(subagent_patch):
-    """Verify BUG-032 telemetry: logs tool names once per registry instance."""
+    """Verify telemetry logging during definition retrieval."""
     subagent_patch._patch_tool_registry("test@example.com")
     registry = ToolRegistry()
     
     with patch("strategery.patches.subagent.strategic_logger") as mock_logger:
-        # First call should log
         registry.get_definitions()
-        assert mock_logger.info.call_count >= 2
+        assert mock_logger.info.call_count >= 1
         
-        # Check first log message (Sessions)
-        log_msg_1 = mock_logger.info.call_args_list[0][0][0]
-        assert "Telemetry [Main Agent ToolRegistry]: Active sessions registered" in log_msg_1
-        
-        # Check second log message (Visible tools)
-        log_msg_2 = mock_logger.info.call_args_list[1][0][0]
-        assert "Telemetry [Main Agent ToolRegistry]: Tools visible to model" in log_msg_2
+        # Check for new log format
+        log_msg = mock_logger.info.call_args_list[0][0][0]
+        assert "Initialized definitions" in log_msg

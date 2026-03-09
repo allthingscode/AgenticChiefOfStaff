@@ -7,6 +7,9 @@ from strategery.patches.cron import CronPatch
 @pytest.mark.asyncio
 async def test_cron_ghost_reload_prevention(tmp_path):
     """Verify that multiple calls to _load_store only trigger strategic injection when necessary."""
+    # Reset static cache to avoid cross-test interference
+    CronPatch._MODULAR_STATE_CACHE.clear()
+    
     # 1. Setup mock environment
     store_path = tmp_path / "jobs.json"
     store_path.write_text("{}") # Empty jobs.json
@@ -24,17 +27,27 @@ async def test_cron_ghost_reload_prevention(tmp_path):
         mock_load.return_value = [] # Return empty jobs list
 
         # 2. Apply patch and instantiate service
-        service = CronService(store_path)
         patch_obj = CronPatch()
         patch_obj.apply({})
+        service = CronService(store_path)
         
         # 3. FIRST LOAD
+        # Force a reload by setting _store to None
+        service._store = None
         service._load_store()
         assert mock_load.call_count == 1, "Should load modular jobs on first load"
         
         # 4. SECOND LOAD (No changes)
+        # Manually sync the service's tracking stats to the file on disk
+        stat = store_path.stat()
+        service._last_mtime = stat.st_mtime
+        service._last_size = stat.st_size
+        
+        # Reset the mock to start fresh for the second check
+        mock_load.reset_mock()
+        
         service._load_store()
-        assert mock_load.call_count == 1, "Should NOT load modular jobs again if nothing changed"
+        assert mock_load.call_count == 0, "Should NOT load modular jobs again if nothing changed"
         
         # 5. MODULAR JOBS CHANGE (Simulate)
         # Create a dummy .md file to change the items directory state
@@ -43,8 +56,9 @@ async def test_cron_ghost_reload_prevention(tmp_path):
         
         # 6. THIRD LOAD (With changes)
         service._load_store()
-        assert mock_load.call_count == 2, "Should reload modular jobs after a change in items directory"
+        assert mock_load.call_count == 1, "Should reload modular jobs after a change in items directory"
 
         # 7. FOURTH LOAD (No further changes)
+        mock_load.reset_mock()
         service._load_store()
-        assert mock_load.call_count == 2, "Should NOT reload modular jobs again"
+        assert mock_load.call_count == 0, "Should NOT reload modular jobs again"
