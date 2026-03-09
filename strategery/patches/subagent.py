@@ -5,6 +5,7 @@ import json
 import uuid
 from pathlib import Path
 from contextlib import AsyncExitStack
+from typing import List
 from .base import BasePatch, PatchResult
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import subagent_logic
@@ -15,6 +16,16 @@ class SubagentPatch(BasePatch):
     @property
     def name(self) -> str:
         return "Subagent & Tool Orchestration"
+
+    @property
+    def required_symbols(self) -> List[str]:
+        return [
+            "nanobot.agent.tools.spawn.SpawnTool",
+            "nanobot.agent.subagent.SubagentManager",
+            "nanobot.agent.tools.registry.ToolRegistry",
+            "nanobot.heartbeat.service.HeartbeatService",
+            "nanobot.agent.context.ContextBuilder.build_messages"
+        ]
 
     def apply(self, config_data: dict) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)

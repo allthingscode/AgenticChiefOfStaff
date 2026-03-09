@@ -49,6 +49,21 @@ class PatchRegistry:
         results = []
         for patch in self._patches:
             try:
+                # 1. Pre-Check Symbols (F-025 Guard)
+                symbol_error = patch.check_symbols()
+                if symbol_error:
+                    error_res = PatchResult(
+                        patch_name=patch.name,
+                        success=False,
+                        error_msg=f"Upstream Incompatibility: {symbol_error}"
+                    )
+                    results.append(error_res)
+                    strategic_logger.error(f"Patch Guard: Skipping '{patch.name}' - {symbol_error}")
+                    if halt_on_error:
+                        break
+                    continue
+
+                # 2. Apply Patch
                 res = patch.apply(config_data)
                 
                 # Handle legacy boolean returns for backward compatibility

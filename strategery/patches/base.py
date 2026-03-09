@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+import importlib
 
 @dataclass
 class PatchResult:
@@ -25,6 +26,14 @@ class BasePatch(ABC):
         """The human-readable name of the patch."""
         pass
 
+    @property
+    def required_symbols(self) -> List[str]:
+        """
+        List of dot-notated symbols that MUST exist for this patch to be safe.
+        Example: ["nanobot.providers.litellm.LiteLLMProvider.chat"]
+        """
+        return []
+
     @abstractmethod
     def apply(self, config_data: dict) -> PatchResult | bool:
         """
@@ -39,3 +48,43 @@ class BasePatch(ABC):
         Default implementation returns True.
         """
         return True
+
+    def check_symbols(self) -> Optional[str]:
+        """
+        Verifies that all required symbols exist in the core codebase.
+        Returns None if all OK, or an error message identifying the missing symbol.
+        """
+        for sym in self.required_symbols:
+            parts = sym.split('.')
+            # Walk up the path to find the module and attribute
+            # We assume at least 'module.attribute'
+            if len(parts) < 2:
+                continue
+                
+            module_name = ""
+            target = None
+            
+            # Try to find the break point between module and attribute
+            # We iterate backwards to find the longest valid module path
+            found_module = False
+            for i in range(len(parts) - 1, 0, -1):
+                try:
+                    module_name = ".".join(parts[:i])
+                    target = importlib.import_module(module_name)
+                    remaining = parts[i:]
+                    found_module = True
+                    break
+                except ImportError:
+                    continue
+            
+            if not found_module:
+                return f"Module for symbol '{sym}' could not be imported."
+            
+            # Now walk the attributes
+            current = target
+            for attr in remaining:
+                if not hasattr(current, attr):
+                    return f"Symbol '{attr}' missing from '{module_name}' (Target: {sym})"
+                current = getattr(current, attr)
+                
+        return None

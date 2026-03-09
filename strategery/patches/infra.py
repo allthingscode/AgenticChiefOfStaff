@@ -2,7 +2,7 @@ import sys
 import os
 import io
 import asyncio
-from typing import Any
+from typing import Any, List
 from functools import wraps
 from .base import BasePatch, PatchResult
 from .lifecycle import lifecycle_manager
@@ -49,6 +49,14 @@ class InfraPatch(BasePatch):
     @property
     def name(self) -> str:
         return "Infrastructure (Windows/UTF-8)"
+
+    @property
+    def required_symbols(self) -> List[str]:
+        return [
+            "asyncio.WindowsProactorEventLoopPolicy",
+            "nanobot.agent.tools.mcp.connect_mcp_servers",
+            "nanobot.agent.tools.filesystem.ReadFileTool.execute"
+        ]
 
     def apply(self, config: dict) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)

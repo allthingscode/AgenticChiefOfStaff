@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any
+from typing import Any, List
 from .base import BasePatch, PatchResult
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import provider_logic
@@ -15,6 +15,14 @@ class ProviderPatch(BasePatch):
     @property
     def name(self) -> str:
         return "Provider Logging & Routing"
+
+    @property
+    def required_symbols(self) -> List[str]:
+        return [
+            "nanobot.providers.base.LLMProvider",
+            "nanobot.providers.litellm_provider.LiteLLMProvider",
+            "nanobot.agent.loop.AgentLoop._strip_think"
+        ]
 
     def apply(self, config_data: dict) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)

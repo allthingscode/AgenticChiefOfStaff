@@ -1,6 +1,7 @@
 import asyncio
 import json
 import weakref
+from typing import List
 from .base import BasePatch, PatchResult
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.events import OutboundMessage
@@ -17,6 +18,14 @@ class AgentLoopPatch(BasePatch):
     @property
     def name(self) -> str:
         return "Agent Loop (Concurrent Sessions)"
+
+    @property
+    def required_symbols(self) -> List[str]:
+        return [
+            "nanobot.agent.loop.AgentLoop._dispatch",
+            "nanobot.agent.loop.AgentLoop._run_agent_loop",
+            "nanobot.bus.events.OutboundMessage"
+        ]
 
     def apply(self, config: dict) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
