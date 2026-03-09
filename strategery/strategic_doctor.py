@@ -75,17 +75,21 @@ def check_storage(config):
         print_status("Storage", f"Write failure: {e}", "FAIL")
         return False
 
-    # Check Critical Files
+    # Check Critical Files (Standardized C: drive credentials & D: drive data)
+    creds_root = Path.home() / ".nanobot"
     critical = [
         storage_root / "workspace" / "memory" / "chroma" / "chroma.sqlite3",
         storage_root / "BACKUP_MANIFEST.md",
-        storage_root / "google_surgical" / "credentials" / f"{config['strategic_edition']['user_email']}.json"
+        creds_root / "secrets" / "token.json",
+        creds_root / "google_surgical" / "credentials" / f"{config['strategic_edition']['user_email']}.json"
     ]
     for p in critical:
         if p.exists():
             print_status("Storage", f"Found: {p.name}", "OK")
         else:
-            print_status("Storage", f"Missing: {p.relative_to(storage_root)}", "WARN")
+            # For secrets, show the standard path for clarity if missing
+            loc = "C:" if ".nanobot" in str(p) else "D:"
+            print_status("Storage", f"Missing [{loc}]: {p.name}", "WARN")
     
     return True
 
