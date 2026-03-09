@@ -98,6 +98,31 @@ def get_specialist_model(specialist_type: str, config_data: Dict[str, Any], defa
     
     return selected_model or default_model
 
+def should_escalate_model(response_content: Optional[str]) -> bool:
+    """
+    Analyzes response content to determine if a model escalation is required.
+    Triggered by empty responses, safety filters, or specific [STRATEGIC] error markers.
+    """
+    if not response_content:
+        return True
+    
+    # Check for our strategic error markers that indicate provider-level refusal
+    refusal_patterns = [
+        "[STRATEGIC] Provider Communication Failure",
+        "empty response",
+        "Zero Choices",
+        "safety filter"
+    ]
+    return any(p.lower() in response_content.lower() for p in refusal_patterns)
+
+def get_escalation_model(current_model: str) -> str:
+    """Returns a more robust model if the current one is failing/refusing."""
+    if "flash-lite" in current_model.lower():
+        return "gemini-3-flash-preview"
+    if "flash" in current_model.lower():
+        return "gemini-3.1-pro-preview"
+    return "gemini-3.1-pro-preview" # Final fallback for deepest reasoning
+
 def format_spawn_termination_directive(result: str, task_id: str) -> str:
     """Appends the strategic turn termination mandate to a spawn tool result."""
     return (
@@ -225,15 +250,17 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
     strategic_instr = (
         "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
         "1. **STATELESS SHELL MANDATE (CRITICAL):** The 'exec' tool is completely stateless. STANDALONE 'cd' COMMANDS ARE FORBIDDEN as they do not persist across turns. You MUST use ABSOLUTE PATHS for all file operations and script executions.\n"
-        "2. **MANDATORY VERIFICATION:** You are only successful when you have executed all required tools and confirmed the outcome.\n"
-        "3. **SEARCH MANDATE:** You MUST use 'mcp_google-ai-search_search_ai' for ALL research and weather data. \n"
-        "4. **BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. Do NOT attempt to use them. If you see them in your tool list, IGNORE them and use the equivalent MCP tools instead.\n"
-        "5. **MEMORY ACCESS (D: DRIVE):** Long-term memory is at `D:\\Nanobot_Storage\\workspace\\memory`. Use ABSOLUTE PATHS.\n"
-        "6. **RECURSION MANDATE:** When auditing storage, you MUST use recursive search tools.\n"
-        "7. **CALENDAR MANDATE:** Use `mcp_google-surgical_list_calendar_events` with `calendar_id='all'`.\n"
-        "8. **SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: `powershell -File \"D:\\path\\to\\script.ps1\"`. Do not attempt to execute .ps1 files directly.\n"
-        "9. **SURGICAL PRECISION:** Use 'read_file' to examine config or history.\n"
-        "10. **CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.\n"
-        "11. **EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted."
+        "2. **MARKDOWN DIRECTIVE MANDATE (BUG-132/138):** You are strictly FORBIDDEN from attempting to `exec` a Markdown (.md) file. Markdown files are NOT executable scripts. If a task points to a `.md` file, you MUST use `read_file` to read the instructions inside and THEN execute the steps manually. DO NOT try to 'run' the file first to see if it works; it will not. Use `read_file` immediately.\n"
+        "3. **EMAIL ATTACHMENT RESTRICTION (BUG-137):** The tool `mcp_email-reporter_send_email_report` does NOT support attachments, media, or file paths. You MUST include the full content of your report/briefing directly in the `body` field. Do NOT attempt to attach files.\n"
+        "4. **MANDATORY VERIFICATION:** You are only successful when you have executed all required tools and confirmed the outcome.\n"
+        "5. **SEARCH MANDATE:** You MUST use 'mcp_google-ai-search_search_ai' for ALL research and weather data. \n"
+        "6. **BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. Do NOT attempt to use them. If you see them in your tool list, IGNORE them and use the equivalent MCP tools instead.\n"
+        "7. **MEMORY ACCESS (D: DRIVE):** Long-term memory is at `D:\\Nanobot_Storage\\workspace\\memory`. Use ABSOLUTE PATHS.\n"
+        "8. **RECURSION MANDATE:** When auditing storage, you MUST use recursive search tools.\n"
+        "9. **CALENDAR MANDATE:** Use `mcp_google-surgical_list_calendar_events` with `calendar_id='all'`.\n"
+        "10. **SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: `powershell -File \"D:\\path\\to\\script.ps1\"`. To run a PowerShell command/cmdlet, you MUST use `powershell -Command \"...\"`. Do not attempt to execute .ps1 files or cmdlets directly in the shell.\n"
+        "11. **SURGICAL PRECISION:** Use 'read_file' to examine config or history.\n"
+        "12. **CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.\n"
+        "13. **EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted."
     )
     return base_prompt + header + strategic_instr

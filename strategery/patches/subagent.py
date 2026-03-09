@@ -168,6 +168,23 @@ class SubagentPatch(BasePatch):
                                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
                         else:
                             final_result = response.content or "Error: Empty response."
+                            
+                            # BUG-136: Escalation Logic
+                            if subagent_logic.should_escalate_model(final_result):
+                                escalation_model = subagent_logic.get_escalation_model(final_model)
+                                strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
+                                
+                                # Retry the final summarization with the more robust model
+                                escalation_response = await self.provider.chat(
+                                    messages=messages, 
+                                    tools=tools.get_definitions(), 
+                                    model=escalation_model,
+                                    temperature=0.5, # Lower temperature for stability during escalation
+                                    max_tokens=self.max_tokens, 
+                                    reasoning_effort="medium" # Ensure enough reasoning for the robust model
+                                )
+                                final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
+                            
                             subagent_logic.log_subagent_completion(task_id, final_result)
                             break
                     await self._announce_result(task_id, label, task, final_result or "Timeout", origin, "ok" if final_result else "error")

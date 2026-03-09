@@ -2,6 +2,7 @@ import sys
 import os
 import io
 import asyncio
+from typing import Any
 from functools import wraps
 from .base import BasePatch
 from .lifecycle import lifecycle_manager
@@ -108,7 +109,43 @@ class InfraPatch(BasePatch):
 
         lifecycle_manager.setup_signal_handlers()
         self._patch_mcp_bridging()
+        self._patch_filesystem_tools()
         return True
+
+    def _patch_filesystem_tools(self):
+        """Patches ReadFileTool to handle Windows-specific log encoding (BUG-133)."""
+        from nanobot.agent.tools.filesystem import ReadFileTool, _resolve_path
+        
+        if not hasattr(ReadFileTool, "_orig_execute_strategic"):
+            ReadFileTool._orig_execute_strategic = ReadFileTool.execute
+            
+            async def _patched_execute(self, path: str, **kwargs: Any) -> str:
+                # MANDATE: For .log files on Windows, use utf-8-sig and backslashreplace 
+                # to prevent UnicodeDecodeError from shell-redirected outputs.
+                if path.lower().endswith(".log") and sys.platform == "win32":
+                    try:
+                        file_path = _resolve_path(path, self._workspace, self._allowed_dir)
+                        if not file_path.exists():
+                            return f"Error: File not found: {path}"
+                        
+                        size = file_path.stat().st_size
+                        if size > self._MAX_CHARS * 4:
+                            return f"Error: File too large ({size:,} bytes)."
+
+                        # Strategic encoding bridge
+                        with open(file_path, "r", encoding="utf-8-sig", errors="backslashreplace") as f:
+                            content = f.read()
+                        
+                        if len(content) > self._MAX_CHARS:
+                            return content[: self._MAX_CHARS] + f"\n\n... (truncated)"
+                        return content
+                    except Exception as e:
+                        return f"Error reading log file strategically: {str(e)}"
+                
+                return await self._orig_execute_strategic(path, **kwargs)
+
+            ReadFileTool.execute = _patched_execute
+            strategic_logger.debug("Patched ReadFileTool for strategic log handling (BUG-133).")
 
     def _patch_mcp_bridging(self):
         import nanobot.agent.tools.mcp as core_mcp
