@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 from . import BasePatch
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import provider_logic
@@ -19,12 +20,26 @@ class ProviderPatch(BasePatch):
         try:
             self._patch_base_provider()
             self._patch_litellm_provider()
+            self._patch_litellm_parsing()
             self._patch_azure_openai_provider()
             self._patch_agent_loop_cleaning()
             return True
         except Exception as e:
             strategic_logger.error(f"Provider patch error: {e}")
             return False
+
+    def _patch_litellm_parsing(self):
+        """Patches LiteLLMProvider._parse_response to prevent IndexError on empty choices."""
+        from nanobot.providers.litellm_provider import LiteLLMProvider
+        if not hasattr(LiteLLMProvider, "_orig_parse_response_strategic"):
+            LiteLLMProvider._orig_parse_response_strategic = LiteLLMProvider._parse_response
+            
+            def _patched_parse_response(self, response: Any):
+                # Use strategic logic to ensure choices are present
+                safe_response = provider_logic.safe_parse_litellm_response(response)
+                return self._orig_parse_response_strategic(safe_response)
+            
+            LiteLLMProvider._parse_response = _patched_parse_response
 
     def _patch_azure_openai_provider(self):
         try:

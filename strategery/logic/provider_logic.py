@@ -94,3 +94,21 @@ def strip_reasoning_artifacts(text: str | None) -> str | None:
         return "[STRATEGIC: Your internal reasoning was captured. You MUST now provide a final response to the user or execute a permitted tool call. DO NOT repeat internal thought blocks.]"
     
     return res or None
+
+def safe_parse_litellm_response(response: Any) -> Any:
+    """ Validates that a LiteLLM response has at least one choice. """
+    if not hasattr(response, "choices") or not response.choices or len(response.choices) == 0:
+        # Create a mock choice with an error message to prevent IndexError
+        class MockChoice:
+            def __init__(self):
+                class MockMessage:
+                    def __init__(self):
+                        self.content = "[STRATEGIC] The provider returned an empty response (Zero Choices). This usually indicates a safety filter or upstream refusal."
+                        self.tool_calls = None
+                self.message = MockMessage()
+                self.finish_reason = "error"
+        
+        # Inject the mock choice into the response object
+        response.choices = [MockChoice()]
+        strategic_logger.warning("LiteLLM Safe Parse: Detected empty choices. Injected strategic error choice.")
+    return response
