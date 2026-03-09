@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from . import BasePatch
+from .base import BasePatch, PatchResult
 from strategery.strategic_logger import strategic_logger
 
 class AwarenessPatch(BasePatch):
@@ -15,15 +15,24 @@ class AwarenessPatch(BasePatch):
     def name(self) -> str:
         return "Identity & Awareness"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         try:
             from . import STORAGE_ROOT
             self._generate_awareness_file(STORAGE_ROOT)
+            result.affected_symbols.append("D:/Nanobot_Storage/workspace/AWARENESS.md")
+            
             self._patch_context_builder()
-            return True
+            result.affected_symbols.append("ContextBuilder.BOOTSTRAP_FILES")
+            
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             strategic_logger.error(f"Awareness patch error: {e}")
-            return False
+            return result
 
     def _generate_awareness_file(self, storage_root):
         """Generates a dynamic AWARENESS.md file with current environment details."""

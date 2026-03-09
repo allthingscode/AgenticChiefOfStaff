@@ -4,7 +4,7 @@ import io
 import asyncio
 from typing import Any
 from functools import wraps
-from .base import BasePatch
+from .base import BasePatch, PatchResult
 from .lifecycle import lifecycle_manager
 from strategery.strategic_logger import strategic_logger
 
@@ -50,67 +50,84 @@ class InfraPatch(BasePatch):
     def name(self) -> str:
         return "Infrastructure (Windows/UTF-8)"
 
-    def apply(self, config: dict) -> bool:
-        if sys.platform == 'win32':
-            if getattr(sys.stdout, 'encoding', '').lower() != 'utf-8':
-                try:
-                    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-                    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-                    strategic_logger.debug("Enforced UTF-8 for Windows stdout/stderr")
-                except (AttributeError, io.UnsupportedOperation):
-                    pass
-
-            os.environ["PYTHONIOENCODING"] = "utf-8"
-            os.environ["PYTHONUTF8"] = "1"
-
-            # BUG-041/096: Harden standard logging handlers against UnicodeEncodeError, but skip pytest loggers
-            try:
-                import logging
-                root = logging.getLogger()
-                for handler in root.handlers:
-                    if isinstance(handler, logging.FileHandler) or "Capture" in handler.__class__.__name__:
-                        continue
-
-                    if isinstance(handler, logging.StreamHandler):
-                        if hasattr(handler.stream, 'encoding') and handler.stream:
-                            try:
-                                handler.stream = io.TextIOWrapper(
-                                    handler.stream.buffer, 
-                                    encoding=handler.stream.encoding, 
-                                    errors='backslashreplace',
-                                    line_buffering=True
-                                )
-                            except (AttributeError, io.UnsupportedOperation):
-                                pass
-                strategic_logger.debug("Hardened standard logging handlers with 'backslashreplace'")
-            except Exception as e:
-                strategic_logger.error(f"Failed to harden unicode logging: {e}")
-
-        if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-            strategic_logger.debug("Set WindowsProactorEventLoopPolicy")
-
-            from asyncio.proactor_events import _ProactorBasePipeTransport
-
-            if not hasattr(_ProactorBasePipeTransport, "_orig_del_strategic"):
-                _ProactorBasePipeTransport._orig_del_strategic = _ProactorBasePipeTransport.__del__
-
-                @wraps(_ProactorBasePipeTransport._orig_del_strategic)
-                def _patched_del(self):
+    def apply(self, config: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
+        try:
+            if sys.platform == 'win32':
+                if getattr(sys.stdout, 'encoding', '').lower() != 'utf-8':
                     try:
-                        self._orig_del_strategic()
-                    except (RuntimeError, ValueError) as e:
-                        _msg = str(e)
-                        if 'Event loop is closed' in _msg or 'I/O operation on closed pipe' in _msg:
-                            pass
-                        else:
-                            raise
-                _ProactorBasePipeTransport.__del__ = _patched_del
+                        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+                        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+                        strategic_logger.debug("Enforced UTF-8 for Windows stdout/stderr")
+                        result.affected_symbols.extend(["sys.stdout", "sys.stderr"])
+                    except (AttributeError, io.UnsupportedOperation):
+                        pass
 
-        lifecycle_manager.setup_signal_handlers()
-        self._patch_mcp_bridging()
-        self._patch_filesystem_tools()
-        return True
+                os.environ["PYTHONIOENCODING"] = "utf-8"
+                os.environ["PYTHONUTF8"] = "1"
+
+                # BUG-041/096: Harden standard logging handlers against UnicodeEncodeError, but skip pytest loggers
+                try:
+                    import logging
+                    root = logging.getLogger()
+                    for handler in root.handlers:
+                        if isinstance(handler, logging.FileHandler) or "Capture" in handler.__class__.__name__:
+                            continue
+
+                        if isinstance(handler, logging.StreamHandler):
+                            if hasattr(handler.stream, 'encoding') and handler.stream:
+                                try:
+                                    handler.stream = io.TextIOWrapper(
+                                        handler.stream.buffer, 
+                                        encoding=handler.stream.encoding, 
+                                        errors='backslashreplace',
+                                        line_buffering=True
+                                    )
+                                    result.affected_symbols.append(f"logging.handler.{handler.__class__.__name__}")
+                                except (AttributeError, io.UnsupportedOperation):
+                                    pass
+                    strategic_logger.debug("Hardened standard logging handlers with 'backslashreplace'")
+                except Exception as e:
+                    strategic_logger.error(f"Failed to harden unicode logging: {e}")
+
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                strategic_logger.debug("Set WindowsProactorEventLoopPolicy")
+                result.affected_symbols.append("asyncio.WindowsProactorEventLoopPolicy")
+
+                from asyncio.proactor_events import _ProactorBasePipeTransport
+
+                if not hasattr(_ProactorBasePipeTransport, "_orig_del_strategic"):
+                    _ProactorBasePipeTransport._orig_del_strategic = _ProactorBasePipeTransport.__del__
+
+                    @wraps(_ProactorBasePipeTransport._orig_del_strategic)
+                    def _patched_del(self):
+                        try:
+                            self._orig_del_strategic()
+                        except (RuntimeError, ValueError) as e:
+                            _msg = str(e)
+                            if 'Event loop is closed' in _msg or 'I/O operation on closed pipe' in _msg:
+                                pass
+                            else:
+                                raise
+                    _ProactorBasePipeTransport.__del__ = _patched_del
+                    result.affected_symbols.append("_ProactorBasePipeTransport.__del__")
+
+            lifecycle_manager.setup_signal_handlers()
+            self._patch_mcp_bridging()
+            result.affected_symbols.append("nanobot.agent.tools.mcp.connect_mcp_servers")
+            
+            self._patch_filesystem_tools()
+            result.affected_symbols.append("nanobot.agent.tools.filesystem.ReadFileTool.execute")
+            
+            return result
+        except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
+            strategic_logger.error(f"Infrastructure patch error: {e}")
+            return result
 
     def _patch_filesystem_tools(self):
         """Patches ReadFileTool to handle Windows-specific log encoding (BUG-133)."""

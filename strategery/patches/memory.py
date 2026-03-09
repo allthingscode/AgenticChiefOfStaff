@@ -1,5 +1,5 @@
 import asyncio
-from .base import BasePatch
+from .base import BasePatch, PatchResult
 from .config import load_strategic_context
 from .vsa import VectorStoreFactory
 from strategery.strategic_logger import strategic_logger
@@ -27,14 +27,21 @@ class MemoryPatch(BasePatch):
     def name(self) -> str:
         return "Memory & Context Management"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         try:
             self._patch_memory_consolidation(config_data)
+            result.affected_symbols.append("MemoryStore.consolidate")
             self._patch_context_pruning(config_data)
-            return True
+            result.affected_symbols.append("AgentLoop._process_message (Memory/RAG)")
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             strategic_logger.error(f"Memory patch error: {e}")
-            return False
+            return result
 
     def _patch_memory_consolidation(self, config_data):
         from nanobot.agent.memory import MemoryStore, _SAVE_MEMORY_TOOL

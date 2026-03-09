@@ -5,7 +5,8 @@ without modifying the core Nanobot codebase.
 """
 
 import sys
-from .base import BasePatch
+from typing import List
+from .base import BasePatch, PatchResult
 from .infra import InfraPatch
 from .config import ConfigPatch, load_strategic_context
 from .provider import ProviderPatch
@@ -16,7 +17,6 @@ from .cron import CronPatch
 from .loop import AgentLoopPatch
 from .session import SessionPatch
 from .awareness import AwarenessPatch
-from .vector_store import StrategicVectorStore
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
 
 class PatchRegistry:
@@ -36,28 +36,47 @@ class PatchRegistry:
             AwarenessPatch()
         ]
 
-    def apply_all(self, config_data: dict, **kwargs) -> dict:
+    def apply_all(self, config_data: dict, halt_on_error: bool = False, **kwargs) -> List[PatchResult]:
         """Applies all registered patches in sequence."""
         # Check if already initialized in this process
         if getattr(sys, "_STRATEGIC_INITIALIZED", False):
-            return {}
+            return []
             
         # Ensure logger is correctly configured for the current environment/storage root
         setup_strategic_logger()
         strategic_logger.info("Applying Nanobot Strategic Edition patches...")
         
-        results = {}
+        results = []
         for patch in self._patches:
             try:
-                success = patch.apply(config_data)
-                results[patch.name] = "Applied" if success else "Failed"
-                if success:
+                res = patch.apply(config_data)
+                
+                # Handle legacy boolean returns for backward compatibility
+                if isinstance(res, bool):
+                    res = PatchResult(patch_name=patch.name, success=res)
+                
+                results.append(res)
+                
+                if res.success:
                     strategic_logger.debug(f"Patch applied: {patch.name}")
                 else:
-                    strategic_logger.warning(f"Patch failed to apply: {patch.name}")
+                    error_info = f" - {res.error_msg}" if res.error_msg else ""
+                    strategic_logger.warning(f"Patch failed to apply: {patch.name}{error_info}")
+                    if halt_on_error:
+                        strategic_logger.error(f"HALTING: Critical failure in mandatory patch '{patch.name}'")
+                        break
             except Exception as e:
-                results[patch.name] = f"Error: {e}"
-                strategic_logger.error(f"{patch.name} patch error: {e}")
+                import traceback
+                error_res = PatchResult(
+                    patch_name=patch.name,
+                    success=False,
+                    error_msg=str(e),
+                    traceback=traceback.format_exc()
+                )
+                results.append(error_res)
+                strategic_logger.error(f"Patch execution crash: {patch.name} - {e}")
+                if halt_on_error:
+                    break
         
         # Set global flag on sys module to survive reloads within the same process
         setattr(sys, "_STRATEGIC_INITIALIZED", True)
@@ -68,8 +87,7 @@ class PatchRegistry:
 registry = PatchRegistry()
 
 # Auto-apply patches on import to ensure environment is set up correctly
-# This ensures that even when imported by tests (like test_agent_direct.py),
-# the core patches are active.
+# MANDATE: This will be moved to explicit application in F-019.
 RAW_CONFIG, USER_EMAIL, STORAGE_ROOT = load_strategic_context()
 
 # Re-initialize logger with strategic storage root if available
@@ -77,4 +95,5 @@ if STORAGE_ROOT:
     setup_strategic_logger(log_dir=STORAGE_ROOT / "logs")
 
 if not getattr(sys, "_STRATEGIC_INITIALIZED", False):
+    # For now, we don't halt on error during auto-application to maintain current behavior
     registry.apply_all(RAW_CONFIG, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)

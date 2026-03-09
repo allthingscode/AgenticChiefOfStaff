@@ -150,7 +150,7 @@ async def strategic_telegram_send(channel, msg):
                 if thread_id: kwargs["message_thread_id"] = int(thread_id)
                 await channel._app.bot.send_message(**kwargs)
 
-from .base import BasePatch
+from .base import BasePatch, PatchResult
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
@@ -159,14 +159,25 @@ class TelegramPatch(BasePatch):
     def name(self) -> str:
         return "Telegram Advanced Integration"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         try:
             from nanobot.channels.telegram import TelegramChannel
             self._patch_telegram_channel(TelegramChannel, config_data)
-            return True
+            result.affected_symbols.extend([
+                "TelegramChannel.start", 
+                "TelegramChannel._on_message", 
+                "TelegramChannel.send",
+                "TelegramChannel._on_error"
+            ])
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             strategic_logger.error(f"Telegram patch error: {e}")
-            return False
+            return result
 
     def _patch_telegram_channel(self, TelegramChannel, config_data):
         from telegram.ext import CommandHandler

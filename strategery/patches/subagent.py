@@ -5,7 +5,7 @@ import json
 import uuid
 from pathlib import Path
 from contextlib import AsyncExitStack
-from .base import BasePatch
+from .base import BasePatch, PatchResult
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import subagent_logic
 
@@ -16,20 +16,35 @@ class SubagentPatch(BasePatch):
     def name(self) -> str:
         return "Subagent & Tool Orchestration"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         from .config import load_strategic_context
         _, user_email, _ = load_strategic_context()
         try:
             self._patch_spawn_tool()
+            result.affected_symbols.append("nanobot.agent.tools.spawn.SpawnTool")
+            
             self._patch_subagent_manager(config_data)
+            result.affected_symbols.append("nanobot.agent.subagent.SubagentManager")
+            
             self._patch_tool_registry(user_email)
+            result.affected_symbols.append("nanobot.agent.tools.registry.ToolRegistry")
+            
             self._patch_heartbeat(config_data)
+            result.affected_symbols.append("nanobot.heartbeat.service.HeartbeatService")
+            
             self._patch_context_builder()
+            result.affected_symbols.append("nanobot.agent.context.ContextBuilder.build_messages")
+            
             strategic_logger.info("SubagentPatch: All sub-patches applied successfully.")
-            return True
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             strategic_logger.error(f"Subagent patch error: {e}")
-            return False
+            return result
 
     def _load_strategic_tools(self, registry):
         from nanobot.agent.tools.base import Tool
@@ -149,7 +164,6 @@ class SubagentPatch(BasePatch):
                     
                     max_iterations = 20
                     iteration = 0
-                    final_result = None
                     while iteration < max_iterations:
                         iteration += 1
                         
@@ -163,25 +177,22 @@ class SubagentPatch(BasePatch):
                             messages.append({"role": "assistant", "content": response.content or "", "tool_calls": tool_call_dicts})
                             
                             for tool_call in response.tool_calls:
-                                # log_tool_execution handled by registry.execute bridge now
                                 result = await tools.execute(tool_call.name, tool_call.arguments)
                                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
                         else:
                             final_result = response.content or "Error: Empty response."
                             
-                            # BUG-136: Escalation Logic
                             if subagent_logic.should_escalate_model(final_result):
                                 escalation_model = subagent_logic.get_escalation_model(final_model)
                                 strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
                                 
-                                # Retry the final summarization with the more robust model
                                 escalation_response = await self.provider.chat(
                                     messages=messages, 
                                     tools=tools.get_definitions(), 
                                     model=escalation_model,
-                                    temperature=0.5, # Lower temperature for stability during escalation
+                                    temperature=0.5,
                                     max_tokens=self.max_tokens, 
-                                    reasoning_effort="medium" # Ensure enough reasoning for the robust model
+                                    reasoning_effort="medium"
                                 )
                                 final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
                             
@@ -233,7 +244,6 @@ class SubagentPatch(BasePatch):
             async def _patched_tool_execute(self, name, args):
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
                 
-                # High-Fidelity Logging (Main Agent & Specialists)
                 subagent_logic.log_tool_execution(self, name, args)
                 
                 if subagent_logic.is_tool_blocked(name, is_specialist):

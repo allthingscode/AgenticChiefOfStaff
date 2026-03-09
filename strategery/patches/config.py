@@ -3,7 +3,7 @@ import os
 import builtins
 from pathlib import Path
 from functools import wraps
-from .base import BasePatch
+from .base import BasePatch, PatchResult
 
 def strategic_migrate_config(data, config_data_capture=None):
     """
@@ -50,56 +50,49 @@ class ConfigPatch(BasePatch):
     def name(self) -> str:
         return "Configuration & Schema Overrides"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         try:
             import nanobot.config.loader
             from nanobot.config.schema import Config, Base
 
             # 1. Force the Config schema to ignore extra fields at runtime
-            # MANDATE: We patch both 'Base' (for child models) and 'Config' (for root)
-            # Use dictionary update to be safe with model_config which might be a mapping or a dict
             if isinstance(Config.model_config, dict):
                 Config.model_config["extra"] = "ignore"
             else:
-                # Fallback for newer Pydantic versions where it might be a ConfigDict object
                 setattr(Config, "model_config", {**Config.model_config, "extra": "ignore"})
 
             if isinstance(Base.model_config, dict):
                 Base.model_config["extra"] = "ignore"
             else:
                 setattr(Base, "model_config", {**Base.model_config, "extra": "ignore"})
+            result.affected_symbols.append("Config.model_config (extra=ignore)")
 
             # 2. Patch get_data_dir to point to strategic storage (D: drive)
-            # MANDATE: Upstream moved get_data_dir from loader.py to paths.py in v0.1.4.post4
             import nanobot.config.paths
             if not hasattr(nanobot.config.paths, "_orig_get_data_dir_strategic"):
                 nanobot.config.paths._orig_get_data_dir_strategic = nanobot.config.paths.get_data_dir
 
-                # Derivation helper to avoid circular imports of STORAGE_ROOT from .
                 def _get_strategic_data_dir():
                     from .config import load_strategic_context
                     _, _, storage_root = load_strategic_context()
                     return storage_root
 
                 nanobot.config.paths.get_data_dir = _get_strategic_data_dir
+                result.affected_symbols.append("nanobot.config.paths.get_data_dir")
 
-                # Also patch get_workspace_path to be safe (it often uses defaults.workspace)
-                # This ensures any code using nanobot.config.paths.get_workspace_path also sees the strategic root
                 if hasattr(nanobot.config.paths, "get_workspace_path"):
                     nanobot.config.paths._orig_get_workspace_path_strategic = nanobot.config.paths.get_workspace_path
                     def _get_strategic_workspace_path(workspace=None):
-                        # If an explicit workspace is passed, respect it
                         if workspace:
                             return Path(workspace).expanduser()
-                        # Otherwise, use the strategic storage root
                         from .config import load_strategic_context
                         _, _, storage_root = load_strategic_context()
                         return storage_root / "workspace"
                     
                     nanobot.config.paths.get_workspace_path = _get_strategic_workspace_path
+                    result.affected_symbols.append("nanobot.config.paths.get_workspace_path")
 
-                # Also patch Config.workspace_path to be safe (it often uses defaults.workspace)
-                # This ensures any code using config.workspace_path also sees the strategic root
                 if hasattr(Config, "workspace_path"):
                     @property
                     def _strategic_workspace_path(self):
@@ -108,6 +101,7 @@ class ConfigPatch(BasePatch):
                         return storage_root / "workspace"
 
                     Config.workspace_path = _strategic_workspace_path
+                    result.affected_symbols.append("Config.workspace_path")
 
             # 3. Global BOM-Safe 'open' wrapper for JSON files
             if not hasattr(builtins, "_orig_open_strategic"):
@@ -122,18 +116,18 @@ class ConfigPatch(BasePatch):
                     return builtins._orig_open_strategic(file, mode, buffering, encoding, errors, newline, closefd, opener)
                 
                 builtins.open = _strategic_open
+                result.affected_symbols.append("builtins.open (BOM-safe)")
 
             # 4. Patch _migrate_config
             if not hasattr(nanobot.config.loader, "_orig_migrate_strategic"):
                 nanobot.config.loader._orig_migrate_strategic = nanobot.config.loader._migrate_config
                 
                 def _patched_migrate(data):
-                    # Run original migration first
                     data = nanobot.config.loader._orig_migrate_strategic(data)
-                    # Then apply strategic stripping/capture
                     return strategic_migrate_config(data, config_data)
                 
                 nanobot.config.loader._migrate_config = _patched_migrate
+                result.affected_symbols.append("nanobot.config.loader._migrate_config")
 
             # 5. Patch ContextBuilder.build_system_prompt to harden against bypass chatter (BUG-021)
             import nanobot.agent.context
@@ -155,11 +149,16 @@ class ConfigPatch(BasePatch):
                     return base_prompt + hardening_rules
                 
                 nanobot.agent.context.ContextBuilder.build_system_prompt = _hardened_build_system_prompt
+                result.affected_symbols.append("ContextBuilder.build_system_prompt")
                 
-            return True
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             print(f"[Launcher] Config patch error: {e}")
-            return False
+            return result
 
     def verify(self, config_data: dict) -> bool:
         """Verifies that the global 'open', ContextBuilder, and Path patches are active."""

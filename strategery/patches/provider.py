@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any
-from . import BasePatch
+from .base import BasePatch, PatchResult
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import provider_logic
 
@@ -16,17 +16,32 @@ class ProviderPatch(BasePatch):
     def name(self) -> str:
         return "Provider Logging & Routing"
 
-    def apply(self, config_data: dict) -> bool:
+    def apply(self, config_data: dict) -> PatchResult:
+        result = PatchResult(patch_name=self.name, success=True)
         try:
             self._patch_base_provider()
+            result.affected_symbols.append("LLMProvider.embed")
+
             self._patch_litellm_provider()
+            result.affected_symbols.extend(["LiteLLMProvider.chat", "LiteLLMProvider.embed"])
+
             self._patch_litellm_parsing()
+            result.affected_symbols.append("LiteLLMProvider._parse_response")
+
             self._patch_azure_openai_provider()
+            # Note: Azure might not be installed, so we check affected_symbols inside the helper or just ignore
+            
             self._patch_agent_loop_cleaning()
-            return True
+            result.affected_symbols.append("AgentLoop._strip_think")
+
+            return result
         except Exception as e:
+            import traceback
+            result.success = False
+            result.error_msg = str(e)
+            result.traceback = traceback.format_exc()
             strategic_logger.error(f"Provider patch error: {e}")
-            return False
+            return result
 
     def _patch_litellm_parsing(self):
         """Patches LiteLLMProvider._parse_response to prevent IndexError on empty choices."""
