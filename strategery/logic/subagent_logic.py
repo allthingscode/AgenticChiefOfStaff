@@ -265,6 +265,34 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "10. **SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: `powershell -File \"D:\\path\\to\\script.ps1\"`. To run a PowerShell command/cmdlet, you MUST use `powershell -Command \"...\"`. Do not attempt to execute .ps1 files or cmdlets directly in the shell.\n"
         "11. **SURGICAL PRECISION:** Use 'read_file' to examine config or history.\n"
         "12. **CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.\n"
-        "13. **EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted."
+        "13. **EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted.\n"
+        "14. **PYTHON EXECUTION (MANDATE - BUG-141):** You MUST use the absolute path to the project's Python executable for ALL Python commands: `C:\\Users\\HayesChiefOfStaff\\Documents\\nanobot\\nanoClaw\\Scripts\\python.exe`. For internal 'strategery' modules, you MUST use the module-style call and set the PYTHONPATH environment variable: `$env:PYTHONPATH=\".\"; C:\\Users\\HayesChiefOfStaff\\Documents\\nanobot\\nanoClaw\\Scripts\\python.exe -m strategery.module_name`.\n"
+        "15. **CLEAN COMMANDS (BUG-143):** When reading commands from Markdown lists or text, you MUST strip any trailing punctuation (like a period '.') that is not part of the command itself. Hallucinated dots cause ModuleNotFoundError.\n"
+        "16. **LOG AUDIT DEPTH (BUG-144):** When performing a 'Log Audit', you are FORBIDDEN from reporting a 'PASS' based on a truncated snippet. You MUST use the `exec` tool with `Get-Content -Tail 500` or `Select-String` to search for 'ERROR' or 'Exception' across the entire file if it is large.\n"
+        "17. **NO ASSUMPTIONS (BUG-146):** You are strictly FORBIDDEN from assuming a task or component has passed based on generic success messages from wrappers or scripts. If you are asked to verify a specific component (e.g., 'Strategic Doctor'), you MUST find explicit evidence for that specific component in the tool output. If the evidence is missing, you MUST run the specific verification command directly (e.g., `python -m strategery.strategic_doctor`).\n"
+        "18. **FINALITY MANDATE (BUG-153):** You are FORBIDDEN from ending your turn with a 'plan' or 'promise to act'. A response without tool calls is interpreted as a COMPLETE AND FINAL ANSWER. If you need to retry a command with different syntax, you MUST call the tool in the SAME turn. Do NOT say 'I will now do X' unless you are currently executing the tool call for X.\n"
+        "19. **NO HALLUCINATED PATHS (BUG-158):** You are strictly FORBIDDEN from guessing or 'assuming' subdirectories for skills (e.g., assuming a skill has a subdirectory with its name). You MUST use `list_dir` or `mcp_filesystem-d_search_files` to verify the existence of files before attempting to read them. Hallucinated paths lead to task failure."
     )
     return base_prompt + header + strategic_instr
+
+def harden_subagent_command(command: str) -> str:
+    """Hardens a shell command for a subagent by enforcing mandates and cleaning noise."""
+    python_abs = r"C:\Users\HayesChiefOfStaff\Documents\nanobot\nanoClaw\Scripts\python.exe"
+    
+    # 1. Clean hallucinated dots from end of command (BUG-143)
+    command = command.strip()
+    if command.endswith("."):
+        command = command[:-1].strip()
+    
+    # 2. Inject environment and ensure absolute path if 'python' is used (BUG-141 / BUG-160)
+    if "python " in command.lower() or "python.exe" in command.lower():
+        # Prepend PYTHONPATH and replace relative python with absolute if necessary
+        # Mandate (BUG-160): Use quotes for the PYTHONPATH value to avoid parser errors
+        prefix = '$env:PYTHONPATH="."; '
+        if not python_abs.lower() in command.lower():
+            command = re.sub(r"\bpython(\.exe)?\b", lambda m: f'"{python_abs}"', command, flags=re.IGNORECASE)
+        
+        if not prefix in command:
+            command = prefix + command
+            
+    return command

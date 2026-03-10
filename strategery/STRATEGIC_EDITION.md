@@ -46,5 +46,7 @@ Optimized for stable long-term operation on Windows environments:
 | **Modular Nightly Batch** | **COMPLETED** | **Master Orchestrator:** Single master task scheduled for 3 AM handles all health, extraction, and reporting. |
 | **The Thin Patch Mandate** | **COMPLETED** | **Stability:** Decoupled strategic logic from runtime shims for 100% testability and zero-risk refactoring. |
 | **High-Fidelity Telemetry** | **LIVE** | **Observability:** Real-time visibility into thoughts, tool arguments, and result snippets across all agents. |
+| **Environment Hardening** | **LIVE** | **Stability:** Absolute venv enforcement, forced UTF-8 shells, and nested call resilience for specialists. |
+| **Finality Mandate** | **LIVE** | **Reliability:** Enforced task completion standards that strictly forbid 'plans' from being reported as results. |
 | **NanoGraph Phase 2** | Research | **Intelligence:** Multi-hop reasoning and Personalized PageRank (HippoRAG) for deterministic retrieval. |
 | **Readability Reports** | Planning | **UX:** High-readability HTML email templates for 3 AM briefings. |

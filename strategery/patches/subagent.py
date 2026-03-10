@@ -3,9 +3,10 @@ import re
 import asyncio
 import json
 import uuid
+import os
 from pathlib import Path
 from contextlib import AsyncExitStack
-from typing import List, TYPE_CHECKING
+from typing import List, Any, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 
 if TYPE_CHECKING:
@@ -117,6 +118,64 @@ class SubagentPatch(BasePatch):
         from .config import strategic_migrate_config
         from .infra import strategic_mcp_manager
 
+        # Mandate (BUG-141 / BUG-150 / BUG-156): Harden ExecTool for subagents
+        if not hasattr(ExecTool, "_orig_execute_strategic"):
+            ExecTool._orig_execute_strategic = ExecTool.execute
+            async def _patched_exec_execute(self_tool, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
+                registry = getattr(self_tool, "_registry", None)
+                is_specialist = getattr(registry, "_is_strategic_specialist", False)
+                
+                # Mandate (BUG-156): Use project root if not specified to avoid ModuleNotFoundError
+                # Subagents on D: drive cannot find 'strategery' without this.
+                effective_cwd = working_dir or self_tool.working_dir or str(context.app_root)
+                
+                if is_specialist:
+                    command = subagent_logic.harden_subagent_command(command)
+                
+                # Mandate (BUG-150 / BUG-149 / BUG-152 / BUG-155): Force PowerShell on Windows and ensure UTF-8
+                if os.name == "nt":
+                    try:
+                        # Mandate (BUG-155): Force UTF-8 Output Encoding for BOTH the session and subprocess
+                        encoding_fix = '$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+                        
+                        if "powershell" in command.lower():
+                            # Already using powershell, inject encoding and wrap to ensure it sticks
+                            escaped_cmd = command.replace('"', '\"')
+                            full_cmd = f'powershell.exe -NoProfile -NonInteractive -Command "{encoding_fix}{escaped_cmd}"'
+                        else:
+                            # Wrap in PowerShell and force UTF-8
+                            escaped_cmd = command.replace('"', '\"')
+                            full_cmd = f'powershell.exe -NoProfile -NonInteractive -Command "{encoding_fix}{escaped_cmd}"'
+                        
+                        # Mandate (BUG-156): Ensure PYTHONPATH includes app_root
+                        env = os.environ.copy()
+                        env["PYTHONPATH"] = str(context.app_root)
+                        env["PYTHONIOENCODING"] = "utf-8"
+                        
+                        proc = await asyncio.create_subprocess_shell(
+                            full_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=effective_cwd,
+                            env=env
+                        )
+                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self_tool.timeout)
+                        
+                        # Mandate (BUG-149): Explicitly decode as UTF-8
+                        out_str = stdout.decode("utf-8", errors="replace").strip()
+                        err_str = stderr.decode("utf-8", errors="replace").strip()
+                        
+                        if proc.returncode != 0:
+                            return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
+                        return out_str or err_str
+                    except asyncio.TimeoutError:
+                        return f"Error: Command timed out after {self_tool.timeout} seconds"
+                    except Exception as e:
+                        return f"Error: {str(e)}"
+                            
+                return await self_tool._orig_execute_strategic(command, working_dir, **kwargs)
+            ExecTool.execute = _patched_exec_execute
+
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
             def _patched_build_subagent_prompt(self):
@@ -156,7 +215,9 @@ class SubagentPatch(BasePatch):
                     tools._is_strategic_specialist = True
                     tools._task_id = task_id # For telemetry identification
                     
-                    tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=self.exec_config.timeout))
+                    # Mandate (BUG-142): Increase timeout to 300s for specialists to prevent health check timeouts
+                    specialist_timeout = max(self.exec_config.timeout, 300)
+                    tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=specialist_timeout))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     if host_tools and hasattr(host_tools, "_tools"):
                         for name, tool in host_tools._tools.items():
@@ -199,6 +260,13 @@ class SubagentPatch(BasePatch):
                             if subagent_logic.should_escalate_model(final_result):
                                 escalation_model = subagent_logic.get_escalation_model(final_model)
                                 strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
+                                
+                                # Mandate (BUG-153): Explicitly tell the escalation model this is the FINAL summary
+                                # We add a system directive to the END of the conversation
+                                messages.append({
+                                    "role": "system", 
+                                    "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary of the situation to the user. You are FORBIDDEN from planning next steps or suggesting you will try again. This is your last turn."
+                                })
                                 
                                 escalation_response = await self.provider.chat(
                                     messages=messages, 

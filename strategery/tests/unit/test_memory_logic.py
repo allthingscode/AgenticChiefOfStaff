@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 from strategery.logic import memory_logic
 
 def test_format_consolidation_messages():
@@ -40,7 +40,8 @@ def test_filter_rag_results():
 def test_prune_context_retention():
     # Setup messages with timestamps
     now = datetime.now()
-    old_ts = (now.replace(hour=now.hour - 10)).isoformat()
+    # Subtract 10 hours safely
+    old_ts = (now - timedelta(hours=10)).isoformat()
     new_ts = now.isoformat()
     
     msgs = [
