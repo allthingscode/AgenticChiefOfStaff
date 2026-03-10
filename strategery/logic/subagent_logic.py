@@ -243,7 +243,8 @@ def inject_delegation_mandate(system_content: str) -> str:
         "   - **'architect':** Use for design, NanoGraph extraction, high-level structural planning, or complex reasoning.\n"
         "3. **NO MODEL CONTROL:** You choose the TYPE of specialist, but you have NO say in which AI model is used.\n"
         "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear, STOP and ask the user.\n"
-        "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately. Do NOT mention IDs in the initial turn."
+        "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately. Do NOT mention IDs in the initial turn.\n"
+        "6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `D:\\Nanobot_Storage\\workspace\\logs\\`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders."
     )
     return system_content + mandate
 
@@ -274,7 +275,10 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "19. **NO HALLUCINATED PATHS (BUG-158):** You are strictly FORBIDDEN from guessing or 'assuming' subdirectories for skills (e.g., assuming a skill has a subdirectory with its name). You MUST use `list_dir` or `mcp_filesystem-d_search_files` to verify the existence of files before attempting to read them. Hallucinated paths lead to task failure.\n"
         "20. **AUTOMATED ENCODING (BUG-155 / BUG-162):** The `exec` tool automatically forces UTF-8 encoding (`chcp 65001` and `[Console]::OutputEncoding`) for all PowerShell sessions. You are FORBIDDEN from manually prepending these encoding fixes to your commands. Cluttering commands with redundant encoding logic leads to syntax errors and degraded telemetry.\n"
         "21. **SURGICAL TOOL MANDATE:** You MUST prioritize high-performance search tools for codebase navigation. Use `rg` (ripgrep) for searching file contents and `fd` for finding files by name. These tools are orders of magnitude faster than standard Windows commands.\n"
-        "22. **HIGH-FIDELITY VIEWING:** When inspecting file contents via the shell, use `bat` instead of `cat` or `type`. `bat` provides line numbers and cleaner formatting, which improves your ability to accurately parse and reference code."
+        "22. **HIGH-FIDELITY VIEWING:** When inspecting file contents via the shell, use `bat` instead of `cat` or `type`. `bat` provides line numbers and cleaner formatting, which improves your ability to accurately parse and reference code.\n"
+        "23. **CONTEXT EFFICIENCY MANDATE (BUG-164):** You are strictly FORBIDDEN from reading entire files that are larger than 10KB using `read_file` if you only need a specific section or search term. You MUST use surgical tools: use `rg` to find specific lines, or use `exec` with `Get-Content -Tail 100` to inspect recent log entries. Wasting context window on large file dumps leads to amnesia and task failure.\n"
+        "24. **LOG AUDIT TEMPORALITY (BUG-166):** When performing a 'Log Audit' or searching for errors, you are FORBIDDEN from reporting an error as 'current' without verifying its timestamp. You MUST use `rg` or `Select-String` to filter for the current date (e.g., '2026-03-10') or use `Get-Content -Tail` to ensure you are only seeing active session data. Reporting stale errors from previous days as active issues violates the high-fidelity mandate.\n"
+        "25. **DEFINITIVE LOG ROOT (BUG-167):** All strategic logs (e.g., `strategic.log`, `email_reporter.log`) reside EXCLUSIVELY in `D:\\Nanobot_Storage\\workspace\\logs\\`. You are strictly FORBIDDEN from searching for these logs in skill-specific subdirectories or elsewhere. If a log is not in the definitive root, it does not exist."
     )
     return base_prompt + header + strategic_instr
 
