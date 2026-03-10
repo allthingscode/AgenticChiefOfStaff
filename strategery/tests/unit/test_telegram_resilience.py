@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import NetworkError
 from strategery.patches.telegram import TelegramPatch
 from strategery.strategic_logger import strategic_logger
+from strategery.logic.config_logic import validate_strategic_config
 
 # Define a real class for the patcher to work on
 class MockTelegramChannel:
@@ -43,7 +44,7 @@ async def test_telegram_polling_resilience():
     
     # Apply the patch logic
     patcher = TelegramPatch()
-    patcher._patch_telegram_channel(MockTelegramChannel, {})
+    patcher._patch_telegram_channel(MockTelegramChannel, validate_strategic_config({}))
     
     # Setup the failure scenario
     call_count = 0
@@ -105,7 +106,7 @@ async def test_telegram_error_suppression():
     """Verify that BUG-060 correctly suppresses NetworkError noise."""
     channel = MockTelegramChannel()
     patcher = TelegramPatch()
-    patcher._patch_telegram_channel(MockTelegramChannel, {})
+    patcher._patch_telegram_channel(MockTelegramChannel, validate_strategic_config({}))
     
     # 1. Test NetworkError Suppression
     mock_context = MagicMock()

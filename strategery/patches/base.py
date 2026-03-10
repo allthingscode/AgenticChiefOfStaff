@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from pathlib import Path
 import importlib
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 @dataclass
 class PatchResult:
@@ -21,7 +24,7 @@ class PatchResult:
 @dataclass
 class PatchContext:
     """Encapsulates the environment and configuration for a strategic patch."""
-    config: Dict[str, Any]
+    config: 'StrategicConfig'
     storage_root: Path
     user_email: str
     app_root: Path

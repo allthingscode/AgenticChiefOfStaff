@@ -1,9 +1,13 @@
 import asyncio
+from typing import List, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 from .config import load_strategic_context
 from .vsa import VectorStoreFactory
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import memory_logic
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 async def strategic_inject_rag_context(content, provider, vec_store_factory=VectorStoreFactory):
     """Bridge to semantic retrieval logic."""
@@ -43,14 +47,16 @@ class MemoryPatch(BasePatch):
             strategic_logger.error(f"Memory patch error: {e}")
             return result
 
-    def _patch_memory_consolidation(self, config_data):
+    def _patch_memory_consolidation(self, config: 'StrategicConfig'):
         from nanobot.agent.memory import MemoryStore, _SAVE_MEMORY_TOOL
         
         if not hasattr(MemoryStore, "_orig_consolidate_strategic"):
             MemoryStore._orig_consolidate_strategic = MemoryStore.consolidate
 
             async def _patched_consolidate(self, session, provider, model, **kwargs):
-                config_model = config_data.get("agents", {}).get("consolidator", {}).get("model")
+                config_model = None
+                if config.agents.consolidator:
+                    config_model = config.agents.consolidator.get("model")
                 model = config_model or model
                 
                 archive_all = kwargs.get("archive_all", False)
@@ -112,7 +118,7 @@ class MemoryPatch(BasePatch):
 
             MemoryStore.consolidate = _patched_consolidate
 
-    def _patch_context_pruning(self, config_data):
+    def _patch_context_pruning(self, config: 'StrategicConfig'):
         from nanobot.agent.loop import AgentLoop
         
         if not hasattr(AgentLoop, "_orig_process_message_strategic"):
@@ -128,17 +134,17 @@ class MemoryPatch(BasePatch):
                     if journal_snippet:
                         msg.content = journal_snippet + "\n" + msg.content
 
-                prune_cfg = config_data.get("agents", {}).get("defaults", {}).get("contextPruning", {})
-                if prune_cfg.get("enabled"):
+                prune_cfg = config.agents.defaults.context_pruning
+                if prune_cfg and prune_cfg.enabled:
                     key = session_key or msg.session_key
                     session = self.sessions.get_or_create(key)
-                    ttl_str = prune_cfg.get("ttl", "6h")
+                    ttl_str = prune_cfg.ttl
                     hours = int(ttl_str[:-1]) if ttl_str.endswith("h") else 6
-                    keep_last = prune_cfg.get("keepLastAssistants", 3)
+                    keep_last = prune_cfg.keep_last_assistants
                     session.messages = memory_logic.prune_context(session.messages, hours, keep_last)
 
-                rag_cfg = config_data.get("strategic_edition", {}).get("memory_rag", {})
-                if rag_cfg.get("enabled", True) and not is_internal:
+                rag_cfg = config.strategic_edition.memory_rag
+                if rag_cfg.enabled and not is_internal:
                     rag_block, count = await strategic_inject_rag_context(original_content, self.provider)
                     if rag_block:
                         msg.content = rag_block + "\n\n" + msg.content

@@ -19,6 +19,7 @@ from .loop import AgentLoopPatch
 from .session import SessionPatch
 from .awareness import AwarenessPatch
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
+from strategery.logic.config_logic import validate_strategic_config
 
 class PatchRegistry:
     """Registry for managing and applying strategic patches."""
@@ -55,9 +56,19 @@ class PatchRegistry:
             
         app_root = Path(__file__).parent.parent.parent
         
-        # 2. Initialize Patch Context (F-018)
+        # 2. Validate Config Schema (F-016)
+        try:
+            strategic_config = validate_strategic_config(config_data)
+        except Exception as e:
+            strategic_logger.critical(f"CONFIG VALIDATION FAILED: {e}")
+            if halt_on_error:
+                return [PatchResult(patch_name="Registry", success=False, error_msg=f"Config Validation Failed: {e}")]
+            # Fallback to loose config if not halting, but this is dangerous
+            strategic_config = config_data 
+
+        # 3. Initialize Patch Context (F-018)
         context = PatchContext(
-            config=config_data,
+            config=strategic_config,
             storage_root=storage_root,
             user_email=user_email,
             app_root=app_root

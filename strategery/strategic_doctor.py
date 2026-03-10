@@ -28,7 +28,8 @@ def print_status(component, message, level="INFO"):
         print(f"[* ] {BOLD}{component}:{RESET} {message}")
 
 def check_config():
-    """Validates the main config.json integrity."""
+    """Validates the main config.json integrity against the Strategic Schema."""
+    from strategery.logic.config_logic import validate_strategic_config
     config_path = Path.home() / ".nanobot" / "config.json"
     if not config_path.exists():
         print_status("Config", f"Missing at {config_path}", "FAIL")
@@ -37,29 +38,25 @@ def check_config():
     try:
         # Use utf-8-sig for Windows BOM safety (Strategic Mandate)
         with open(config_path, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
+            raw_data = json.load(f)
         print_status("Config", "Syntax and BOM verified.", "OK")
         
-        # Check Strategic keys
-        if "strategic_edition" not in data:
-            print_status("Config", "Missing 'strategic_edition' block.", "FAIL")
+        # 1. Perform Strategic Schema Validation (F-016)
+        try:
+            config = validate_strategic_config(raw_data)
+            print_status("Config", "Strategic Schema (Pydantic) validated.", "OK")
+            return config
+        except Exception as ve:
+            print_status("Config", f"Schema Validation FAILED: {ve}", "FAIL")
             return None
-        
-        required = ["user_email", "storage_root", "app_root", "backup_folder_id"]
-        missing = [k for k in required if k not in data["strategic_edition"]]
-        if missing:
-            print_status("Config", f"Missing strategic keys: {missing}", "FAIL")
-            return None
-        
-        print_status("Config", "Strategic parameters present.", "OK")
-        return data
+            
     except Exception as e:
         print_status("Config", f"Parsing error: {e}", "FAIL")
         return None
 
 def check_storage(config):
     """Audits the D: drive and critical memory files."""
-    storage_root = Path(config["strategic_edition"].get("storage_root", "D:/Nanobot_Storage"))
+    storage_root = Path(config.strategic_edition.storage_root)
     
     if not storage_root.exists():
         print_status("Storage", f"Root missing at {storage_root}. D: drive disconnected?", "FAIL")
@@ -81,7 +78,7 @@ def check_storage(config):
         storage_root / "workspace" / "memory" / "chroma" / "chroma.sqlite3",
         storage_root / "BACKUP_MANIFEST.md",
         creds_root / "secrets" / "token.json",
-        creds_root / "google_surgical" / "credentials" / f"{config['strategic_edition']['user_email']}.json"
+        creds_root / "google_surgical" / "credentials" / f"{config.strategic_edition.user_email}.json"
     ]
     for p in critical:
         if p.exists():
@@ -95,11 +92,11 @@ def check_storage(config):
 
 def check_mcp_tools(config):
     """Verifies all MCP server commands are valid and executable."""
-    mcp_servers = config.get("tools", {}).get("mcpServers", {})
+    mcp_servers = config.tools.mcp_servers
     all_ok = True
     
     for name, srv in mcp_servers.items():
-        cmd = srv.get("command")
+        cmd = srv.command
         if not cmd: continue
         
         # Check for executable existence
@@ -113,7 +110,7 @@ def check_mcp_tools(config):
 
 def check_batch_jobs(config):
     """Validates modular job metadata blocks."""
-    storage_root = Path(config["strategic_edition"].get("storage_root", "D:/Nanobot_Storage"))
+    storage_root = Path(config.strategic_edition.storage_root)
     items_dir = storage_root / "workspace" / "cron" / "items"
     
     if not items_dir.exists():

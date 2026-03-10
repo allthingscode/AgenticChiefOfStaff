@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.registry import ToolRegistry
 from strategery.patches.subagent import SubagentPatch
+from strategery.logic.config_logic import validate_strategic_config
 
 @pytest.fixture
 def mock_specialist_config():
@@ -28,15 +29,15 @@ async def test_subagent_manager_integrated_routing(mock_context):
     Integrated test to verify that SubagentManager temporarily switches models
     and uses the StrategicSubagentRegistry during execution.
     """
-    # Override default context config for this test
-    mock_context.config = {
+    # Override default context config for this test via typed validation
+    mock_context.config = validate_strategic_config({
         "agents": {
             "specialists": {
                 "architect": {"model": "special-architect-model"},
                 "researcher": {"model": "special-research-model"}
             }
         }
-    }
+    })
 
     # 1. Apply the patch
     patch_inst = SubagentPatch()
@@ -85,14 +86,14 @@ async def test_architect_routing_uses_pro_model(mock_context):
     from nanobot.agent.subagent import SubagentManager
     from nanobot.agent.tools.registry import ToolRegistry
     
-    mock_context.config = {
+    mock_context.config = validate_strategic_config({
         "agents": {
             "specialists": {
                 "architect": {"model": "special-architect-model"},
                 "researcher": {"model": "special-research-model"}
             }
         }
-    }
+    })
 
     # Setup mock SubagentManager
     mock_mgr = MagicMock(spec=SubagentManager)

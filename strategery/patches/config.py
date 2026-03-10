@@ -3,7 +3,11 @@ import os
 import builtins
 from pathlib import Path
 from functools import wraps
+from typing import List, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 def strategic_migrate_config(data, config_data_capture=None):
     """
@@ -118,7 +122,12 @@ class ConfigPatch(BasePatch):
                 
                 def _patched_migrate(data):
                     data = nanobot.config.loader._orig_migrate_strategic(data)
-                    return strategic_migrate_config(data, context.config)
+                    # For legacy compatibility, we dump the StrategicConfig back to a dict for the stripper
+                    if not isinstance(context.config, dict):
+                        config_dict = context.config.model_dump(by_alias=True)
+                    else:
+                        config_dict = context.config
+                    return strategic_migrate_config(data, config_dict)
                 
                 nanobot.config.loader._migrate_config = _patched_migrate
                 result.affected_symbols.append("nanobot.config.loader._migrate_config")

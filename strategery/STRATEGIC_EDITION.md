@@ -40,6 +40,7 @@ Optimized for stable long-term operation on Windows environments:
 
 | Feature | Status | Impact |
 |---|---|---|
+| **Configuration Schema (F-016)** | **LIVE** | **Stability:** Strict Pydantic-based validation for all strategic configuration keys. |
 | **Symbol Guard (F-025)** | **LIVE** | **Resilience:** Proactive detection of upstream incompatibilities before monkey-patching. |
 | **Model Escalation** | **LIVE** | **Stability:** Automatic tier-jumping (Lite -> Pro) to bypass safety filter roadblocks. |
 | **Modular Nightly Batch** | **COMPLETED** | **Master Orchestrator:** Single master task scheduled for 3 AM handles all health, extraction, and reporting. |

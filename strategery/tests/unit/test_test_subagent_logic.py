@@ -1,5 +1,6 @@
 import pytest
 from strategery.logic import subagent_logic
+from strategery.logic.config_logic import validate_strategic_config
 
 def test_is_tool_blocked_main_agent():
     assert subagent_logic.is_tool_blocked("google", False) is True
@@ -17,17 +18,17 @@ def test_detect_mandate_bypass():
     assert subagent_logic.detect_mandate_bypass("ls -la") is True 
 
 def test_get_specialist_model_researcher():
-    config = {"agents": {"specialists": {"researcher": {"model": "flash-lite"}}}}
+    config = validate_strategic_config({"agents": {"specialists": {"researcher": {"model": "flash-lite"}}}})
     res = subagent_logic.get_specialist_model("researcher", config, "default")
     assert res == "flash-lite"
 
 def test_get_specialist_model_architect():
-    config = {"agents": {"specialists": {"architect": {"model": "pro-v1"}}}}
+    config = validate_strategic_config({"agents": {"specialists": {"architect": {"model": "pro-v1"}}}})
     res = subagent_logic.get_specialist_model("architect", config, "default")
     assert res == "pro-v1"
 
 def test_get_specialist_model_fallback():
-    config = {}
+    config = validate_strategic_config({})
     res = subagent_logic.get_specialist_model("invalid", config, "default")
     assert res == "default"
 

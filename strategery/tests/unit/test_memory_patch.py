@@ -4,16 +4,18 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from pathlib import Path
 from strategery.patches.memory import MemoryPatch
 from strategery.logic import memory_logic
+from strategery.logic.config_logic import validate_strategic_config
 
 @pytest.mark.asyncio
 async def test_rag_skips_short_generic():
     """Verify RAG is NOT triggered for short or generic messages."""
     patcher = MemoryPatch()
     
-    config_data = {
+    raw_config = {
         "strategic_edition": {"memory_rag": {"enabled": True}},
         "agents": {"defaults": {"contextPruning": {"enabled": False}, "compaction": {"memoryFlush": {"enabled": False}}}}
     }
+    config = validate_strategic_config(raw_config)
     
     # Mock dependencies for AgentLoop
     mock_bus = MagicMock()
@@ -40,8 +42,8 @@ async def test_rag_skips_short_generic():
         loop.sessions = MagicMock()
         loop.sessions.get_or_create.return_value = mock_session
         
-        # Apply the patch
-        patcher._patch_context_pruning(config_data)
+        # Apply the patch with typed config
+        patcher._patch_context_pruning(config)
         
         # IMPORTANT: Mock the ORIGINAL process_message so it doesn't run the real logic
         loop._orig_process_message_strategic = AsyncMock()
@@ -65,10 +67,11 @@ async def test_rag_skips_short_generic():
 async def test_rag_filters_junk_summaries():
     """Verify 'No summary available' is filtered out of RAG results."""
     patcher = MemoryPatch()
-    config_data = {
+    raw_config = {
         "strategic_edition": {"memory_rag": {"enabled": True}},
         "agents": {"defaults": {"contextPruning": {"enabled": False}, "compaction": {"memoryFlush": {"enabled": False}}}}
     }
+    config = validate_strategic_config(raw_config)
     
     mock_bus = MagicMock()
     mock_provider = MagicMock()
@@ -88,7 +91,8 @@ async def test_rag_filters_junk_summaries():
     loop.sessions = MagicMock()
     loop.sessions.get_or_create.return_value = mock_session
     
-    patcher._patch_context_pruning(config_data)
+    # Apply with typed config
+    patcher._patch_context_pruning(config)
     
     # Mock the ORIGINAL process_message
     loop._orig_process_message_strategic = AsyncMock()

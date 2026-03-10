@@ -24,6 +24,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from strategery.patches.base import PatchContext
 from strategery.tests.mocks.mock_config import get_mock_config_json
+from strategery.logic.config_logic import validate_strategic_config
 
 @pytest.fixture
 def mock_context(tmp_path):
@@ -32,8 +33,12 @@ def mock_context(tmp_path):
     storage_root.mkdir()
     (storage_root / "workspace").mkdir()
     
+    # Validate the mock JSON against the Strategic Schema
+    raw_config = json.loads(get_mock_config_json())
+    config = validate_strategic_config(raw_config)
+    
     return PatchContext(
-        config=json.loads(get_mock_config_json()),
+        config=config,
         storage_root=storage_root,
         user_email="test@user.com",
         app_root=Path(__file__).parent.parent.parent

@@ -58,9 +58,8 @@ async def test_spawn_tool_parameter_injection(mock_context):
 @pytest.mark.asyncio
 async def test_subagent_manager_model_selection(mock_context):
     """Verify that SubagentManager correctly selects the model based on the specialist parameter."""
-    # Setup specific model config in context
-    mock_context.config.setdefault("agents", {}).setdefault("specialists", {})
-    mock_context.config["agents"]["specialists"] = {
+    # Setup specific model config in context via typed access
+    mock_context.config.agents.specialists = {
         "researcher": {"model": "researcher-model"},
         "architect": {"model": "architect-model"}
     }

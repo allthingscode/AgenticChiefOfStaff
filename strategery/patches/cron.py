@@ -1,5 +1,9 @@
+from typing import List, TYPE_CHECKING
 from nanobot.cron.service import CronService
 from .base import BasePatch, PatchResult, PatchContext
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import cron_logic
 

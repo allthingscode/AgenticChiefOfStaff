@@ -5,8 +5,11 @@ import json
 import uuid
 from pathlib import Path
 from contextlib import AsyncExitStack
-from typing import List
+from typing import List, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 from strategery.strategic_logger import strategic_logger
 from strategery.logic import subagent_logic
 
@@ -160,7 +163,10 @@ class SubagentPatch(BasePatch):
                             if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
                                 tools.register(tool)
                     try:
-                        pydantic_cfg = strategic_migrate_config(json.loads(json.dumps(context.config)))
+                        # Use model_dump to get a clean dictionary for core Nanobot validation
+                        # We still run it through migrate to be extra safe with core expectations
+                        raw_data = context.config.model_dump(by_alias=True)
+                        pydantic_cfg = strategic_migrate_config(raw_data)
                         validated_config = Config.model_validate(pydantic_cfg)
                         if validated_config.tools.mcp_servers:
                             await strategic_mcp_manager.get_tools_for_subagent(validated_config.tools.mcp_servers, tools, task_id)
@@ -286,12 +292,14 @@ class SubagentPatch(BasePatch):
                 
             ToolRegistry.execute = _patched_tool_execute
 
-    def _patch_heartbeat(self, config_data):
+    def _patch_heartbeat(self, config: 'StrategicConfig'):
         from nanobot.heartbeat.service import HeartbeatService
         if not hasattr(HeartbeatService, "_orig_hb_init_strategic"):
             HeartbeatService._orig_hb_init_strategic = HeartbeatService.__init__
             def _patched_hb_init(self, *args, **kwargs):
-                model = config_data.get("agents", {}).get("heartbeat", {}).get("model")
+                model = None
+                if config.agents.heartbeat:
+                    model = config.agents.heartbeat.get("model")
                 if model:
                     if len(args) >= 2: args = list(args); args[1] = model
                     else: kwargs["model"] = model

@@ -150,7 +150,11 @@ async def strategic_telegram_send(channel, msg):
                 if thread_id: kwargs["message_thread_id"] = int(thread_id)
                 await channel._app.bot.send_message(**kwargs)
 
+from typing import List, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
@@ -179,10 +183,10 @@ class TelegramPatch(BasePatch):
             strategic_logger.error(f"Telegram patch error: {e}")
             return result
 
-    def _patch_telegram_channel(self, TelegramChannel, config_data):
+    def _patch_telegram_channel(self, TelegramChannel, config: 'StrategicConfig'):
         from telegram.ext import CommandHandler
 
-        disable_commands = config_data.get("strategic_edition", {}).get("disable_bot_commands", False)
+        disable_commands = config.strategic_edition.disable_bot_commands
         
         if not hasattr(TelegramChannel, "_orig_start_strategic"):
             TelegramChannel._orig_start_strategic = TelegramChannel.start
