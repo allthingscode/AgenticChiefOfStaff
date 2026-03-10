@@ -141,8 +141,8 @@ def write_journal_entry(storage_root: Any, entry: str) -> bool:
         strategic_logger.error(f"Failed to write journal entry: {e}")
         return False
 
-def filter_rag_results(results: List[dict]) -> List[dict]:
-    """Filters out noise and orchestration boilerplate from RAG results."""
+def filter_rag_results(results: List[dict], threshold: float = 0.7) -> List[dict]:
+    """Filters out noise and low-relevance matches from RAG results."""
     valid_results = []
     noise_patterns = [
         "spawned subagent", 
@@ -157,6 +157,12 @@ def filter_rag_results(results: List[dict]) -> List[dict]:
         if not content or "No summary available" in content:
             continue
         
+        # Check semantic distance/score if available from the vector store
+        # In Chroma, results often include a 'distance' or 'score'
+        score = r.get('score', 1.0) # Default to 1.0 if not provided
+        if score < threshold:
+            continue
+
         lower_content = content.lower()
         if any(pattern in lower_content for pattern in noise_patterns):
             continue

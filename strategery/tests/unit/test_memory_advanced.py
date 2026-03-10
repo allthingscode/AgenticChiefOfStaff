@@ -35,13 +35,18 @@ async def test_strategic_inject_rag_context_success():
     mock_vec = AsyncMock()
     vec_store_factory.get_store.return_value = mock_vec
     
+    # Mock config
+    config = MagicMock()
+    config.strategic_edition.memory_rag.max_results = 2
+    config.strategic_edition.memory_rag.threshold = 0.5
+    
     mock_vec.query.return_value = [
-        {"content": "Fact 1"},
-        {"content": "Fact 2"}
+        {"content": "Fact 1", "score": 0.9},
+        {"content": "Fact 2", "score": 0.8}
     ]
     
     content = "What is the project status?"
-    block, count = await strategic_inject_rag_context(content, provider, vec_store_factory)
+    block, count = await strategic_inject_rag_context(content, provider, config, vec_store_factory)
     
     assert count == 2
     assert "### RETRIEVED HISTORICAL CONTEXT" in block
@@ -52,13 +57,14 @@ async def test_strategic_inject_rag_context_success():
 async def test_strategic_inject_rag_context_generic_filter():
     """Verify that RAG is NOT triggered for generic or short messages."""
     provider = MagicMock()
+    config = MagicMock()
     
     # 1. Short message
-    block, count = await strategic_inject_rag_context("Hi", provider)
+    block, count = await strategic_inject_rag_context("Hi", provider, config)
     assert block is None
     
     # 2. Generic message
-    block, count = await strategic_inject_rag_context("Yes, please.", provider)
+    block, count = await strategic_inject_rag_context("Yes, please.", provider, config)
     assert block is None
 
 def test_strategic_write_journal_entry(tmp_path):

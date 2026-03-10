@@ -185,13 +185,16 @@ async def google_drive_upload(local_path: str, filename: str, parent_id: str = N
     from googleapiclient.http import MediaFileUpload
     service = get_service('drive', 'v3')
     
+    # Use backup_folder_id from config as default if not provided
+    target_folder = parent_id or STRATEGIC.get("backup_folder_id")
+    
     file_metadata = {'name': filename}
-    if parent_id:
-        file_metadata['parents'] = [parent_id]
+    if target_folder:
+        file_metadata['parents'] = [target_folder]
         
     media = MediaFileUpload(local_path, resumable=True)
     file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return f"Uploaded successfully to {parent_id or 'Root'}. File ID: {file.get('id')}"
+    return f"Uploaded successfully to {target_folder or 'Root'}. File ID: {file.get('id')}"
 
 @mcp.tool()
 async def google_drive_list(query: str = "name contains 'nanobot_backup_'"):

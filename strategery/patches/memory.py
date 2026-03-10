@@ -9,16 +9,21 @@ from strategery.logic import memory_logic
 if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
 
-async def strategic_inject_rag_context(content, provider, vec_store_factory=VectorStoreFactory):
+async def strategic_inject_rag_context(content, provider, config: 'StrategicConfig', vec_store_factory=VectorStoreFactory):
     """Bridge to semantic retrieval logic."""
     if memory_logic.should_skip_rag(content):
         return None, 0
 
     try:
+        rag_cfg = config.strategic_edition.memory_rag
         vec_store = vec_store_factory.get_store(provider=provider)
-        results = await vec_store.query(content, n_results=3)
+        
+        # Use max_results from config
+        results = await vec_store.query(content, n_results=rag_cfg.max_results)
+        
         if results:
-            valid = memory_logic.filter_rag_results(results)
+            # Pass threshold to the filtering logic
+            valid = memory_logic.filter_rag_results(results, threshold=rag_cfg.threshold)
             return memory_logic.format_rag_block(valid)
     except Exception as re:
         strategic_logger.error(f"Semantic Retrieval error: {re}")
@@ -145,7 +150,7 @@ class MemoryPatch(BasePatch):
 
                 rag_cfg = config.strategic_edition.memory_rag
                 if rag_cfg.enabled and not is_internal:
-                    rag_block, count = await strategic_inject_rag_context(original_content, self.provider)
+                    rag_block, count = await strategic_inject_rag_context(original_content, self.provider, config)
                     if rag_block:
                         msg.content = rag_block + "\n\n" + msg.content
 
