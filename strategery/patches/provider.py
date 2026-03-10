@@ -106,9 +106,12 @@ class ProviderPatch(BasePatch):
 
     def _patch_base_provider(self):
         from nanobot.providers.base import LLMProvider
+        # Mandate (BUG-165): Patch the base class so all instances (LiteLLM, Azure, etc) 
+        # inherit the strategic embed logic by default.
         if not hasattr(LLMProvider, "embed"):
             LLMProvider.embed = strategic_litellm_embed
             LLMProvider.embedding_model = "models/gemini-embedding-001"
+            strategic_logger.debug("Patched LLMProvider base class with strategic embed.")
 
     def _patch_litellm_provider(self):
         from nanobot.providers.litellm_provider import LiteLLMProvider

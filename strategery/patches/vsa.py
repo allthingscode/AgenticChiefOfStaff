@@ -33,6 +33,19 @@ class VectorStoreFactory:
         Returns the active vector store instance.
         If no instance exists, it initializes the default (Hybrid: SQLite + ChromaDB) implementation.
         """
+        # MANDATE (BUG-165): Ensure the provider instance has the strategic 'embed' patch
+        # before we do anything else.
+        if provider and not hasattr(provider, "embed"):
+            try:
+                from nanobot.providers.base import LLMProvider
+                if isinstance(provider, LLMProvider):
+                    from .provider import strategic_litellm_embed
+                    provider.embed = strategic_litellm_embed.__get__(provider, type(provider))
+                    provider.embedding_model = "models/gemini-embedding-001"
+                    strategic_logger.debug(f"VectorStoreFactory: Late-patched provider ({type(provider).__name__}) with strategic embed.")
+            except Exception as e:
+                strategic_logger.error(f"VectorStoreFactory: Failed to late-patch provider: {e}")
+
         if cls._instance is None:
             from .hybrid_store import StrategicHybridStore
             from .config import load_strategic_context
@@ -52,17 +65,6 @@ class VectorStoreFactory:
 
         # MANDATE: If a provider is passed to get_store, ensure the instance is using it.
         if provider:
-            # DEFENSIVE (BUG-030): Ensure provider has 'embed' before injecting
-            if not hasattr(provider, "embed"):
-                try:
-                    from nanobot.providers.base import LLMProvider
-                    if isinstance(provider, LLMProvider):
-                        from .provider import strategic_litellm_embed
-                        provider.embed = strategic_litellm_embed.__get__(provider, type(provider))
-                        strategic_logger.debug(f"VectorStoreFactory: Late-patched provider ({type(provider).__name__}) with embed.")
-                except Exception as e:
-                    strategic_logger.error(f"VectorStoreFactory: Failed to late-patch provider: {e}")
-
             if hasattr(cls._instance, "provider"):
                 # Track provider injection to diagnose BUG-022 / BUG-030
                 old_p = getattr(cls._instance, "provider", None)

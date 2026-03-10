@@ -211,9 +211,12 @@ class SubagentPatch(BasePatch):
 
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
             final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
-            VectorStoreFactory.get_store(provider=self.provider)
             try:
                 async with AsyncExitStack() as stack:
+                    # Mandate (BUG-165): Initialize the store inside the task context
+                    # to ensure the provider is correctly patched and available.
+                    VectorStoreFactory.get_store(provider=self.provider)
+                    
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
                     tools._task_id = task_id # For telemetry identification
