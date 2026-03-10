@@ -135,25 +135,27 @@ class SubagentPatch(BasePatch):
                 # Mandate (BUG-150 / BUG-149 / BUG-152 / BUG-155): Force PowerShell on Windows and ensure UTF-8
                 if os.name == "nt":
                     try:
-                        # Mandate (BUG-155): Force UTF-8 Output Encoding for BOTH the session and subprocess
-                        encoding_fix = '$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+                        # Mandate (BUG-155): Force UTF-8 Output Encoding via Deep Pipe fix
+                        # We use 'powershell.exe' directly via exec (not shell) to bypass cmd.exe
+                        # and prepend chcp 65001 to ensure the session itself is UTF-8.
+                        encoding_fix = 'chcp 65001 >$null; $OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
                         
-                        if "powershell" in command.lower():
-                            # Already using powershell, inject encoding and wrap to ensure it sticks
-                            escaped_cmd = command.replace('"', '\"')
-                            full_cmd = f'powershell.exe -NoProfile -NonInteractive -Command "{encoding_fix}{escaped_cmd}"'
-                        else:
-                            # Wrap in PowerShell and force UTF-8
-                            escaped_cmd = command.replace('"', '\"')
-                            full_cmd = f'powershell.exe -NoProfile -NonInteractive -Command "{encoding_fix}{escaped_cmd}"'
+                        # Prepare the full command string for PowerShell
+                        escaped_cmd = command.replace('"', '\"')
+                        ps_command = f"{encoding_fix}{escaped_cmd}"
                         
-                        # Mandate (BUG-156): Ensure PYTHONPATH includes app_root
+                        # Mandate (BUG-156 / BUG-155): Ensure environment variables are set
                         env = os.environ.copy()
                         env["PYTHONPATH"] = str(context.app_root)
                         env["PYTHONIOENCODING"] = "utf-8"
                         
-                        proc = await asyncio.create_subprocess_shell(
-                            full_cmd,
+                        # Execute directly via powershell.exe to avoid cmd.exe interpolation
+                        proc = await asyncio.create_subprocess_exec(
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-Command",
+                            ps_command,
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE,
                             cwd=effective_cwd,
@@ -161,9 +163,10 @@ class SubagentPatch(BasePatch):
                         )
                         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self_tool.timeout)
                         
-                        # Mandate (BUG-149): Explicitly decode as UTF-8
-                        out_str = stdout.decode("utf-8", errors="replace").strip()
-                        err_str = stderr.decode("utf-8", errors="replace").strip()
+                        # Mandate (BUG-149 / BUG-155): Decode as UTF-8 with BOM awareness and fallback
+                        # Use 'utf-8-sig' to handle potential PowerShell BOMs, and 'replace' for safety.
+                        out_str = stdout.decode("utf-8-sig", errors="replace").strip()
+                        err_str = stderr.decode("utf-8-sig", errors="replace").strip()
                         
                         if proc.returncode != 0:
                             return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
