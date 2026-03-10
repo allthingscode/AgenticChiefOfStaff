@@ -1,5 +1,8 @@
 import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 # --- Constants & Patterns ---
 
@@ -88,12 +91,13 @@ def check_exec_loop(registry: Any, command: str) -> Optional[str]:
     
     return None
 
-def get_specialist_model(specialist_type: str, config_data: Dict[str, Any], default_model: str) -> str:
+def get_specialist_model(specialist_type: str, config: 'StrategicConfig', default_model: str) -> str:
     """Resolves the correct model for a given specialist type from config."""
     # Ensure specialist is valid, default to researcher
     s_type = specialist_type if specialist_type in ["researcher", "architect"] else "researcher"
     
-    specialists_cfg = config_data.get("agents", {}).get("specialists", {})
+    # Typed access to specialists config
+    specialists_cfg = config.agents.specialists
     selected_model = specialists_cfg.get(s_type, {}).get("model")
     
     return selected_model or default_model
