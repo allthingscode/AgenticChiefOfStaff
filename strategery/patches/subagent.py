@@ -397,6 +397,10 @@ class SubagentPatch(BasePatch):
                 if "google-surgical" in str(name).lower() and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                 
+                if "email-reporter" in str(name).lower() and isinstance(args, dict):
+                    # Mandate: Force delivery to the configured user email
+                    args["to"] = user_email
+                
                 result = await self._orig_execute_strategic(name, args)
                 subagent_logic.log_tool_result_general(self, name, result)
                 return result
