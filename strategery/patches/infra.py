@@ -128,6 +128,9 @@ class InfraPatch(BasePatch):
             self._patch_filesystem_tools()
             result.affected_symbols.append("nanobot.agent.tools.filesystem.ReadFileTool.execute")
             
+            self._patch_listdir_tool()
+            result.affected_symbols.append("nanobot.agent.tools.filesystem.ListDirTool.execute")
+            
             return result
         except Exception as e:
             import traceback
@@ -136,6 +139,44 @@ class InfraPatch(BasePatch):
             result.traceback = traceback.format_exc()
             strategic_logger.error(f"Infrastructure patch error: {e}")
             return result
+
+    def _patch_listdir_tool(self):
+        """Patches ListDirTool to handle Windows-specific junction points and restricted items (BUG-179)."""
+        from nanobot.agent.tools.filesystem import ListDirTool, _resolve_path
+        
+        if not hasattr(ListDirTool, "_orig_execute_strategic"):
+            ListDirTool._orig_execute_strategic = ListDirTool.execute
+            
+            async def _patched_execute(self, path: str, **kwargs: Any) -> str:
+                try:
+                    dir_path = _resolve_path(path, self._workspace, self._allowed_dir)
+                    if not dir_path.exists():
+                        return f"Error: Directory not found: {path}"
+                    if not dir_path.is_dir():
+                        return f"Error: Not a directory: {path}"
+
+                    items = []
+                    # BUG-179: Iterate individually to skip restricted items (junctions)
+                    try:
+                        for item in sorted(dir_path.iterdir()):
+                            try:
+                                prefix = "📁 " if item.is_dir() else "📄 "
+                                items.append(f"{prefix}{item.name}")
+                            except (PermissionError, OSError):
+                                # Skip restricted items without failing the entire list
+                                continue
+                    except (PermissionError, OSError) as e:
+                        return f"Error accessing directory contents: {str(e)}"
+
+                    if not items:
+                        return f"Directory {path} is empty (or all items are restricted)"
+
+                    return "\n".join(items)
+                except Exception as e:
+                    return f"Error listing directory strategically: {str(e)}"
+
+            ListDirTool.execute = _patched_execute
+            strategic_logger.debug("Patched ListDirTool for robust Windows directory listing (BUG-179).")
 
     def _patch_filesystem_tools(self):
         """Patches ReadFileTool to handle Windows-specific log encoding (BUG-133)."""

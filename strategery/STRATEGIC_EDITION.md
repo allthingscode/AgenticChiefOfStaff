@@ -47,6 +47,10 @@ Optimized for stable long-term operation on Windows environments:
 | **The Thin Patch Mandate** | **COMPLETED** | **Stability:** Decoupled strategic logic from runtime shims for 100% testability and zero-risk refactoring. |
 | **High-Fidelity Telemetry** | **LIVE** | **Observability:** Real-time visibility into thoughts, tool arguments, and result snippets across all agents. |
 | **Environment Hardening** | **LIVE** | **Stability:** Absolute venv enforcement, forced UTF-8 shells, and nested call resilience for specialists. |
+| **Path Processing Resilience** | **LIVE** | **Resilience:** Hardened command-line path processing and synchronized specialist mandates for absolute behavioral compliance. |
+| **Surgical Shell Orchestration** | **LIVE** | **Resilience:** Corrected PowerShell quote escaping and implemented shell nesting detection to prevent path mangling (BUG-174/175). |
+| **Robust Specialist Navigation** | **LIVE** | **Stability:** Hardened directory listing for Windows roots and eliminated log-audit hallucinations using strict mandates (BUG-178/179/180). |
+| **Automated Strategic Discovery** | **LIVE** | **Efficiency:** Injected system metadata manifest that automatically provides specialists with log paths and diagnostic procedures (BUG-181/182). |
 | **Finality Mandate** | **LIVE** | **Reliability:** Enforced task completion standards that strictly forbid 'plans' from being reported as results. |
 | **NanoGraph Phase 2** | Research | **Intelligence:** Multi-hop reasoning and Personalized PageRank (HippoRAG) for deterministic retrieval. |
 | **Readability Reports** | Planning | **UX:** High-readability HTML email templates for 3 AM briefings. |

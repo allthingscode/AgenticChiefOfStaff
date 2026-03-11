@@ -6,7 +6,8 @@ import uuid
 import os
 from pathlib import Path
 from contextlib import AsyncExitStack
-from typing import List, Any, TYPE_CHECKING
+from functools import wraps
+from typing import List, Any, TYPE_CHECKING, Callable
 from .base import BasePatch, PatchResult, PatchContext
 
 if TYPE_CHECKING:
@@ -15,7 +16,7 @@ from strategery.strategic_logger import strategic_logger
 from strategery.logic import subagent_logic
 
 class SubagentPatch(BasePatch):
-    """Thin Bridge for Specialist Economy orchestration and tool security."""
+    """Bridge for Specialist Economy orchestration and tool security."""
     
     @property
     def name(self) -> str:
@@ -35,29 +36,28 @@ class SubagentPatch(BasePatch):
 
     def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
+        
         try:
+            # Explicitly apply each sub-patch to ensure stability and correct 'self' binding
             self._patch_spawn_tool()
-            result.affected_symbols.append("nanobot.agent.tools.spawn.SpawnTool")
-            
             self._patch_subagent_manager(context)
-            result.affected_symbols.append("nanobot.agent.subagent.SubagentManager")
-            
             self._patch_tool_registry(context.user_email)
-            result.affected_symbols.append("nanobot.agent.tools.registry.ToolRegistry")
-            
             self._patch_exec_tool(context)
-            result.affected_symbols.append("nanobot.agent.tools.shell.ExecTool")
-
             self._patch_read_file_tool()
-            result.affected_symbols.append("nanobot.agent.tools.filesystem.ReadFileTool")
-            
             self._patch_heartbeat(context.config)
-            result.affected_symbols.append("nanobot.heartbeat.service.HeartbeatService")
-            
             self._patch_context_builder()
-            result.affected_symbols.append("nanobot.agent.context.ContextBuilder.build_messages")
             
-            strategic_logger.info("SubagentPatch: All sub-patches applied successfully.")
+            result.affected_symbols.extend([
+                "nanobot.agent.tools.spawn.SpawnTool",
+                "nanobot.agent.subagent.SubagentManager",
+                "nanobot.agent.tools.registry.ToolRegistry",
+                "nanobot.agent.tools.shell.ExecTool",
+                "nanobot.agent.tools.filesystem.ReadFileTool",
+                "nanobot.heartbeat.service.HeartbeatService",
+                "nanobot.agent.context.ContextBuilder.build_messages"
+            ])
+            
+            strategic_logger.info("SubagentPatch: Hardened orchestration bridge applied.")
             return result
         except Exception as e:
             import traceback
@@ -82,6 +82,7 @@ class SubagentPatch(BasePatch):
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
                         if (isinstance(attr, type) and issubclass(attr, Tool) and attr is not Tool):
+                            # Ensure we use the original register if available to avoid infinite recursion
                             reg_func = getattr(registry, "_orig_register_strategic", registry.register)
                             reg_func(attr())
             except Exception as e:
@@ -89,6 +90,8 @@ class SubagentPatch(BasePatch):
 
     def _patch_spawn_tool(self):
         from nanobot.agent.tools.spawn import SpawnTool
+        
+        # Patch parameters
         if not hasattr(SpawnTool, "_orig_parameters_strategic"):
             SpawnTool._orig_parameters_strategic = SpawnTool.parameters
             @property
@@ -108,107 +111,85 @@ class SubagentPatch(BasePatch):
                 }
             SpawnTool.parameters = _patched_parameters
 
+        # Patch execute
         if not hasattr(SpawnTool, "_orig_execute_strategic"):
             SpawnTool._orig_execute_strategic = SpawnTool.execute
+            @wraps(SpawnTool._orig_execute_strategic)
             async def _patched_execute(self, task, label=None, specialist="researcher", **kwargs):
-                return await self._manager.spawn(task=task, label=label, origin_channel=self._origin_channel,
-                    origin_chat_id=self._origin_chat_id, session_key=self._session_key, specialist=specialist,
-                    host_tools=getattr(self, "_registry", None))
+                return await self._manager.spawn(
+                    task=task, label=label, origin_channel=self._origin_channel,
+                    origin_chat_id=self._origin_chat_id, session_key=self._session_key, 
+                    specialist=specialist, host_tools=getattr(self, "_registry", None)
+                )
             SpawnTool.execute = _patched_execute
 
     def _patch_exec_tool(self, context: PatchContext):
         from nanobot.agent.tools.shell import ExecTool
-        # Mandate (BUG-141 / BUG-150 / BUG-156 / BUG-155 / BUG-161): Harden ExecTool for subagents
+        
         if not hasattr(ExecTool, "_orig_execute_strategic"):
             ExecTool._orig_execute_strategic = ExecTool.execute
-            async def _patched_exec_execute(self_tool, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
-                registry = getattr(self_tool, "_registry", None)
+            @wraps(ExecTool._orig_execute_strategic)
+            async def _patched_exec_execute(self, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
+                registry = getattr(self, "_registry", None)
                 is_specialist = getattr(registry, "_is_strategic_specialist", False)
-                
-                # Mandate (BUG-156): Use project root if not specified to avoid ModuleNotFoundError
-                effective_cwd = working_dir or self_tool.working_dir or str(context.app_root)
+                effective_cwd = working_dir or self.working_dir or str(context.app_root)
                 
                 if is_specialist:
                     command = subagent_logic.harden_subagent_command(command)
                 
-                # Mandate (BUG-150 / BUG-149 / BUG-152 / BUG-155): Force PowerShell on Windows and ensure UTF-8
                 if os.name == "nt":
                     try:
-                        # Mandate (BUG-155 / BUG-161): Force UTF-8 Output Encoding via native PowerShell only
                         encoding_fix = '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
                         
-                        # Prepare the full command string for PowerShell
-                        escaped_cmd = command.replace('"', '\"')
-                        ps_command = f"{encoding_fix}{escaped_cmd}"
+                        # BUG-175: Detect if the command is already wrapped in powershell
+                        if command.lower().strip().startswith("powershell "):
+                            ps_command = f"{encoding_fix}{command}"
+                        else:
+                            # BUG-174: PowerShell uses double-double-quotes ("") for escaping inside -Command strings, 
+                            # NOT backslash-quotes (\"). Backslashes are interpreted literally in paths.
+                            ps_command = f"{encoding_fix}{command.replace('\"', '\"\"')}"
                         
-                        # Mandate (BUG-156 / BUG-155): Ensure environment variables are set
                         env = os.environ.copy()
                         env["PYTHONPATH"] = str(context.app_root)
                         env["PYTHONIOENCODING"] = "utf-8"
                         
-                        # Execute directly via powershell.exe to avoid cmd.exe interpolation
                         proc = await asyncio.create_subprocess_exec(
-                            "powershell.exe",
-                            "-NoProfile",
-                            "-NonInteractive",
-                            "-Command",
-                            ps_command,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
-                            cwd=effective_cwd,
-                            env=env
+                            "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_command,
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                            cwd=effective_cwd, env=env
                         )
-                        
-                        # Mandate (BUG-155): Small delay to allow pipe buffers to stabilize
-                        # and prevent mangled initial bytes (ðxa¬)
                         await asyncio.sleep(0.1)
+                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
                         
-                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self_tool.timeout)
-                        
-                        # Mandate (BUG-149 / BUG-155): Decode as UTF-8 with BOM awareness
-                        # Use 'utf-8-sig' to handle potential PowerShell BOMs, and 'replace' for safety.
                         out_str = stdout.decode("utf-8-sig", errors="replace").strip()
                         err_str = stderr.decode("utf-8-sig", errors="replace").strip()
-                        
-                        # Mandate (BUG-155): Aggressively strip leading non-printable clutter
-                        # This removes 'ðxa¬' and similar artifacts from the start of the buffer.
                         out_str = re.sub(r"^[^\x20-\x7E\s]+", "", out_str).strip()
                         err_str = re.sub(r"^[^\x20-\x7E\s]+", "", err_str).strip()
                         
                         if proc.returncode != 0:
                             return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
                         return out_str or err_str
-                    except asyncio.TimeoutError:
-                        return f"Error: Command timed out after {self_tool.timeout} seconds"
                     except Exception as e:
                         return f"Error: {str(e)}"
                             
-                return await self_tool._orig_execute_strategic(command, working_dir, **kwargs)
+                return await self._orig_execute_strategic(command, working_dir, **kwargs)
             ExecTool.execute = _patched_exec_execute
 
     def _patch_read_file_tool(self):
         from nanobot.agent.tools.filesystem import ReadFileTool
-        # Mandate (BUG-164): Enforce context efficiency for specialists
+        
         if not hasattr(ReadFileTool, "_orig_execute_strategic"):
             ReadFileTool._orig_execute_strategic = ReadFileTool.execute
-            async def _patched_read_execute(self_tool, path: str, **kwargs: Any) -> str:
-                registry = getattr(self_tool, "_registry", None)
-                is_specialist = getattr(registry, "_is_strategic_specialist", False)
-                
-                if is_specialist:
+            @wraps(ReadFileTool._orig_execute_strategic)
+            async def _patched_read_execute(self, path: str, **kwargs: Any) -> str:
+                registry = getattr(self, "_registry", None)
+                if getattr(registry, "_is_strategic_specialist", False):
                     file_path = Path(path)
-                    if file_path.exists() and file_path.is_file():
-                        size_kb = file_path.stat().st_size / 1024
-                        if size_kb > 10: # 10KB Limit
-                            return (
-                                f"ERROR: File '{path}' is too large ({size_kb:.1f}KB) for direct reading. "
+                    if file_path.exists() and file_path.is_file() and (file_path.stat().st_size / 1024) > 10:
+                        return (f"ERROR: File '{path}' is too large for direct reading. "
                                 "Specialist Mandate (BUG-164) requires surgical tools for efficiency. "
-                                "Use 'rg' (ripgrep) to search for specific content, or 'exec' with "
-                                "'Get-Content -Tail 100' to inspect recent entries. Direct reading of "
-                                "large files wastes context tokens and causes amnesia."
-                            )
-                
-                return await self_tool._orig_execute_strategic(path, **kwargs)
+                                "Use 'rg' or 'Get-Content -Tail'.")
+                return await self._orig_execute_strategic(path, **kwargs)
             ReadFileTool.execute = _patched_read_execute
 
     def _patch_subagent_manager(self, context: PatchContext):
@@ -223,134 +204,94 @@ class SubagentPatch(BasePatch):
 
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
-            def _patched_build_subagent_prompt(self):
-                base = self._orig_build_subagent_prompt_strategic()
-                return subagent_logic.build_specialist_instructions(base, "researcher")
-            SubagentManager._build_subagent_prompt = _patched_build_subagent_prompt
+            @wraps(SubagentManager._orig_build_subagent_prompt_strategic)
+            def _patched_build_prompt(self):
+                return subagent_logic.build_specialist_instructions(self._orig_build_subagent_prompt_strategic(), "researcher")
+            SubagentManager._build_subagent_prompt = _patched_build_prompt
 
         if not hasattr(SubagentManager, "_orig_spawn_strategic"):
             SubagentManager._orig_spawn_strategic = SubagentManager.spawn
+            @wraps(SubagentManager._orig_spawn_strategic)
             async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher", host_tools=None):
                 task_id = str(uuid.uuid4())[:8]
                 display_label = label or task[:100] + ("..." if len(task) > 100 else "")
                 origin = {"channel": origin_channel, "chat_id": subagent_logic.clean_chat_id(origin_chat_id)}
                 
-                if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
-                    from datetime import datetime
-                    self._loop._strategic_active_subagents[task_id] = {'start_time': datetime.now(), 'task': task}
-
                 bg_task = asyncio.create_task(self._run_subagent(task_id, task, display_label, origin, specialist, host_tools))
                 self._running_tasks[task_id] = bg_task
                 if session_key: self._session_tasks.setdefault(session_key, set()).add(task_id)
-                def _cleanup(_: asyncio.Task) -> None:
-                    self._running_tasks.pop(task_id, None)
-                    if session_key and (ids := self._session_tasks.get(session_key)):
-                        ids.discard(task_id)
-                        if not ids: del self._session_tasks[session_key]
-                bg_task.add_done_callback(_cleanup)
+                bg_task.add_done_callback(lambda _: self._running_tasks.pop(task_id, None))
                 return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
             SubagentManager.spawn = _patched_spawn
 
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
             final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
             try:
-                async with AsyncExitStack() as stack:
-                    # Mandate (BUG-165): Initialize the store inside the task context
+                async with AsyncExitStack():
                     VectorStoreFactory.get_store(provider=self.provider)
-                    
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
-                    tools._task_id = task_id # For telemetry identification
+                    tools._task_id = task_id
                     
-                    # Mandate (BUG-142): Increase timeout to 300s for specialists
-                    specialist_timeout = max(self.exec_config.timeout, 300)
-                    tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=specialist_timeout))
+                    tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=max(self.exec_config.timeout, 300)))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
+                    
                     if host_tools and hasattr(host_tools, "_tools"):
                         for name, tool in host_tools._tools.items():
                             if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
                                 tools.register(tool)
+                    
                     try:
-                        raw_data = context.config.model_dump(by_alias=True)
-                        pydantic_cfg = strategic_migrate_config(raw_data)
+                        pydantic_cfg = strategic_migrate_config(context.config.model_dump(by_alias=True))
                         validated_config = Config.model_validate(pydantic_cfg)
                         if validated_config.tools.mcp_servers:
                             await strategic_mcp_manager.get_tools_for_subagent(validated_config.tools.mcp_servers, tools, task_id)
-                    except Exception as mcp_err: strategic_logger.error(f"MCP setup failed: {mcp_err}")
-                    SubagentPatch()._load_strategic_tools(tools)
+                    except: pass
                     
-                    system_prompt = subagent_logic.build_specialist_instructions(self._orig_build_subagent_prompt_strategic(), specialist)
+                    # Strategic tool loading
+                    p = SubagentPatch()
+                    p._load_strategic_tools(tools)
+                    
+                    system_prompt = subagent_logic.build_specialist_instructions(self._build_subagent_prompt(), specialist)
                     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
                     
-                    max_iterations = 20
-                    iteration = 0
-                    while iteration < max_iterations:
-                        iteration += 1
-                        
-                        response = await self.provider.chat(messages=messages, tools=tools.get_definitions(), model=final_model,
-                            temperature=self.temperature, max_tokens=self.max_tokens, reasoning_effort=self.reasoning_effort)
-                        
-                        subagent_logic.log_subagent_turn(task_id, iteration, response.content)
-                        
-                        if response.has_tool_calls and response.tool_calls:
-                            tool_call_dicts = [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)}} for tc in response.tool_calls]
-                            messages.append({"role": "assistant", "content": response.content or "", "tool_calls": tool_call_dicts})
-                            
-                            for tool_call in response.tool_calls:
-                                result = await tools.execute(tool_call.name, tool_call.arguments)
-                                messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
-                        else:
-                            final_result = response.content or "Error: Empty response."
-                            
-                            if subagent_logic.should_escalate_model(final_result):
-                                escalation_model = subagent_logic.get_escalation_model(final_model)
-                                strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
-                                messages.append({
-                                    "role": "system", 
-                                    "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."
-                                })
-                                escalation_response = await self.provider.chat(
-                                    messages=messages, 
-                                    tools=tools.get_definitions(), 
-                                    model=escalation_model,
-                                    temperature=0.5,
-                                    max_tokens=self.max_tokens, 
-                                    reasoning_effort="medium"
-                                )
-                                final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
-                            
-                            subagent_logic.log_subagent_completion(task_id, final_result)
-                            break
-                    await self._announce_result(task_id, label, task, final_result or "Timeout", origin, "ok" if final_result else "error")
+                    final_result = await subagent_logic.run_orchestration_loop(
+                        task_id, task, messages, self.provider, final_model, tools,
+                        self.temperature, self.max_tokens, self.reasoning_effort
+                    )
+                    
+                    await self._announce_result(task_id, label, task, final_result, origin, "ok")
             except Exception as e:
                 strategic_logger.error(f"Subagent [{task_id}] failed: {e}")
                 await self._announce_result(task_id, label, task, f"Error: {str(e)}", origin, "error")
+        
         SubagentManager._run_subagent = _strategic_run_subagent
 
         if not hasattr(SubagentManager, "_orig_announce_result_strategic"):
             SubagentManager._orig_announce_result_strategic = SubagentManager._announce_result
-            async def _patched_announce_result(self, task_id, label, task, result, origin, status):
-                if hasattr(self, "_loop") and hasattr(self._loop, "_strategic_active_subagents"):
-                    self._loop._strategic_active_subagents.pop(task_id, None)
-
+            @wraps(SubagentManager._orig_announce_result_strategic)
+            async def _patched_announce(self, task_id, label, task, result, origin, status):
                 from nanobot.bus.events import InboundMessage
                 routing_id = f"{origin['channel']}:{subagent_logic.clean_chat_id(origin['chat_id'])}"
                 msg = InboundMessage(channel="system", sender_id="subagent", chat_id=routing_id,
                     content=subagent_logic.format_subagent_report(label, status, task_id, task, result))
                 await self.bus.publish_inbound(msg)
-            SubagentManager._announce_result = _patched_announce_result
+            SubagentManager._announce_result = _patched_announce
 
     def _patch_tool_registry(self, user_email):
         from nanobot.agent.tools.registry import ToolRegistry
+        
         if not hasattr(ToolRegistry, "_orig_register_strategic"):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
-            def _patched_register(registry_self, tool):
-                setattr(tool, "_registry", registry_self)
-                return registry_self._orig_register_strategic(tool)
+            @wraps(ToolRegistry._orig_register_strategic)
+            def _patched_register(self, tool):
+                setattr(tool, "_registry", self)
+                return self._orig_register_strategic(tool)
             ToolRegistry.register = _patched_register
 
         if not hasattr(ToolRegistry, "_orig_get_definitions_strategic"):
             ToolRegistry._orig_get_definitions_strategic = ToolRegistry.get_definitions
+            @wraps(ToolRegistry._orig_get_definitions_strategic)
             def _patched_get_definitions(self):
                 if not hasattr(self, "_strategic_logged_once"):
                     self._strategic_logged_once = True
@@ -364,12 +305,11 @@ class SubagentPatch(BasePatch):
 
         if not hasattr(ToolRegistry, "_orig_execute_strategic"):
             ToolRegistry._orig_execute_strategic = ToolRegistry.execute
+            @wraps(ToolRegistry._orig_execute_strategic)
             async def _patched_tool_execute(self, name, args):
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
-                
                 subagent_logic.log_tool_execution(self, name, args)
                 
-                # Mandate (BUG-169): Circuit Breaker for identical loops
                 loop_err = subagent_logic.check_tool_loop(self, name, args)
                 if loop_err:
                     subagent_logic.log_tool_result_general(self, name, loop_err)
@@ -383,48 +323,44 @@ class SubagentPatch(BasePatch):
                 if str(name).lower() == "spawn" and not is_specialist:
                     result = await self._orig_execute_strategic(name, args)
                     match = re.search(r"\(id: ([a-f0-9]+)\)", result)
-                    task_id = match.group(1) if match else "UNKNOWN"
-                    final_res = subagent_logic.format_spawn_termination_directive(result, task_id)
+                    final_res = subagent_logic.format_spawn_termination_directive(result, match.group(1) if match else "UNKNOWN")
                     subagent_logic.log_tool_result_general(self, name, final_res)
                     return final_res
                     
-                if str(name).lower() == "exec":
-                    if not is_specialist and subagent_logic.detect_mandate_bypass(args.get("command", "")):
-                        res = subagent_logic.get_bypass_message(args.get("command", ""))
-                        subagent_logic.log_tool_result_general(self, name, res)
-                        return res
+                if str(name).lower() == "exec" and not is_specialist and subagent_logic.detect_mandate_bypass(args.get("command", "")):
+                    res = subagent_logic.get_bypass_message(args.get("command", ""))
+                    subagent_logic.log_tool_result_general(self, name, res)
+                    return res
                         
                 if "google-surgical" in str(name).lower() and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                 
                 if "email-reporter" in str(name).lower() and isinstance(args, dict):
-                    # Mandate: Force delivery to the configured user email
                     args["to"] = user_email
                 
                 result = await self._orig_execute_strategic(name, args)
                 subagent_logic.log_tool_result_general(self, name, result)
                 return result
-                
             ToolRegistry.execute = _patched_tool_execute
 
     def _patch_heartbeat(self, config: 'StrategicConfig'):
         from nanobot.heartbeat.service import HeartbeatService
-        if not hasattr(HeartbeatService, "_orig_hb_init_strategic"):
-            HeartbeatService._orig_hb_init_strategic = HeartbeatService.__init__
+        if not hasattr(HeartbeatService, "_orig_init_strategic"):
+            HeartbeatService._orig_init_strategic = HeartbeatService.__init__
+            @wraps(HeartbeatService._orig_init_strategic)
             def _patched_hb_init(self, *args, **kwargs):
-                model = None
-                if config.agents.heartbeat:
-                    model = config.agents.heartbeat.get("model")
+                model = config.agents.heartbeat.get("model") if config.agents.heartbeat else None
                 if model:
                     if len(args) >= 2: args = list(args); args[1] = model
                     else: kwargs["model"] = model
-                self._orig_hb_init_strategic(*args, **kwargs)
+                self._orig_init_strategic(*args, **kwargs)
             HeartbeatService.__init__ = _patched_hb_init
 
     def _patch_context_builder(self):
         from nanobot.agent.context import ContextBuilder
         if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
             ContextBuilder._orig_build_messages_strategic = ContextBuilder.build_messages
+            @wraps(ContextBuilder._orig_build_messages_strategic)
             def _patched_build_messages(self, history, current_message, **kwargs):
                 messages = self._orig_build_messages_strategic(history, current_message, **kwargs)
                 for msg in messages:
