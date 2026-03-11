@@ -71,25 +71,46 @@ def get_bypass_message(command: str) -> str:
         return "CRITICAL ERROR: Access Denied. Bypass pattern detected. CLI bypass of MCP tools is forbidden."
     return "CRITICAL ERROR: Access Denied. Bypass pattern detected. This command violates Strategic Mandates."
 
-def check_exec_loop(registry: Any, command: str) -> Optional[str]:
-    """Detects and blocks repeated shell commands (polling loops)."""
-    if "status" not in command.lower():
-        return None
+class ToolCircuitBreaker:
+    """Tracks tool execution patterns to detect and block infinite loops."""
+    def __init__(self, limit: int = 3):
+        self.limit = limit
+        self.history: List[Tuple[str, str]] = []
+
+    def check(self, name: str, args: Any) -> Optional[str]:
+        # Serialize args for comparison
+        import json
+        arg_str = json.dumps(args, sort_keys=True, ensure_ascii=False) if isinstance(args, dict) else str(args)
+        call = (name, arg_str)
         
-    # Maintain loop count on the registry instance
-    if not hasattr(registry, "_strategic_exec_loop_count"):
-        registry._strategic_exec_loop_count = 0
+        self.history.append(call)
+        
+        # Count consecutive identical calls
+        consecutive_count = 0
+        for h in reversed(self.history):
+            if h == call:
+                consecutive_count += 1
+            else:
+                break
+        
+        if consecutive_count >= self.limit:
+            return (
+                f"CRITICAL: Tool Loop Detected! You have attempted to call '{name}' with the EXACT same arguments "
+                f"{consecutive_count} times in a row. You are stuck in a logic loop. "
+                "You MUST stop and change your strategy, or report the failure to the user. "
+                "Continued identical calls will result in turn termination."
+            )
+        return None
+
+def check_tool_loop(registry: Any, name: str, args: Any) -> Optional[str]:
+    """Circuit breaker for any tool call to prevent repeating identical failures."""
+    if not hasattr(registry, "_strategic_circuit_breaker"):
+        # Specialists get 3 attempts, Main Agent gets 2
+        is_specialist = getattr(registry, "_is_strategic_specialist", False)
+        limit = 3 if is_specialist else 2
+        registry._strategic_circuit_breaker = ToolCircuitBreaker(limit=limit)
     
-    registry._strategic_exec_loop_count += 1
-    
-    # Mandate: Specialists get 5 attempts (for health checks), Main Agent gets 3
-    is_specialist = getattr(registry, "_is_strategic_specialist", False)
-    limit = 5 if is_specialist else 3
-    
-    if registry._strategic_exec_loop_count > limit:
-        return f"CRITICAL: Loop Detected. You have called 'exec status' {registry._strategic_exec_loop_count} times. You MUST stop polling and proceed with other tools or report the final outcome."
-    
-    return None
+    return registry._strategic_circuit_breaker.check(name, args)
 
 def get_specialist_model(specialist_type: str, config: 'StrategicConfig', default_model: str) -> str:
     """Resolves the correct model for a given specialist type from config."""

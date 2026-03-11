@@ -27,6 +27,7 @@ class SubagentPatch(BasePatch):
             "nanobot.agent.tools.spawn.SpawnTool",
             "nanobot.agent.subagent.SubagentManager",
             "nanobot.agent.tools.registry.ToolRegistry",
+            "nanobot.agent.tools.shell.ExecTool",
             "nanobot.heartbeat.service.HeartbeatService",
             "nanobot.agent.context.ContextBuilder.build_messages"
         ]
@@ -42,6 +43,9 @@ class SubagentPatch(BasePatch):
             
             self._patch_tool_registry(context.user_email)
             result.affected_symbols.append("nanobot.agent.tools.registry.ToolRegistry")
+            
+            self._patch_exec_tool(context)
+            result.affected_symbols.append("nanobot.agent.tools.shell.ExecTool")
             
             self._patch_heartbeat(context.config)
             result.affected_symbols.append("nanobot.heartbeat.service.HeartbeatService")
@@ -108,17 +112,9 @@ class SubagentPatch(BasePatch):
                     host_tools=getattr(self, "_registry", None))
             SpawnTool.execute = _patched_execute
 
-    def _patch_subagent_manager(self, context: PatchContext):
-        from nanobot.agent.subagent import SubagentManager
-        from nanobot.agent.tools.registry import ToolRegistry
+    def _patch_exec_tool(self, context: PatchContext):
         from nanobot.agent.tools.shell import ExecTool
-        from nanobot.agent.tools.web import WebFetchTool
-        from nanobot.config.schema import Config
-        from .vsa import VectorStoreFactory
-        from .config import strategic_migrate_config
-        from .infra import strategic_mcp_manager
-
-        # Mandate (BUG-141 / BUG-150 / BUG-156): Harden ExecTool for subagents
+        # Mandate (BUG-141 / BUG-150 / BUG-156 / BUG-155 / BUG-161): Harden ExecTool for subagents
         if not hasattr(ExecTool, "_orig_execute_strategic"):
             ExecTool._orig_execute_strategic = ExecTool.execute
             async def _patched_exec_execute(self_tool, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
@@ -126,7 +122,6 @@ class SubagentPatch(BasePatch):
                 is_specialist = getattr(registry, "_is_strategic_specialist", False)
                 
                 # Mandate (BUG-156): Use project root if not specified to avoid ModuleNotFoundError
-                # Subagents on D: drive cannot find 'strategery' without this.
                 effective_cwd = working_dir or self_tool.working_dir or str(context.app_root)
                 
                 if is_specialist:
@@ -135,10 +130,8 @@ class SubagentPatch(BasePatch):
                 # Mandate (BUG-150 / BUG-149 / BUG-152 / BUG-155): Force PowerShell on Windows and ensure UTF-8
                 if os.name == "nt":
                     try:
-                        # Mandate (BUG-155): Force UTF-8 Output Encoding via Deep Pipe fix
-                        # We use 'powershell.exe' directly via exec (not shell) to bypass cmd.exe
-                        # and prepend chcp 65001 to ensure the session itself is UTF-8.
-                        encoding_fix = 'chcp 65001 >$null; $OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+                        # Mandate (BUG-155 / BUG-161): Force UTF-8 Output Encoding via native PowerShell only
+                        encoding_fix = '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
                         
                         # Prepare the full command string for PowerShell
                         escaped_cmd = command.replace('"', '\"')
@@ -163,8 +156,7 @@ class SubagentPatch(BasePatch):
                         )
                         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self_tool.timeout)
                         
-                        # Mandate (BUG-149 / BUG-155): Decode as UTF-8 with BOM awareness and fallback
-                        # Use 'utf-8-sig' to handle potential PowerShell BOMs, and 'replace' for safety.
+                        # Mandate (BUG-149 / BUG-155): Decode as UTF-8 with BOM awareness
                         out_str = stdout.decode("utf-8-sig", errors="replace").strip()
                         err_str = stderr.decode("utf-8-sig", errors="replace").strip()
                         
@@ -178,6 +170,16 @@ class SubagentPatch(BasePatch):
                             
                 return await self_tool._orig_execute_strategic(command, working_dir, **kwargs)
             ExecTool.execute = _patched_exec_execute
+
+    def _patch_subagent_manager(self, context: PatchContext):
+        from nanobot.agent.subagent import SubagentManager
+        from nanobot.agent.tools.registry import ToolRegistry
+        from nanobot.agent.tools.shell import ExecTool
+        from nanobot.agent.tools.web import WebFetchTool
+        from nanobot.config.schema import Config
+        from .vsa import VectorStoreFactory
+        from .config import strategic_migrate_config
+        from .infra import strategic_mcp_manager
 
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
@@ -214,14 +216,13 @@ class SubagentPatch(BasePatch):
             try:
                 async with AsyncExitStack() as stack:
                     # Mandate (BUG-165): Initialize the store inside the task context
-                    # to ensure the provider is correctly patched and available.
                     VectorStoreFactory.get_store(provider=self.provider)
                     
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
                     tools._task_id = task_id # For telemetry identification
                     
-                    # Mandate (BUG-142): Increase timeout to 300s for specialists to prevent health check timeouts
+                    # Mandate (BUG-142): Increase timeout to 300s for specialists
                     specialist_timeout = max(self.exec_config.timeout, 300)
                     tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=specialist_timeout))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
@@ -230,8 +231,6 @@ class SubagentPatch(BasePatch):
                             if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
                                 tools.register(tool)
                     try:
-                        # Use model_dump to get a clean dictionary for core Nanobot validation
-                        # We still run it through migrate to be extra safe with core expectations
                         raw_data = context.config.model_dump(by_alias=True)
                         pydantic_cfg = strategic_migrate_config(raw_data)
                         validated_config = Config.model_validate(pydantic_cfg)
@@ -266,14 +265,10 @@ class SubagentPatch(BasePatch):
                             if subagent_logic.should_escalate_model(final_result):
                                 escalation_model = subagent_logic.get_escalation_model(final_model)
                                 strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
-                                
-                                # Mandate (BUG-153): Explicitly tell the escalation model this is the FINAL summary
-                                # We add a system directive to the END of the conversation
                                 messages.append({
                                     "role": "system", 
-                                    "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary of the situation to the user. You are FORBIDDEN from planning next steps or suggesting you will try again. This is your last turn."
+                                    "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."
                                 })
-                                
                                 escalation_response = await self.provider.chat(
                                     messages=messages, 
                                     tools=tools.get_definitions(), 
@@ -327,20 +322,26 @@ class SubagentPatch(BasePatch):
                 return subagent_logic.filter_tool_definitions(self._orig_get_definitions_strategic(), is_specialist)
             ToolRegistry.get_definitions = _patched_get_definitions
 
-        if not hasattr(ToolRegistry, "_orig_tool_execute_strategic"):
-            ToolRegistry._orig_tool_execute_strategic = ToolRegistry.execute
+        if not hasattr(ToolRegistry, "_orig_execute_strategic"):
+            ToolRegistry._orig_execute_strategic = ToolRegistry.execute
             async def _patched_tool_execute(self, name, args):
                 is_specialist = getattr(self, "_is_strategic_specialist", False)
                 
                 subagent_logic.log_tool_execution(self, name, args)
                 
+                # Mandate (BUG-169): Circuit Breaker for identical loops
+                loop_err = subagent_logic.check_tool_loop(self, name, args)
+                if loop_err:
+                    subagent_logic.log_tool_result_general(self, name, loop_err)
+                    return loop_err
+
                 if subagent_logic.is_tool_blocked(name, is_specialist):
                     res = subagent_logic.get_block_message(self, name, is_specialist)
                     subagent_logic.log_tool_result_general(self, name, res)
                     return res
                     
                 if str(name).lower() == "spawn" and not is_specialist:
-                    result = await self._orig_tool_execute_strategic(name, args)
+                    result = await self._orig_execute_strategic(name, args)
                     match = re.search(r"\(id: ([a-f0-9]+)\)", result)
                     task_id = match.group(1) if match else "UNKNOWN"
                     final_res = subagent_logic.format_spawn_termination_directive(result, task_id)
@@ -352,15 +353,11 @@ class SubagentPatch(BasePatch):
                         res = subagent_logic.get_bypass_message(args.get("command", ""))
                         subagent_logic.log_tool_result_general(self, name, res)
                         return res
-                    loop_err = subagent_logic.check_exec_loop(self, args.get("command", ""))
-                    if loop_err:
-                        subagent_logic.log_tool_result_general(self, name, loop_err)
-                        return loop_err
                         
                 if "google-surgical" in str(name).lower() and isinstance(args, dict):
                     if "user_google_email" in args: args["user_google_email"] = user_email
                 
-                result = await self._orig_tool_execute_strategic(name, args)
+                result = await self._orig_execute_strategic(name, args)
                 subagent_logic.log_tool_result_general(self, name, result)
                 return result
                 

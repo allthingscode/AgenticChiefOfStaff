@@ -9,54 +9,52 @@ def subagent_patch():
 
 @pytest.mark.asyncio
 async def test_exec_polling_loop_prevention(subagent_patch):
-    """Tests that repeated exec status calls are blocked."""
+    """Tests that repeated identical tool calls are blocked."""
     subagent_patch._patch_tool_registry("test@example.com")
     
     registry = ToolRegistry()
     # Main Agent (no specialist tag)
     assert not getattr(registry, "_is_strategic_specialist", False)
     
-    # Mock the original execute to return success
-    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+    # Mandate (BUG-171/172): Mock the correct patched name
+    with patch.object(ToolRegistry, "_orig_execute_strategic", new_callable=AsyncMock) as mock_orig:
         mock_orig.return_value = "Success"
         
-        # Use 'status' which is monitored for loops but NOT blocked as a bypass
-        cmd_args = {"command": "status"}
+        # 1. First Call -> Success
+        res1 = await registry.execute("exec", {"command": "test"})
+        assert res1 == "Success"
         
-        # 1-3. Success (Limit is 3)
-        for i in range(3):
-            res = await registry.execute("exec", cmd_args)
-            assert res == "Success"
+        # 2. Second Call -> LOOP DETECTED (Limit is 2 for Main Agent)
+        res2 = await registry.execute("exec", {"command": "test"})
+        assert "Tool Loop Detected!" in res2
+        assert "CRITICAL" in res2
         
-        # 4. Fourth Call -> LOOP DETECTED
-        res4 = await registry.execute("exec", cmd_args)
-        assert "Loop Detected" in res4
-        assert "CRITICAL" in res4
-        
-        # Verify mock was only called 3 times
-        assert mock_orig.call_count == 3
+        # Verify mock was only called 1 time
+        assert mock_orig.call_count == 1
 
 @pytest.mark.asyncio
-async def test_specialist_blocked_after_five_calls(subagent_patch):
-    """Tests that specialist subagents ARE blocked after 5 repeated exec status calls."""
+async def test_specialist_blocked_after_three_calls(subagent_patch):
+    """Tests that specialist subagents ARE blocked after 3 repeated identical calls."""
     subagent_patch._patch_tool_registry("test@example.com")
     
     registry = ToolRegistry()
     registry._is_strategic_specialist = True
     
-    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+    with patch.object(ToolRegistry, "_orig_execute_strategic", new_callable=AsyncMock) as mock_orig:
         mock_orig.return_value = "Success"
         cmd_args = {"command": "status"}
         
-        # 1-5. Success (Limit is 5)
-        for _ in range(5):
+        # 1-2. Success
+        for _ in range(2):
             res = await registry.execute("exec", cmd_args)
             assert res == "Success"
         
-        # 6. LOOP DETECTED
-        res6 = await registry.execute("exec", cmd_args)
-        assert "Loop Detected" in res6
-        assert mock_orig.call_count == 5
+        # 3. Third Call -> LOOP DETECTED (Limit is 3 for specialists)
+        res3 = await registry.execute("exec", cmd_args)
+        assert "Tool Loop Detected!" in res3
+        
+        # Verify mock was called 2 times
+        assert mock_orig.call_count == 2
 
 @pytest.mark.asyncio
 async def test_exec_cli_bypass_blocking(subagent_patch):
@@ -86,7 +84,7 @@ async def test_spawn_termination_directive(subagent_patch):
     subagent_patch._patch_tool_registry("test@example.com")
     registry = ToolRegistry()
     
-    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+    with patch.object(ToolRegistry, "_orig_execute_strategic", new_callable=AsyncMock) as mock_orig:
         mock_orig.return_value = "Subagent spawned (id: 123)."
         
         res = await registry.execute("spawn", {"task": "test"})

@@ -51,10 +51,10 @@ async def test_tool_registry_circuit_breaker(subagent_patch, mock_tool):
     assert "is restricted for your role" in result
     
     # 2. Second Attempt -> Circuit Breaker (Hard Lock)
+    # Mandate (BUG-169): Circuit breaker triggers after 2 identical attempts for Main Agent
     result = await registry.execute("mcp_google-surgical_list_tasks", {})
-    assert "CRITICAL ERROR" in result
-    assert "HARD-LOCKED" in result
-    assert "You MUST STOP trying to call this tool directly" in result
+    assert "CRITICAL: Tool Loop Detected!" in result
+    assert "You have attempted to call 'mcp_google-surgical_list_tasks' with the EXACT same arguments" in result
 
 @pytest.mark.asyncio
 async def test_tool_registry_allows_high_power_for_specialist(subagent_patch, mock_tool):
@@ -69,7 +69,8 @@ async def test_tool_registry_allows_high_power_for_specialist(subagent_patch, mo
     assert "mcp_google-surgical_list_tasks" in registry.tool_names
     
     # 2. Test Execution Allowed (calls original)
-    with patch.object(ToolRegistry, "_orig_tool_execute_strategic", new_callable=AsyncMock) as mock_orig:
+    # Mandate (BUG-171): Mock the correct patched name
+    with patch.object(ToolRegistry, "_orig_execute_strategic", new_callable=AsyncMock) as mock_orig:
         mock_orig.return_value = "success"
         result = await registry.execute("mcp_google-surgical_list_tasks", {})
         assert result == "success"
