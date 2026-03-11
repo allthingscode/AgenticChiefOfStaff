@@ -28,6 +28,7 @@ class SubagentPatch(BasePatch):
             "nanobot.agent.subagent.SubagentManager",
             "nanobot.agent.tools.registry.ToolRegistry",
             "nanobot.agent.tools.shell.ExecTool",
+            "nanobot.agent.tools.filesystem.ReadFileTool",
             "nanobot.heartbeat.service.HeartbeatService",
             "nanobot.agent.context.ContextBuilder.build_messages"
         ]
@@ -46,6 +47,9 @@ class SubagentPatch(BasePatch):
             
             self._patch_exec_tool(context)
             result.affected_symbols.append("nanobot.agent.tools.shell.ExecTool")
+
+            self._patch_read_file_tool()
+            result.affected_symbols.append("nanobot.agent.tools.filesystem.ReadFileTool")
             
             self._patch_heartbeat(context.config)
             result.affected_symbols.append("nanobot.heartbeat.service.HeartbeatService")
@@ -154,11 +158,22 @@ class SubagentPatch(BasePatch):
                             cwd=effective_cwd,
                             env=env
                         )
+                        
+                        # Mandate (BUG-155): Small delay to allow pipe buffers to stabilize
+                        # and prevent mangled initial bytes (ðxa¬)
+                        await asyncio.sleep(0.1)
+                        
                         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self_tool.timeout)
                         
                         # Mandate (BUG-149 / BUG-155): Decode as UTF-8 with BOM awareness
+                        # Use 'utf-8-sig' to handle potential PowerShell BOMs, and 'replace' for safety.
                         out_str = stdout.decode("utf-8-sig", errors="replace").strip()
                         err_str = stderr.decode("utf-8-sig", errors="replace").strip()
+                        
+                        # Mandate (BUG-155): Aggressively strip leading non-printable clutter
+                        # This removes 'ðxa¬' and similar artifacts from the start of the buffer.
+                        out_str = re.sub(r"^[^\x20-\x7E\s]+", "", out_str).strip()
+                        err_str = re.sub(r"^[^\x20-\x7E\s]+", "", err_str).strip()
                         
                         if proc.returncode != 0:
                             return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
@@ -170,6 +185,31 @@ class SubagentPatch(BasePatch):
                             
                 return await self_tool._orig_execute_strategic(command, working_dir, **kwargs)
             ExecTool.execute = _patched_exec_execute
+
+    def _patch_read_file_tool(self):
+        from nanobot.agent.tools.filesystem import ReadFileTool
+        # Mandate (BUG-164): Enforce context efficiency for specialists
+        if not hasattr(ReadFileTool, "_orig_execute_strategic"):
+            ReadFileTool._orig_execute_strategic = ReadFileTool.execute
+            async def _patched_read_execute(self_tool, path: str, **kwargs: Any) -> str:
+                registry = getattr(self_tool, "_registry", None)
+                is_specialist = getattr(registry, "_is_strategic_specialist", False)
+                
+                if is_specialist:
+                    file_path = Path(path)
+                    if file_path.exists() and file_path.is_file():
+                        size_kb = file_path.stat().st_size / 1024
+                        if size_kb > 10: # 10KB Limit
+                            return (
+                                f"ERROR: File '{path}' is too large ({size_kb:.1f}KB) for direct reading. "
+                                "Specialist Mandate (BUG-164) requires surgical tools for efficiency. "
+                                "Use 'rg' (ripgrep) to search for specific content, or 'exec' with "
+                                "'Get-Content -Tail 100' to inspect recent entries. Direct reading of "
+                                "large files wastes context tokens and causes amnesia."
+                            )
+                
+                return await self_tool._orig_execute_strategic(path, **kwargs)
+            ReadFileTool.execute = _patched_read_execute
 
     def _patch_subagent_manager(self, context: PatchContext):
         from nanobot.agent.subagent import SubagentManager

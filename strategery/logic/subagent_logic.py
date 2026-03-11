@@ -96,8 +96,13 @@ class ToolCircuitBreaker:
         if consecutive_count >= self.limit:
             return (
                 f"CRITICAL: Tool Loop Detected! You have attempted to call '{name}' with the EXACT same arguments "
-                f"{consecutive_count} times in a row. You are stuck in a logic loop. "
-                "You MUST stop and change your strategy, or report the failure to the user. "
+                f"{consecutive_count} times in a row. You are stuck in a logic loop.\n\n"
+                "### 🛠️ SELF-CORRECTION GUIDANCE (BUG-169)\n"
+                "1. **VARY YOUR PARAMS:** Change the arguments. If 'exec' is failing, try a different flag or path.\n"
+                "2. **SWITCH TOOLS:** If 'read_file' fails or is blocked, use 'rg' (ripgrep) or 'fd'.\n"
+                "3. **VERIFY FIRST:** Use 'list_dir' or 'ls' to confirm the file exists before reading.\n"
+                "4. **CHECK DELIMITERS:** Ensure you are using backslashes ('\\') for Windows paths in shell commands.\n"
+                "5. **REPORT FAILURE:** If you cannot solve it in 3 attempts, report the specific error to the user.\n\n"
                 "Continued identical calls will result in turn termination."
             )
         return None
@@ -311,8 +316,19 @@ def harden_subagent_command(command: str) -> str:
     command = command.strip()
     if command.endswith("."):
         command = command[:-1].strip()
+
+    # 2. Strip Redundant Encoding Clutter (BUG-168)
+    # Specialists sometimes manually prepend chcp or OutputEncoding fixes despite Mandate 20
+    clutter_patterns = [
+        r"chcp\s+65001(\s*>\s*\$null)?\s*([;&|]|\s|$)",
+        r"\$OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8\s*([;&|]|\s|$)",
+        r"\[Console\]::OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8\s*([;&|]|\s|$)",
+        r"(?<!chcp\s65001)>\$null\s*([;&|]|\s|$)" # Fixed-width look-behind is fine
+    ]
+    for pattern in clutter_patterns:
+        command = re.sub(pattern, "", command, flags=re.IGNORECASE).strip()
     
-    # 2. Inject environment and ensure absolute path if 'python' is used (BUG-141 / BUG-160)
+    # 3. Inject environment and ensure absolute path if 'python' is used (BUG-141 / BUG-160)
     if "python " in command.lower() or "python.exe" in command.lower():
         # Prepend PYTHONPATH and replace relative python with absolute if necessary
         # Mandate (BUG-160): Use quotes for the PYTHONPATH value to avoid parser errors
