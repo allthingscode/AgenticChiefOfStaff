@@ -2,7 +2,36 @@ import re
 import json
 from datetime import datetime, timedelta
 from typing import Any, Optional, Tuple, List
+from pathlib import Path
 from strategery.strategic_logger import strategic_logger
+
+# F-030: Generic skip patterns optimized with frozenset for O(1) lookups
+GENERIC_SKIP_PATTERNS = frozenset([
+    "yes", "no", "ok", "okay", "hello", "hi", "thanks", "thank you", "confirmed",
+    "ok.", "okay.", "confirmed.", "yes.", "no.", "thanks.", "hello.", "hi."
+])
+
+# F-030: RAG noise patterns
+RAG_NOISE_PATTERNS = [
+    "spawned subagent", 
+    "i have spawned", 
+    "specialist has been assigned id",
+    "your turn is now over",
+    "provide a single brief acknowledgement"
+]
+
+def _get_date_str() -> str:
+    """F-030: Standardized date string for consistency."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+def _get_timestamp() -> str:
+    """F-030: Standardized timestamp for consistency."""
+    return datetime.now().strftime("%H:%M:%S")
+
+def _get_daily_journal_path(storage_root: Any) -> Path:
+    """F-030: Centralized path calculation for the daily journal."""
+    root = Path(storage_root) if not isinstance(storage_root, Path) else storage_root
+    return root / "workspace" / "memory" / f"{_get_date_str()}.md"
 
 def prune_context(messages: List[dict], ttl_hours: int, keep_last_assistants: int) -> List[dict]:
     """
@@ -97,14 +126,13 @@ def get_journal_continuity(storage_root: Any, max_chars: int = 1000) -> str:
     Reads the last N characters from the current day's journal for chronological continuity.
     """
     try:
-        today = datetime.now().strftime("%Y-%m-%d")
-        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
+        journal_path = _get_daily_journal_path(storage_root)
 
         if not journal_path.exists() or journal_path.stat().st_size == 0:
             try:
                 journal_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(journal_path, "w", encoding="utf-8-sig") as f:
-                    f.write(f"# {today}\n\n")
+                    f.write(f"# {_get_date_str()}\n\n")
             except Exception as e:
                 strategic_logger.error(f"Failed to initialize daily journal: {e}")
             return ""
@@ -129,13 +157,11 @@ def get_journal_continuity(storage_root: Any, max_chars: int = 1000) -> str:
 def write_journal_entry(storage_root: Any, entry: str) -> bool:
     """Writes a consolidation entry to the daily journal."""
     try:
-        today = datetime.now().strftime("%Y-%m-%d")
-        journal_path = storage_root / "workspace" / "memory" / f"{today}.md"
+        journal_path = _get_daily_journal_path(storage_root)
         journal_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(journal_path, "a", encoding="utf-8-sig") as f:
-            ts = datetime.now().strftime("%H:%M:%S")
-            f.write(f"\n### CONSOLIDATION [{ts}]\n{entry}\n")
+            f.write(f"\n### CONSOLIDATION [{_get_timestamp()}]\n{entry}\n")
         return True
     except Exception as e:
         strategic_logger.error(f"Failed to write journal entry: {e}")
@@ -144,13 +170,6 @@ def write_journal_entry(storage_root: Any, entry: str) -> bool:
 def filter_rag_results(results: List[dict], threshold: float = 0.7) -> List[dict]:
     """Filters out noise and low-relevance matches from RAG results."""
     valid_results = []
-    noise_patterns = [
-        "spawned subagent", 
-        "i have spawned", 
-        "specialist has been assigned id",
-        "your turn is now over",
-        "provide a single brief acknowledgement"
-    ]
     
     for r in results:
         content = r.get('content', '')
@@ -158,13 +177,12 @@ def filter_rag_results(results: List[dict], threshold: float = 0.7) -> List[dict
             continue
         
         # Check semantic distance/score if available from the vector store
-        # In Chroma, results often include a 'distance' or 'score'
-        score = r.get('score', 1.0) # Default to 1.0 if not provided
+        score = r.get('score', 1.0) 
         if score < threshold:
             continue
 
         lower_content = content.lower()
-        if any(pattern in lower_content for pattern in noise_patterns):
+        if any(pattern in lower_content for pattern in RAG_NOISE_PATTERNS):
             continue
             
         valid_results.append(r)
@@ -172,18 +190,18 @@ def filter_rag_results(results: List[dict], threshold: float = 0.7) -> List[dict
 
 def should_skip_rag(content: str) -> bool:
     """Determines if RAG should be skipped for the given content."""
-    is_generic = content.lower().strip() in ["yes", "no", "ok", "okay", "hello", "hi", "thanks", "thank you", "confirmed"]
+    clean_content = content.lower().strip()
+    is_generic = clean_content in GENERIC_SKIP_PATTERNS
     return len(content) <= 10 or is_generic or content == "[empty message]"
 
 def format_rag_block(valid_results: List[dict]) -> Tuple[Optional[str], int]:
     """Formats the valid RAG results into a prompt block."""
     if not valid_results:
         return None, 0
-        
-    context_lines = []
-    for r in valid_results:
-        context_lines.append(f"- {r['content']}")
+    
+    # F-030: Optimized string assembly with list comprehension
+    context_lines = [f"- {r['content']}" for r in valid_results]
     
     warning = "[STRATEGIC MEMORY - MAY BE STALE OR OUTDATED. USE RESEARCH TOOLS TO VERIFY.]\n"
-    mem_block = "### RETRIEVED HISTORICAL CONTEXT:\n" + warning + "\n".join(context_lines)
+    mem_block = f"### RETRIEVED HISTORICAL CONTEXT:\n{warning}\n" + "\n".join(context_lines)
     return mem_block, len(valid_results)
