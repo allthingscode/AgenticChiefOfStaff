@@ -53,5 +53,5 @@ Optimized for stable long-term operation on Windows environments:
 | **Automated Strategic Discovery** | **LIVE** | **Efficiency:** Injected system metadata manifest that automatically provides specialists with log paths and diagnostic procedures (BUG-181/182). |
 | **Logic Simplification** | **LIVE** | **Stability:** Centralized journal path management and optimized RAG formatting with high-performance list comprehensions (F-030). |
 | **Finality Mandate** | **LIVE** | **Reliability:** Enforced task completion standards that strictly forbid 'plans' from being reported as results. |
+| **Readability Reports (F-014)** | **LIVE** | **UX:** High-readability HTML email templates with dynamic CSS injection for automated briefings. |
 | **NanoGraph Phase 2** | Research | **Intelligence:** Multi-hop reasoning and Personalized PageRank (HippoRAG) for deterministic retrieval. |
-| **Readability Reports** | Planning | **UX:** High-readability HTML email templates for 3 AM briefings. |

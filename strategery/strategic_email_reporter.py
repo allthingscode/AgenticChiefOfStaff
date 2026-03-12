@@ -126,7 +126,7 @@ def fallback_notify(subject: str, body: str, recipient: str, reason: str = "Unkn
 
 @mcp.tool()
 def send_email_report(subject: str, body: str, to: str = None) -> str:
-    """Sends an email report to the user. Falls back to local disk if Gmail fails."""
+    """Sends an email report to the user. Supports HTML formatting. Falls back to local disk if Gmail fails."""
     try:
         recipient = to if to else USER_EMAIL
         logger.info(f"Tool Call: send_email_report(subject='{subject}', recipient='{recipient}')")
@@ -146,9 +146,71 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
             logger.debug("Gmail service initialized.")
             
             message = EmailMessage()
-            message.set_content(body)
             message["To"] = recipient
             message["Subject"] = subject
+            
+            # F-014: High-Readability HTML Reports
+            is_html = "<html" in body.lower() or "<body>" in body.lower() or "<h1" in body.lower() or "<p>" in body.lower()
+            
+            if is_html:
+                # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
+                message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
+                
+                # Inject high-readability Cyberpunk/Dark CSS
+                style_block = """
+                <style>
+                  body {
+                    background-color: #050505;
+                    color: #00ff9f;
+                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                    font-size: 18px;
+                    line-height: 1.6;
+                    padding: 40px;
+                    max-width: 800px;
+                    margin: 0 auto;
+                  }
+                  h1, h2, h3 { 
+                    color: #ff0055; 
+                    border-bottom: 2px solid #ff0055; 
+                    padding-bottom: 10px; 
+                    margin-top: 40px; 
+                    text-transform: uppercase;
+                    letter-spacing: 2px;
+                  }
+                  .vitality { 
+                    background-color: #0d0d0d; 
+                    border-left: 5px solid #ff0055; 
+                    border-top: 1px solid #222;
+                    border-right: 1px solid #222;
+                    border-bottom: 1px solid #222;
+                    padding: 25px; 
+                    margin: 30px 0; 
+                    color: #ff0055;
+                    font-weight: bold;
+                    font-style: italic;
+                  }
+                  ul { list-style-type: square; color: #00ff9f; }
+                  li { margin-bottom: 15px; }
+                  strong { color: #00b8ff; }
+                  a { color: #00b8ff; text-decoration: none; border-bottom: 1px dashed #00b8ff; }
+                  hr { border: 0; border-top: 1px solid #333; margin: 40px 0; }
+                  code { background: #1a1a1a; padding: 2px 5px; color: #00b8ff; }
+                </style>
+                """
+                # Simple wrapper if not a full HTML document
+                if "<html" not in body.lower():
+                    html_content = f"<!DOCTYPE html><html><head>{style_block}</head><body>{body}</body></html>"
+                else:
+                    # Inject into existing head if possible
+                    if "</head>" in body.lower():
+                        html_content = body.replace("</head>", f"{style_block}</head>", 1)
+                        html_content = body.replace("</HEAD>", f"{style_block}</HEAD>", 1) if html_content == body else html_content
+                    else:
+                        html_content = f"{style_block}\n{body}"
+                        
+                message.add_alternative(html_content, subtype='html')
+            else:
+                message.set_content(body)
             
             encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
             create_message = {"raw": encoded_message}
