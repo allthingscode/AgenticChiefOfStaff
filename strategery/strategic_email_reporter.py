@@ -156,41 +156,41 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
                 
-                # Inject high-readability Holographic Dark CSS
+                # Inject high-readability Subdued Midnight CSS (Low Contrast Dark)
                 style_block = """
                 <style>
                   body {
-                    background-color: #0b0c10;
-                    color: #c5c6c7;
+                    background-color: #000000;
+                    color: #888888;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    font-size: 18px;
+                    font-size: 17px;
                     line-height: 1.6;
                     padding: 40px;
                     max-width: 800px;
                     margin: 0 auto;
                   }
                   h1, h2, h3 { 
-                    color: #66fcf1; 
-                    border-bottom: 1px solid #45a29e; 
+                    color: #006666; 
+                    border-bottom: 1px solid #1a1a1a; 
                     padding-bottom: 10px; 
                     margin-top: 40px;
-                    letter-spacing: 1px;
+                    text-transform: lowercase;
+                    font-variant: small-caps;
                   }
                   .vitality { 
-                    background-color: #1f2833; 
-                    border-left: 5px solid #66fcf1; 
-                    padding: 25px; 
+                    background-color: #080808; 
+                    border-left: 3px solid #004444; 
+                    padding: 20px; 
                     margin: 30px 0; 
-                    color: #66fcf1;
-                    font-weight: 500;
+                    color: #006666;
                     font-style: italic;
                   }
-                  ul { list-style-type: circle; }
-                  li { margin-bottom: 12px; }
-                  strong { color: #66fcf1; }
-                  a { color: #66fcf1; text-decoration: none; border-bottom: 1px solid #45a29e; }
-                  hr { border: 0; border-top: 1px solid #1f2833; margin: 40px 0; }
-                  code { background: #1f2833; padding: 2px 5px; color: #45a29e; border-radius: 3px; }
+                  ul { list-style-type: square; }
+                  li { margin-bottom: 10px; }
+                  strong { color: #008888; }
+                  a { color: #006666; text-decoration: none; border-bottom: 1px dotted #004444; }
+                  hr { border: 0; border-top: 1px solid #111; margin: 40px 0; }
+                  code { background: #0a0a0a; padding: 2px 5px; color: #005555; }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
