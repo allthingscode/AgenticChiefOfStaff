@@ -55,8 +55,18 @@ def cache_modular_state(store_jobs: List[Any]) -> Dict[str, Any]:
             state_cache[job.id] = job.state
     return state_cache
 
-def resolve_routable_channel(current_channel: Optional[str], storage_root: Any) -> Tuple[Optional[str], Optional[str]]:
-    """Resolves a routable channel if the current one is missing or 'cli'."""
+def resolve_routable_channel(payload: Any, storage_root: Any) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Resolves a routable channel if the current one is missing or 'cli'.
+    Supports [SILENT] prefix in message to force-suppress output delivery.
+    """
+    current_channel = payload.channel
+    message = payload.message or ""
+
+    # MANDATE: If message is marked [SILENT], we explicitly return None to suppress delivery
+    if "[SILENT]" in message:
+        return None, None
+
     if not current_channel or current_channel == "cli":
         from strategery.patches.batch import strategic_resolve_job_channel
         try:
@@ -65,5 +75,6 @@ def resolve_routable_channel(current_channel: Optional[str], storage_root: Any) 
                 return new_channel, new_to
         except Exception as re:
             strategic_logger.error(f"Cron: Channel resolution failed: {re}")
-    
+
     return current_channel, None
+

@@ -90,10 +90,15 @@ class CronPatch(BasePatch):
             if not hasattr(CronService, "_orig_execute_job_strategic"):
                 CronService._orig_execute_job_strategic = CronService._execute_job
                 async def _patched_execute_job(self, job):
-                    new_chan, new_to = cron_logic.resolve_routable_channel(job.payload.channel, context.storage_root)
-                    if new_chan and new_chan != job.payload.channel:
-                        job.payload.channel = new_chan
-                        if new_to: job.payload.to = new_to
+                    # Pass the entire payload for deeper inspection (e.g. [SILENT] support)
+                    new_chan, new_to = cron_logic.resolve_routable_channel(job.payload, context.storage_root)
+                    
+                    # Update job payload with resolved routing
+                    job.payload.channel = new_chan
+                    if new_to:
+                        job.payload.to = new_to
+                    
+                    # If new_chan is None (SILENT), it effectively suppresses standard delivery in the gateway
                     return await self._orig_execute_job_strategic(job)
                 CronService._execute_job = _patched_execute_job
                 result.affected_symbols.append("CronService._execute_job")

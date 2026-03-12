@@ -73,12 +73,18 @@ class AgentLoopPatch(BasePatch):
                     # Initialize session locks if they don't exist (for instances created before patch)
                     if not hasattr(self, "_strategic_session_locks"):
                         self._strategic_session_locks = weakref.WeakValueDictionary()
-                    
+
                     # Lazily start the heartbeat monitor task (BUG-104 fix)
                     if not getattr(self, "_strategic_monitor_task", None):
                         self._strategic_monitor_task = asyncio.create_task(self._strategic_monitor_subagents())
 
+                    # STRATEGIC: Strip [SILENT] prefix if present to keep the prompt clean for the agent
+                    # This prefix is used by cron_logic to suppress routing, but the agent shouldn't see it.
+                    if msg.content and msg.content.startswith("[SILENT]"):
+                        msg.content = msg.content.replace("[SILENT]", "", 1).strip()
+
                     session_key = msg.session_key
+
                     lock = self._strategic_session_locks.get(session_key)
                     if lock is None:
                         lock = asyncio.Lock()

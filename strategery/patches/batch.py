@@ -66,16 +66,24 @@ def parse_modular_job_file(file_path: Path) -> CronJob | None:
 
         # Construct payload with Specialist trigger
         # This message will be handled by the Main Agent and delegated via spawn
-        message = f"Spawn a {specialist} specialist to perform the following batch task:\n\n{task_body}"
-        
+        message_body = f"Spawn a {specialist} specialist to perform the following batch task:\n\n{task_body}"
+
+        # MANDATE: If deliver is 'silent', we prefix the message to allow cron_logic to suppress routing
+        deliver_pref = metadata.get("deliver", False)
+        if deliver_pref == "silent":
+            message = f"[SILENT]\n{message_body}"
+            deliver = False # Standard delivery off, silent logic on
+        else:
+            message = message_body
+            deliver = bool(deliver_pref)
+
         payload = CronPayload(
             kind="agent_turn",
             message=message,
-            deliver=metadata.get("deliver", False),
+            deliver=deliver,
             channel=metadata.get("channel"),
             to=metadata.get("to")
         )
-        
         # MANDATE (BUG-072): Prevent immediate redundant triggering on fresh boot.
         # If we use file ctime, and ctime + 24h is in the past, it triggers instantly.
         # We use current time as created_at for modular jobs to ensure the timer starts NOW.
