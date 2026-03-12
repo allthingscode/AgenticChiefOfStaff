@@ -156,61 +156,61 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
                 
-                # Inject high-readability Hayes Chief of Staff CSS
+                # Inject high-readability Matte Obsidian Dark CSS
                 style_block = """
                 <style>
                   body {
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     line-height: 1.6;
-                    color: #333;
-                    background-color: #f9f9f9;
+                    color: #d1d1d1; 
+                    background-color: #0a0b10; 
                     margin: 0;
                     padding: 20px;
                   }
                   .container {
                     max-width: 800px;
                     margin: 0 auto;
-                    background: #fff;
+                    background: #161b22; 
                     padding: 40px;
-                    border: 1px solid #e0e0e0;
+                    border: 1px solid #30363d; 
+                    border-radius: 4px;
                   }
                   h1, h2, h3 { 
-                    color: #007b8f;
+                    color: #58a6ff; 
                     text-transform: uppercase;
                     letter-spacing: 1px;
-                    border-bottom: 2px solid #007b8f;
+                    border-bottom: 2px solid #30363d;
                     padding-bottom: 10px;
                     margin-top: 30px;
                   }
                   .vitality, .quote { 
                     font-style: italic;
-                    color: #00897b;
+                    color: #79c0ff; 
                     font-size: 1.1em;
                     margin: 20px 0;
-                    border-left: 4px solid #00897b;
+                    border-left: 4px solid #388bfd;
                     padding-left: 15px;
                   }
                   .schedule-item {
                     padding: 12px 0;
-                    border-bottom: 1px solid #eee;
-                    display: flex;
+                    border-bottom: 1px solid #21262d; 
                   }
                   .time {
                     font-weight: bold;
-                    color: #00acc1;
+                    color: #58a6ff;
                     min-width: 180px;
                   }
                   .goal-card {
                     margin-top: 20px;
                     padding: 15px;
-                    border-left: 5px solid #ccc;
-                    background-color: #fafafa;
+                    background-color: #0d1117;
+                    border-left: 5px solid #30363d;
                   }
                   .on-track {
-                    border-left-color: #4caf50;
+                    border-left-color: #238636;
                   }
                   .needs-attention {
-                    border-left-color: #ffb300;
+                    border-left-color: #d29922;
                   }
                   .status-label {
                     font-weight: bold;
@@ -218,16 +218,17 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                   }
                   .footer {
                     font-size: 0.85em;
-                    color: #777;
+                    color: #8b949e;
                     text-align: center;
                     margin-top: 40px;
                     font-style: italic;
                   }
                   ul { list-style-type: square; }
                   li { margin-bottom: 10px; }
-                  strong { color: #007b8f; }
-                  a { color: #00acc1; text-decoration: none; border-bottom: 1px dotted #00acc1; }
-                  hr { border: 0; border-top: 1px solid #eee; margin: 40px 0; }
+                  strong { color: #58a6ff; }
+                  a { color: #58a6ff; text-decoration: none; border-bottom: 1px dotted #58a6ff; }
+                  hr { border: 0; border-top: 1px solid #30363d; margin: 40px 0; }
+                  code { background: #0d1117; padding: 2px 5px; color: #79c0ff; }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
