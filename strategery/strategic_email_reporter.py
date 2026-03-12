@@ -156,53 +156,81 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
                 
-                # Inject high-readability Subdued Midnight CSS (Low Contrast Dark)
+                # Inject high-readability Neon Noir Dark CSS
                 style_block = """
                 <style>
                   body {
-                    background-color: #000000;
-                    color: #888888;
+                    background-color: #050505;
+                    color: #e0e0e0;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    font-size: 17px;
+                    font-size: 18px;
                     line-height: 1.6;
+                    margin: 0;
+                    padding: 20px;
+                  }
+                  .container {
+                    background-color: #0d0d0d;
+                    border: 1px solid #00f3ff;
                     padding: 40px;
+                    margin: 20px auto;
                     max-width: 800px;
-                    margin: 0 auto;
+                    box-shadow: 0 0 20px rgba(0, 243, 255, 0.2);
                   }
                   h1, h2, h3 { 
-                    color: #006666; 
-                    border-bottom: 1px solid #1a1a1a; 
-                    padding-bottom: 10px; 
+                    color: #00f3ff; 
+                    text-transform: uppercase;
+                    letter-spacing: 2px;
+                    text-shadow: 1px 1px #ff00ff;
                     margin-top: 40px;
-                    text-transform: lowercase;
-                    font-variant: small-caps;
+                    border-bottom: 1px solid #00f3ff;
+                    padding-bottom: 10px;
                   }
                   .vitality { 
-                    background-color: #080808; 
-                    border-left: 3px solid #004444; 
-                    padding: 20px; 
+                    background-color: #1a1a1a; 
+                    border-left: 5px solid #ff00ff; 
+                    padding: 25px; 
                     margin: 30px 0; 
-                    color: #006666;
+                    color: #ff00ff;
+                    font-weight: bold;
                     font-style: italic;
+                    box-shadow: 0 0 10px rgba(255, 0, 255, 0.1);
                   }
                   ul { list-style-type: square; }
-                  li { margin-bottom: 10px; }
-                  strong { color: #008888; }
-                  a { color: #006666; text-decoration: none; border-bottom: 1px dotted #004444; }
-                  hr { border: 0; border-top: 1px solid #111; margin: 40px 0; }
-                  code { background: #0a0a0a; padding: 2px 5px; color: #005555; }
+                  li { margin-bottom: 12px; }
+                  strong { color: #00f3ff; }
+                  a { 
+                    color: #ff00ff; 
+                    text-decoration: none; 
+                    border: 1px solid #ff00ff; 
+                    padding: 4px 8px; 
+                    display: inline-block;
+                    margin: 2px 0;
+                  }
+                  hr { 
+                    border: 0; 
+                    height: 1px; 
+                    background-color: #00f3ff; 
+                    margin: 40px 0; 
+                  }
+                  code { background: #1a1a1a; padding: 2px 5px; color: #00f3ff; }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
                 if "<html" not in body.lower():
-                    html_content = f"<!DOCTYPE html><html><head>{style_block}</head><body>{body}</body></html>"
+                    html_content = f"<!DOCTYPE html><html><head>{style_block}</head><body><div class='container'>{body}</div></body></html>"
                 else:
                     # Inject into existing head if possible
                     if "</head>" in body.lower():
                         html_content = body.replace("</head>", f"{style_block}</head>", 1)
-                        html_content = body.replace("</HEAD>", f"{style_block}</HEAD>", 1) if html_content == body else html_content
                     else:
                         html_content = f"{style_block}\n{body}"
+                    
+                    # Wrap existing body content if container class is missing
+                    if "class='container'" not in html_content and 'class="container"' not in html_content:
+                        if "<body>" in html_content:
+                            html_content = html_content.replace("<body>", "<body><div class='container'>", 1).replace("</body>", "</div></body>", 1)
+                        elif "<BODY>" in html_content:
+                            html_content = html_content.replace("<BODY>", "<BODY><div class='container'>", 1).replace("</BODY>", "</div></BODY>", 1)
                         
                 message.add_alternative(html_content, subtype='html')
             else:
