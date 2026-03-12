@@ -156,13 +156,13 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
                 
-                # Inject high-readability Cyberpunk/Dark CSS
+                # Inject high-readability Holographic Dark CSS
                 style_block = """
                 <style>
                   body {
-                    background-color: #050505;
-                    color: #00ff9f;
-                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                    background-color: #0b0c10;
+                    color: #c5c6c7;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                     font-size: 18px;
                     line-height: 1.6;
                     padding: 40px;
@@ -170,31 +170,27 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                     margin: 0 auto;
                   }
                   h1, h2, h3 { 
-                    color: #ff0055; 
-                    border-bottom: 2px solid #ff0055; 
+                    color: #66fcf1; 
+                    border-bottom: 1px solid #45a29e; 
                     padding-bottom: 10px; 
-                    margin-top: 40px; 
-                    text-transform: uppercase;
-                    letter-spacing: 2px;
+                    margin-top: 40px;
+                    letter-spacing: 1px;
                   }
                   .vitality { 
-                    background-color: #0d0d0d; 
-                    border-left: 5px solid #ff0055; 
-                    border-top: 1px solid #222;
-                    border-right: 1px solid #222;
-                    border-bottom: 1px solid #222;
+                    background-color: #1f2833; 
+                    border-left: 5px solid #66fcf1; 
                     padding: 25px; 
                     margin: 30px 0; 
-                    color: #ff0055;
-                    font-weight: bold;
+                    color: #66fcf1;
+                    font-weight: 500;
                     font-style: italic;
                   }
-                  ul { list-style-type: square; color: #00ff9f; }
-                  li { margin-bottom: 15px; }
-                  strong { color: #00b8ff; }
-                  a { color: #00b8ff; text-decoration: none; border-bottom: 1px dashed #00b8ff; }
-                  hr { border: 0; border-top: 1px solid #333; margin: 40px 0; }
-                  code { background: #1a1a1a; padding: 2px 5px; color: #00b8ff; }
+                  ul { list-style-type: circle; }
+                  li { margin-bottom: 12px; }
+                  strong { color: #66fcf1; }
+                  a { color: #66fcf1; text-decoration: none; border-bottom: 1px solid #45a29e; }
+                  hr { border: 0; border-top: 1px solid #1f2833; margin: 40px 0; }
+                  code { background: #1f2833; padding: 2px 5px; color: #45a29e; border-radius: 3px; }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
