@@ -156,46 +156,83 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
                 
-                # Inject high-readability Subdued Midnight CSS (Low Contrast Dark)
+                # Inject high-readability Hayes Chief of Staff CSS
                 style_block = """
                 <style>
                   body {
-                    background-color: #000000;
-                    color: #888888;
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    font-size: 17px;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     line-height: 1.6;
-                    padding: 40px;
+                    color: #333;
+                    background-color: #f9f9f9;
+                    margin: 0;
+                    padding: 20px;
+                  }
+                  .container {
                     max-width: 800px;
                     margin: 0 auto;
+                    background: #fff;
+                    padding: 40px;
+                    border: 1px solid #e0e0e0;
                   }
                   h1, h2, h3 { 
-                    color: #006666; 
-                    border-bottom: 1px solid #1a1a1a; 
-                    padding-bottom: 10px; 
-                    margin-top: 40px;
-                    text-transform: lowercase;
-                    font-variant: small-caps;
+                    color: #007b8f;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    border-bottom: 2px solid #007b8f;
+                    padding-bottom: 10px;
+                    margin-top: 30px;
                   }
-                  .vitality { 
-                    background-color: #080808; 
-                    border-left: 3px solid #004444; 
-                    padding: 20px; 
-                    margin: 30px 0; 
-                    color: #006666;
+                  .vitality, .quote { 
+                    font-style: italic;
+                    color: #00897b;
+                    font-size: 1.1em;
+                    margin: 20px 0;
+                    border-left: 4px solid #00897b;
+                    padding-left: 15px;
+                  }
+                  .schedule-item {
+                    padding: 12px 0;
+                    border-bottom: 1px solid #eee;
+                    display: flex;
+                  }
+                  .time {
+                    font-weight: bold;
+                    color: #00acc1;
+                    min-width: 180px;
+                  }
+                  .goal-card {
+                    margin-top: 20px;
+                    padding: 15px;
+                    border-left: 5px solid #ccc;
+                    background-color: #fafafa;
+                  }
+                  .on-track {
+                    border-left-color: #4caf50;
+                  }
+                  .needs-attention {
+                    border-left-color: #ffb300;
+                  }
+                  .status-label {
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                  }
+                  .footer {
+                    font-size: 0.85em;
+                    color: #777;
+                    text-align: center;
+                    margin-top: 40px;
                     font-style: italic;
                   }
                   ul { list-style-type: square; }
                   li { margin-bottom: 10px; }
-                  strong { color: #008888; }
-                  a { color: #006666; text-decoration: none; border-bottom: 1px dotted #004444; }
-                  hr { border: 0; border-top: 1px solid #111; margin: 40px 0; }
-                  code { background: #0a0a0a; padding: 2px 5px; color: #005555; }
+                  strong { color: #007b8f; }
+                  a { color: #00acc1; text-decoration: none; border-bottom: 1px dotted #00acc1; }
+                  hr { border: 0; border-top: 1px solid #eee; margin: 40px 0; }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
                 if "<html" not in body.lower():
-                    html_content = f"<!DOCTYPE html><html><head>{style_block}</head><body>{body}</body></html>"
+                    html_content = f"<!DOCTYPE html><html><head>{style_block}</head><body><div class='container'>{body}</div></body></html>"
                 else:
                     # Inject into existing head if possible
                     if "</head>" in body.lower():
@@ -203,6 +240,13 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                         html_content = body.replace("</HEAD>", f"{style_block}</HEAD>", 1) if html_content == body else html_content
                     else:
                         html_content = f"{style_block}\n{body}"
+                    
+                    # Wrap existing body content if container class is missing
+                    if "class='container'" not in html_content and 'class="container"' not in html_content:
+                        if "<body>" in html_content:
+                            html_content = html_content.replace("<body>", "<body><div class='container'>", 1).replace("</body>", "</div></body>", 1)
+                        elif "<BODY>" in html_content:
+                            html_content = html_content.replace("<BODY>", "<BODY><div class='container'>", 1).replace("</BODY>", "</div></BODY>", 1)
                         
                 message.add_alternative(html_content, subtype='html')
             else:
