@@ -186,8 +186,10 @@ class ConfigPatch(BasePatch):
 def load_strategic_context():
     """Utility to load core strategic context (email, storage root)."""
     user_email = "admin@example.com"
-    # MANDATE: Default storage root must be on D: drive for Strategic Edition
-    storage_root = Path("D:/Nanobot_Storage")
+    
+    # BUG-FIX: Remove hard-coded D: drive default. Use env var or portable default.
+    # The 'D:/Nanobot_Storage' mandate should be configured in config.json, not code.
+    storage_root = Path(os.environ.get("STRATEGIC_STORAGE_ROOT", Path.home() / ".nanobot" / "storage"))
     raw_config = {}
 
     try:
