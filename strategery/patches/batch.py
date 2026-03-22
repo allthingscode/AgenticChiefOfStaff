@@ -1,5 +1,7 @@
-r"""Strategic Batch Loader: Modular Folder-Based Cron Jobs.
-Scans D:\Nanobot_Storage\workspace\cron\items\ for Markdown files and converts them to CronJobs.
+"""
+Strategic Batch Loader: Modular Folder-Based Cron Jobs.
+Strategic Batch Patch: Implements modular cron task loading and silent delivery.
+Scans the configured workspace cron directory for Markdown files and converts them to CronJobs.
 """
 
 import os

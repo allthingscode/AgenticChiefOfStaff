@@ -18,8 +18,9 @@ class AwarenessPatch(BasePatch):
     def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
+            awareness_path = context.storage_root / "workspace" / "AWARENESS.md"
             self._generate_awareness_file(context.storage_root)
-            result.affected_symbols.append("D:/Nanobot_Storage/workspace/AWARENESS.md")
+            result.affected_symbols.append(str(awareness_path))
             
             self._patch_context_builder()
             result.affected_symbols.append("ContextBuilder.BOOTSTRAP_FILES")
@@ -41,7 +42,7 @@ class AwarenessPatch(BasePatch):
         content = f"""# 🦅 STRATEGIC AWARENESS & MANDATES
 - **Workspace Root:** {storage_root}
 - **System Role:** Strategic Orchestrator (Orchestrate & Delegate)
-- **Active Drive:** D:/ (High-Capacity Storage)
+- **Active Drive:** {storage_root.drive if hasattr(storage_root, 'drive') else 'Storage'}
 - **Edition:** Nanobot Strategic Edition (Zero Core Pollution)
 
 ## ⚖️ THE SPECIALIST ECONOMY (ENFORCED)
@@ -53,15 +54,15 @@ class AwarenessPatch(BasePatch):
 
 ## ⚙️ SYSTEM STATE
 - **Automated Batch System (F-011):** Your nightly and scheduled tasks (maintenance, reporting, extraction) are modular. 
-- **Task Management:** You can read, modify, or create new tasks in `D:/Nanobot_Storage/workspace/cron/items/`. 
+- **Task Management:** You can read, modify, or create new tasks in `{storage_root}/workspace/cron/items/`. 
 - **Schema:** Files are Markdown with YAML front-matter (`id`, `name`, `schedule`, `specialist`). 
 - **Trigger:** The system automatically converts these into `CronJob` entries. You can adjust your own automation at any time.
 
 - **Retired Files (READ-ONLY):** `HISTORY.md` is **RETIRED**. You are strictly **FORBIDDEN** from attempting to read or write to `HISTORY.md` via `exec` or any other tool.
 - **Source of Truth:** Your long-term memory is managed via the **Vector Store (ChromaDB)** and the **Daily Journal** (`YYYY-MM-DD.md`).
-- **Chronological Continuity:** The system automatically injects a **Rolling Journal** snippet (the most recent entries from today's journal) into your context for every turn. This ensures you always have the immediate "state of play" without needing to query.
+- **Chronological Continuity:** The system automatically injects a **Rolling Journal** snippet (the most recent entries from today's journal) into your context for every turn. This ensures you always have the immediate \"state of play\" without needing to query.
 - **Context Retrieval:** Rely on the **RETRIEVED HISTORICAL CONTEXT (RAG)** provided in your history. If you need more background, `spawn` a **Researcher Specialist** to use the **`search_memory`** tool or audit the journals.
-- **Storage:** All logs and long-term memory are redirected to `D:/Nanobot_Storage`.
+- **Storage:** All logs and long-term memory are redirected to `{storage_root}`.
 - **Upstream Security:** You are strictly forbidden from modifying files in `nanobot/`. All logic must be implemented via strategic patches.
 """
         with open(awareness_path, "w", encoding="utf-8-sig") as f:
