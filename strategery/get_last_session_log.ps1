@@ -1,26 +1,39 @@
-$logDir = "D:/Nanobot_Storage/logs"
-$latest = Get-ChildItem "$logDir/nanobot_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $latest) {
-    Write-Output "No log file found."
-    exit 0
-}
+# Define search locations
+$PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$logDirs = @("D:\Nanobot_Storage\logs", "$projectRoot\logs")
 
-$lines = Get-Content $latest.FullName
-$marker = "--- Initializing Nanobot Strategic Edition ---"
+# Keywords to identify critical issues
+$keywords = @("Error", "Exception", "Failed", "Anomaly", "Violation", "invalid_grant", "Token expired")
+$pattern = ($keywords | ForEach-Object { [regex]::Escape($_) }) -join "|"
 
-# We search from the end for the last marker
-$index = -1
-for ($i = $lines.Count - 1; $i -ge 0; $i--) {
-    if ($lines[$i] -like "*$marker*") {
-        $index = $i
-        break
+# Set output encoding to UTF-8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$allMatches = @()
+
+foreach ($dir in $logDirs) {
+    if (Test-Path $dir) {
+        # Get all log files modified in the last 24 hours
+        $logs = Get-ChildItem -Path $dir -Filter "*.log" | Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-1) }
+        
+        foreach ($log in $logs) {
+            $content = Get-Content -Path $log.FullName -Tail 200
+            $matches = $content | Where-Object { $_ -match $pattern }
+            
+            if ($matches) {
+                $allMatches += "--- FROM LOG: $($log.Name) ($($log.LastWriteTime)) ---"
+                $allMatches += $matches
+                $allMatches += ""
+            }
+        }
     }
 }
 
-if ($index -ge 0) {
-    # Extract from marker to end
-    $lines[$index..($lines.Count - 1)] | Out-String
+if ($allMatches.Count -gt 0) {
+    # Keep output within safe limits (last 1000 lines of matches)
+    $allMatches | Select-Object -Last 1000 | Out-String
 } else {
-    # Fallback to last 200 lines if no marker found
-    $lines | Select-Object -Last 200 | Out-String
+    Write-Output "No critical issues found in recent logs (last 24h) across $($logDirs -join ', ')."
 }

@@ -93,12 +93,20 @@ def get_service(service_name, version='v1', force_reauth=False):
     if needs_auth:
         if os.environ.get("PYTEST_CURRENT_TEST"):
             raise Exception("Auth required but disabled in test mode.")
-        
+
         from google_auth_oauthlib.flow import InstalledAppFlow
         client_secrets = CREDS_DIR / "client_secrets.json"
+        if not client_secrets.exists():
+            raise FileNotFoundError(f"Missing client_secrets.json at {client_secrets}")
+
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
-        creds = flow.run_local_server(port=0)
         
+        # Check if we should use console flow (useful for remote sessions or headless)
+        if "--console" in sys.argv:
+            creds = flow.run_local_server(port=0, open_browser=False)
+        else:
+            creds = flow.run_local_server(port=0)
+
         with open(CREDS_PATH, "w") as f:
             f.write(creds.to_json())
 
@@ -114,7 +122,7 @@ def strategic_merge_calendar_events(results_list, max_results=10):
             # Tag the event with its source calendar for transparency
             event["_calendar"] = cal_name
             merged.append(event)
-    
+
     def get_start(event):
         start = event.get('start', {})
         dt = start.get('dateTime')
@@ -136,7 +144,7 @@ async def list_calendar_events(calendar_id: str = "primary", max_results: int = 
         service = get_service('calendar', 'v3')
         cal_list = service.calendarList().list().execute()
         all_calendars = cal_list.get('items', [])
-        
+
         # 2. Fetch events from each
         all_results = []
         for cal in all_calendars:
@@ -146,7 +154,7 @@ async def list_calendar_events(calendar_id: str = "primary", max_results: int = 
                     all_results.append((cal.get('summary', 'Unknown'), events))
             except Exception:
                 continue
-        
+
         # 3. Merge and sort
         return strategic_merge_calendar_events(all_results, max_results=max_results)
 
@@ -184,14 +192,14 @@ async def google_drive_upload(local_path: str, filename: str, parent_id: str = N
     """Uploads a local file to Google Drive. (F-014)"""
     from googleapiclient.http import MediaFileUpload
     service = get_service('drive', 'v3')
-    
+
     # Use backup_folder_id from config as default if not provided
     target_folder = parent_id or STRATEGIC.get("backup_folder_id")
-    
+
     file_metadata = {'name': filename}
     if target_folder:
         file_metadata['parents'] = [target_folder]
-        
+
     media = MediaFileUpload(local_path, resumable=True)
     file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     return f"Uploaded successfully to {target_folder or 'Root'}. File ID: {file.get('id')}"
@@ -200,7 +208,7 @@ async def google_drive_upload(local_path: str, filename: str, parent_id: str = N
 async def google_drive_list(query: str = "name contains 'nanobot_backup_'"):
     """Lists files created by this app matching the query."""
     service = get_service('drive', 'v3')
-    results = service.files().list(q=query, spaces='drive', 
+    results = service.files().list(q=query, spaces='drive',
                                  fields='files(id, name, createdTime)',
                                  orderBy='createdTime desc').execute()
     return results.get('files', [])
@@ -213,7 +221,7 @@ async def google_drive_delete(file_id: str):
     file = service.files().get(fileId=file_id, fields='name').execute()
     if not file.get('name', '').startswith('nanobot_backup_'):
         return "ERROR: Safety violation. This tool can only delete 'nanobot_backup_' files."
-    
+
     service.files().delete(fileId=file_id).execute()
     return f"Deleted file: {file.get('name')}"
 
@@ -221,7 +229,7 @@ async def google_drive_delete(file_id: str):
 async def package_strategic_archive(zip_name: str, includes: list[str], excludes: list[str]):
     """Creates a filtered ZIP archive of strategic data. (F-014)"""
     temp_zip = STORAGE_ROOT / zip_name
-    
+
     def should_exclude(path):
         p_str = str(path).replace('\\', '/')
         for ex in excludes:
@@ -233,7 +241,7 @@ async def package_strategic_archive(zip_name: str, includes: list[str], excludes
         for include_path in includes:
             path = Path(include_path)
             if not path.exists(): continue
-            
+
             if path.is_file():
                 if not should_exclude(path):
                     zipf.write(path, path.relative_to(path.parent))
@@ -256,5 +264,5 @@ if __name__ == "__main__":
         print("\nSUCCESS: Authentication flow complete. Credentials updated at:")
         print(CREDS_PATH)
         sys.exit(0)
-    
+
     mcp.run()

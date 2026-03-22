@@ -73,8 +73,25 @@ class StrategicSimulator:
         
         # 1. Apply Strategic Patches to the classes before instantiation
         # (This ensures the Strategic Registry and Spawner are active)
-        SubagentPatch().apply(self.config)
-        AgentLoopPatch().apply(self.config)
+        from strategery.patches.base import PatchContext
+        from strategery.patches.config import load_strategic_context, ConfigPatch
+        from strategery.patches.loop import AgentLoopPatch
+        from strategery.patches.subagent import SubagentPatch
+        
+        # Build a proper context for the patches
+        raw_config, email, storage = load_strategic_context()
+        # MANDATE: Use dynamic resolution for app_root to avoid personal hard-coded paths.
+        project_root = Path(__file__).parent.parent.parent.parent.absolute()
+        context = PatchContext(
+            config=self.config, # Mock config passed in
+            storage_root=storage,
+            user_email=email,
+            app_root=project_root
+        )
+
+        SubagentPatch().apply(context)
+        AgentLoopPatch().apply(context)
+        ConfigPatch().apply(context)
         
         # 2. Setup AgentLoop with mocks
         with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):

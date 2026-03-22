@@ -17,7 +17,14 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 # Absolute Path to Project Python
-PYTHON_EXE = r"C:\Users\HayesChiefOfStaff\Documents\nanobot\nanoClaw\Scripts\python.exe"
+import sys
+from pathlib import Path
+
+# MANDATE: Use dynamic resolution for the project's Python executable.
+PROJECT_ROOT = Path(__file__).parent.parent.absolute()
+PYTHON_EXE = str(PROJECT_ROOT / "nanoClaw" / "Scripts" / "python.exe")
+if not Path(PYTHON_EXE).exists():
+    PYTHON_EXE = sys.executable
 
 def run_command(command, description, capture=False):
     """Executes a shell command and returns the result."""

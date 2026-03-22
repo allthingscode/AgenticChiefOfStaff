@@ -64,9 +64,9 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 logger.debug(f"Paths: STORAGE_ROOT={STORAGE_ROOT}, TOKEN_PATH={TOKEN_PATH}")
 
-def get_gmail_service():
+def get_gmail_service(force_reauth=False):
     creds = None
-    if TOKEN_PATH.exists():
+    if not force_reauth and TOKEN_PATH.exists():
         logger.debug(f"Found token at {TOKEN_PATH}")
         try:
             with open(TOKEN_PATH, "r") as token:
@@ -74,8 +74,9 @@ def get_gmail_service():
                 creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
         except Exception as e:
             logger.error(f"Error loading token.json: {e}")
-            
-    if not creds or not creds.valid:
+
+    needs_auth = False
+    if force_reauth or not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing Gmail token...")
             try:
@@ -85,12 +86,33 @@ def get_gmail_service():
                 logger.info("Token refreshed successfully.")
             except Exception as e:
                 logger.error(f"Failed to refresh token: {e}")
-                # Don't raise here, allow the tool to catch it and fall back
-                return None
+                if "invalid_grant" in str(e).lower():
+                    needs_auth = True
+                else:
+                    return None
         else:
-            logger.error(f"No valid credentials found at {TOKEN_PATH}.")
+            needs_auth = True
+
+    if needs_auth:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            raise Exception("Auth required but disabled in test mode.")
+
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        if not CREDS_PATH.exists():
+            logger.error(f"Missing credentials.json at {CREDS_PATH}")
             return None
-            
+
+        flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_PATH), SCOPES)
+        # Check if we should use console flow (useful for remote sessions or headless)
+        if "--console" in sys.argv:
+            creds = flow.run_local_server(port=0, open_browser=False)
+        else:
+            creds = flow.run_local_server(port=0)
+
+        with open(TOKEN_PATH, "w") as token:
+            token.write(creds.to_json())
+        logger.info("New token obtained and saved.")
+
     try:
         return build("gmail", "v1", credentials=creds, static_discovery=True)
     except Exception as e:
@@ -103,19 +125,23 @@ def fallback_notify(subject: str, body: str, recipient: str, reason: str = "Unkn
     """Fallback: Writes the notification to a local file in the workspace."""
     notif_file = STORAGE_ROOT / "workspace" / "NOTIFICATIONS.md"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    entry = f"\n---\n### 📬 [{timestamp}] {subject}\n**To:** {recipient}\n**Fallback Reason:** {reason}\n\n{body}\n"
-    
+
+    # If it's a reauth error, give the user instructions
+    if "invalid_grant" in reason.lower() or "token expired" in reason.lower():
+        reason = f"AUTH EXPIRED. To fix, run: {sys.executable} strategery/strategic_email_reporter.py --reauth"
+
+    entry = f"\n---\n### 📧 [{timestamp}] {subject}\n**To:** {recipient}\n**Fallback Reason:** {reason}\n\n{body}\n"
+
     try:
         # Ensure workspace exists
         notif_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         mode = "a" if notif_file.exists() else "w"
         with open(notif_file, mode, encoding="utf-8") as f:
             if mode == "w":
-                f.write("# 📬 Strategic Notifications (Fallback)\n")
+                f.write("# 📧 Strategic Notifications (Fallback)\n")
             f.write(entry)
-            
+
         msg = f"Gmail unavailable ({reason}). Report saved to fallback: {notif_file}"
         logger.warning(msg)
         return msg
@@ -130,7 +156,7 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
     try:
         recipient = to if to else USER_EMAIL
         logger.info(f"Tool Call: send_email_report(subject='{subject}', recipient='{recipient}')")
-        
+
         service = None
         service_error = None
         try:
@@ -144,48 +170,48 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
 
         try:
             logger.debug("Gmail service initialized.")
-            
+
             message = EmailMessage()
             message["To"] = recipient
             message["Subject"] = subject
-            
+
             # F-014: High-Readability HTML Reports
             is_html = "<html" in body.lower() or "<body>" in body.lower() or "<h1" in body.lower() or "<p>" in body.lower()
-            
+
             if is_html:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
-                
+
                 # Inject high-readability Matte Obsidian Dark CSS
                 style_block = """
                 <style>
                   body {
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     line-height: 1.6;
-                    color: #d1d1d1; 
-                    background-color: #0a0b10; 
+                    color: #d1d1d1;
+                    background-color: #0a0b10;
                     margin: 0;
                     padding: 20px;
                   }
                   .container {
                     max-width: 800px;
                     margin: 0 auto;
-                    background: #161b22; 
+                    background: #161b22;
                     padding: 40px;
-                    border: 1px solid #30363d; 
+                    border: 1px solid #30363d;
                     border-radius: 4px;
                   }
-                  h1, h2, h3 { 
-                    color: #58a6ff; 
+                  h1, h2, h3 {
+                    color: #58a6ff;
                     text-transform: uppercase;
                     letter-spacing: 1px;
                     border-bottom: 2px solid #30363d;
                     padding-bottom: 10px;
                     margin-top: 30px;
                   }
-                  .vitality, .quote { 
+                  .vitality, .quote {
                     font-style: italic;
-                    color: #79c0ff; 
+                    color: #79c0ff;
                     font-size: 1.1em;
                     margin: 20px 0;
                     border-left: 4px solid #388bfd;
@@ -193,7 +219,7 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                   }
                   .schedule-item {
                     padding: 12px 0;
-                    border-bottom: 1px solid #21262d; 
+                    border-bottom: 1px solid #21262d;
                   }
                   .time {
                     font-weight: bold;
@@ -241,24 +267,24 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                         html_content = body.replace("</HEAD>", f"{style_block}</HEAD>", 1) if html_content == body else html_content
                     else:
                         html_content = f"{style_block}\n{body}"
-                    
+
                     # Wrap existing body content if container class is missing
                     if "class='container'" not in html_content and 'class="container"' not in html_content:
                         if "<body>" in html_content:
                             html_content = html_content.replace("<body>", "<body><div class='container'>", 1).replace("</body>", "</div></body>", 1)
                         elif "<BODY>" in html_content:
                             html_content = html_content.replace("<BODY>", "<BODY><div class='container'>", 1).replace("</BODY>", "</div></BODY>", 1)
-                        
+
                 message.add_alternative(html_content, subtype='html')
             else:
                 message.set_content(body)
-            
+
             encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
             create_message = {"raw": encoded_message}
-            
+
             logger.debug("Sending message via Gmail API...")
             send_message = service.users().messages().send(userId="me", body=create_message).execute()
-            
+
             result = f"Email sent successfully to {recipient}. Message ID: {send_message['id']}"
             logger.info(result)
             return result
@@ -271,6 +297,17 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
         return err
 
 if __name__ == "__main__":
+    if "--reauth" in sys.argv:
+        logger.info("Initiating Strategic Gmail Re-authentication...")
+        try:
+            get_gmail_service(force_reauth=True)
+            print("\nSUCCESS: Authentication flow complete. Token updated at:")
+            print(TOKEN_PATH)
+        except Exception as e:
+            logger.error(f"Re-authentication failed: {e}")
+            print(f"\nFAILURE: Re-authentication failed: {e}")
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1] == "mcp_wrapper":
         logger.info("Starting FastMCP runner...")
         try:

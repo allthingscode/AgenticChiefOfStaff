@@ -186,7 +186,8 @@ class ConfigPatch(BasePatch):
 def load_strategic_context():
     """Utility to load core strategic context (email, storage root)."""
     user_email = "admin@example.com"
-    storage_root = Path.home() / ".nanobot" / "storage"
+    # MANDATE: Default storage root must be on D: drive for Strategic Edition
+    storage_root = Path("D:/Nanobot_Storage")
     raw_config = {}
 
     try:
@@ -198,7 +199,10 @@ def load_strategic_context():
                 raw_config = _raw
                 _strat = _raw.get("strategic_edition", {})
                 user_email = _strat.get("user_email", user_email)
-                if _s_root := _strat.get("storage_root"):
+                
+                # Prioritize explicit top-level storage_root (if any) then strategic_edition
+                _s_root = _raw.get("storage_root") or _strat.get("storage_root")
+                if _s_root:
                     storage_root = Path(_s_root)
     except:
         pass

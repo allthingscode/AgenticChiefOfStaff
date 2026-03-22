@@ -35,7 +35,16 @@ CLUTTER_PATTERNS = [
     re.compile(r"(?<!chcp\s65001)>\$null\s*([;&|]|\s|$)", re.IGNORECASE)
 ]
 
-PYTHON_EXE_PATH = r"C:\Users\HayesChiefOfStaff\Documents\nanobot\nanoClaw\Scripts\python.exe"
+import sys
+from pathlib import Path
+
+# MANDATE: Use dynamic resolution for the project's Python executable to avoid hard-coded personal paths.
+# We assume the venv 'nanoClaw' is in the project root (one level up from 'strategery' folder)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+PYTHON_EXE_PATH = str(PROJECT_ROOT / "nanoClaw" / "Scripts" / "python.exe")
+if not Path(PYTHON_EXE_PATH).exists():
+    # Fallback to current sys.executable if venv structure is different
+    PYTHON_EXE_PATH = sys.executable
 LOG_ROOT = r"D:\Nanobot_Storage\workspace\logs\\"
 
 # --- Logic Functions ---
@@ -330,13 +339,17 @@ def harden_subagent_command(command: str) -> str:
         command = pattern.sub("", command).strip()
     
     if "python " in command.lower() or "python.exe" in command.lower():
-        prefix = '$env:PYTHONPATH="."; '
+        # BUG-185: Append the absolute project root to PYTHONPATH instead of overwriting it with "."
+        # This ensures imports work regardless of the current working directory or drive.
+        prefix = f'$env:PYTHONPATH = "$env:PYTHONPATH;{PYTHON_EXE_PATH.replace("nanoClaw\\Scripts\\python.exe", "")}"; '
+        
         # Use simple string replace for the Python path to avoid re.sub escape issues
         if PYTHON_EXE_PATH.lower() not in command.lower():
             # Standard boundary match for 'python'
             # We must escape backslashes in the replacement string for re.sub (BUG-168)
             repl = f'"{PYTHON_EXE_PATH}"'.replace("\\", "\\\\")
             command = re.sub(r"\bpython(\.exe)?\b", repl, command, flags=re.IGNORECASE)
-        if prefix not in command:
+        
+        if "$env:PYTHONPATH" not in command:
             command = prefix + command
     return command

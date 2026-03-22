@@ -16,23 +16,33 @@ class StrategicHybridStore(VectorStoreInterface):
     """
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
+    def __new__(cls, storage_root=None, provider=None):
+        # MANDATE: If a new storage_root is provided (as in unit tests), 
+        # we MUST force re-initialization even if an instance exists.
+        if cls._instance is None:
             cls._instance = super(StrategicHybridStore, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(self, storage_root=None, provider=None):
-        if getattr(self, "_initialized", False):
-            if provider: self.provider = provider
-            return
-
+        # BUG-FIX: Re-initialize if storage_root changes (prevents test pollution)
         root = Path(storage_root or Path.home() / ".nanobot")
+        target_sqlite_path = root / "workspace" / "memory" / "keyword_index.db"
+        
+        if getattr(self, "_initialized", False):
+            if hasattr(self, "sqlite_path") and self.sqlite_path == target_sqlite_path:
+                if provider: self.provider = provider
+                return
+            # Path changed, close existing connection
+            if hasattr(self, "_db_conn") and self._db_conn:
+                self._db_conn.close()
+                self._db_conn = None
+
         self.memory_dir = root / "workspace" / "memory"
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         
         # SQLite Path for FTS
-        self.sqlite_path = self.memory_dir / "keyword_index.db"
+        self.sqlite_path = target_sqlite_path
         
         # Initialize Vector Store (Lazy)
         from .vector_store import StrategicVectorStore

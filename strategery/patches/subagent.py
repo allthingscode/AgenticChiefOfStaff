@@ -4,6 +4,7 @@ import asyncio
 import json
 import uuid
 import os
+import base64
 from pathlib import Path
 from contextlib import AsyncExitStack
 from functools import wraps
@@ -139,32 +140,30 @@ class SubagentPatch(BasePatch):
                 
                 if os.name == "nt":
                     try:
-                        encoding_fix = '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
+                        # Add ProgressPreference to avoid XML noise in stderr from module loading
+                        encoding_fix = '$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
                         
-                        # BUG-175: Detect if the command is already wrapped in powershell
-                        if command.lower().strip().startswith("powershell "):
-                            ps_command = f"{encoding_fix}{command}"
-                        else:
-                            # BUG-174: PowerShell uses double-double-quotes ("") for escaping inside -Command strings, 
-                            # NOT backslash-quotes (\"). Backslashes are interpreted literally in paths.
-                            ps_command = f"{encoding_fix}{command.replace('\"', '\"\"')}"
+                        # BUG-184: Use EncodedCommand to bypass all quoting issues for native executables like rg
+                        ps_command = f"{encoding_fix}{command}"
+                        encoded_cmd = base64.b64encode(ps_command.encode("utf-16le")).decode("utf-8")
                         
                         env = os.environ.copy()
                         env["PYTHONPATH"] = str(context.app_root)
                         env["PYTHONIOENCODING"] = "utf-8"
                         
                         proc = await asyncio.create_subprocess_exec(
-                            "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_command,
+                            "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_cmd,
                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                             cwd=effective_cwd, env=env
                         )
                         await asyncio.sleep(0.1)
                         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
                         
-                        out_str = stdout.decode("utf-8-sig", errors="replace").strip()
-                        err_str = stderr.decode("utf-8-sig", errors="replace").strip()
-                        out_str = re.sub(r"^[^\x20-\x7E\s]+", "", out_str).strip()
-                        err_str = re.sub(r"^[^\x20-\x7E\s]+", "", err_str).strip()
+                        # BUG-155: Use plain utf-8 and surgically remove the BOM (\ufeff) if present.
+                        # utf-8-sig can sometimes fail or behave inconsistently with certain buffer captures.
+                        # We also remove the aggressive regex that was stripping valid non-ASCII chars.
+                        out_str = stdout.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
+                        err_str = stderr.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
                         
                         if proc.returncode != 0:
                             return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
