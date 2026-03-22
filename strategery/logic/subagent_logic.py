@@ -1,3 +1,4 @@
+import os
 import re
 import json
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
@@ -45,7 +46,28 @@ PYTHON_EXE_PATH = str(PROJECT_ROOT / "nanoClaw" / "Scripts" / "python.exe")
 if not Path(PYTHON_EXE_PATH).exists():
     # Fallback to current sys.executable if venv structure is different
     PYTHON_EXE_PATH = sys.executable
-LOG_ROOT = r"D:\Nanobot_Storage\workspace\logs\\"
+
+# MANDATE: Resolve log root dynamically from context or env.
+# Defaults to D: for this machine but supports portability.
+def get_log_root() -> str:
+    # Use env var if set, otherwise look for config.json to find storage_root
+    env_log = os.environ.get("STRATEGIC_LOG_DIR")
+    if env_log:
+        return str(Path(env_log).absolute()) + "\\"
+    
+    # Fallback search for config.json
+    try:
+        config_path = Path.home() / ".nanobot" / "config.json"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8-sig") as f:
+                import json
+                cfg = json.load(f)
+                root = cfg.get("strategic_edition", {}).get("storage_root", "D:/Nanobot_Storage")
+                return str(Path(root) / "workspace" / "logs") + "\\"
+    except: pass
+    return r"D:\Nanobot_Storage\workspace\logs\\"
+
+LOG_ROOT = get_log_root()
 
 # --- Logic Functions ---
 
@@ -278,7 +300,7 @@ def inject_delegation_mandate(system_content: str) -> str:
         "3. **NO MODEL CONTROL:** You have NO say in which AI model is used.\n"
         "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear, STOP and ask the user.\n"
         "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately. Do NOT mention IDs in the initial turn.\n"
-        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `D:\\Nanobot_Storage\\workspace\\logs\\`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders."
+        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `{LOG_ROOT}`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders."
     )
     return system_content + mandate
 

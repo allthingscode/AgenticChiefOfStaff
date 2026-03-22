@@ -14,9 +14,16 @@ def test_hardened_system_prompt():
         del ContextBuilder._orig_build_system_prompt_strategic
         
     # 2. Apply Patch
+    from strategery.patches.base import PatchContext
+    context = PatchContext(
+        config={},
+        storage_root=Path("/tmp/storage"),
+        user_email="test@user.com",
+        app_root=Path("/tmp/app")
+    )
     patch_obj = ConfigPatch()
     # Apply global patches including ContextBuilder
-    patch_obj.apply({})
+    patch_obj.apply(context)
     
     # 3. Test
     builder = ContextBuilder(workspace=Path("/tmp"))

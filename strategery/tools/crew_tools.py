@@ -20,9 +20,21 @@ class LocalFileReadTool(BaseTool):
             home_dir = os.path.expanduser("~")
             project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
             
+            # MANDATE: Resolve storage root dynamically from config if possible
+            # Default to D: for this machine but support portability
+            storage_root = r"D:\Nanobot_Storage"
+            config_path = os.path.join(home_dir, ".nanobot", "config.json")
+            if os.path.exists(config_path):
+                try:
+                    import json
+                    with open(config_path, "r", encoding="utf-8-sig") as f:
+                        cfg = json.load(f)
+                        storage_root = cfg.get("strategic_edition", {}).get("storage_root", storage_root)
+                except: pass
+
             allowed_roots = [
                 project_root,
-                r"D:\Nanobot_Storage"
+                storage_root
             ]
             abs_path = os.path.abspath(file_path)
             if not any(abs_path.startswith(root) for root in allowed_roots):

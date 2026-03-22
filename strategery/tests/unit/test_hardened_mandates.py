@@ -7,7 +7,7 @@ def test_main_agent_log_root_mandate():
     hardened_prompt = subagent_logic.inject_delegation_mandate(base_prompt)
     
     assert "DEFINITIVE LOG ROOT (BUG-170)" in hardened_prompt
-    assert "D:\\Nanobot_Storage\\workspace\\logs\\" in hardened_prompt
+    assert subagent_logic.LOG_ROOT in hardened_prompt
     assert "You MUST use this absolute path" in hardened_prompt
 
 def test_specialist_log_temporality_mandate():
@@ -23,7 +23,9 @@ def test_specialist_definitive_log_root_mandate():
     """Verify that BUG-167 (Log Path Ambiguity) is addressed in specialist instructions."""
     base_prompt = "Base specialist prompt."
     hardened_prompt = subagent_logic.build_specialist_instructions(base_prompt, "researcher")
-    
+
     assert "DEFINITIVE LOG ROOT (BUG-167)" in hardened_prompt
-    assert "D:\\Nanobot_Storage\\workspace\\logs\\" in hardened_prompt
+    # Use the dynamic LOG_ROOT from the logic module
+    assert subagent_logic.LOG_ROOT in hardened_prompt
+
     assert "EXCLUSIVELY" in hardened_prompt
