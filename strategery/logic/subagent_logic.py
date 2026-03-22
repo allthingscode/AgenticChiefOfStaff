@@ -319,7 +319,12 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "   - **Hybrid Memory:** Check `D:\\Nanobot_Storage\\workspace\\memory\\chroma.sqlite3` and `keyword_index.db` existence/size.\n"
         f"   - **SOP-001 (Unit Tests):** Run `$env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m pytest strategery/tests/unit/`.\n"
         f"   - **SOP-006 (Strategic Doctor):** Run `$env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.strategic_doctor`.\n"
-        "   - **Full Health Suite:** Run `powershell -File \"D:\\Nanobot_Storage\\workspace\\skills\\system-health\\run_suite.ps1\"`.\n"
+        "3. **WEEKLY BACKUP PROTOCOL (BUG-192):**\n"
+        "   - **Task:** Package and upload system state to Google Drive.\n"
+        "   - **Step 1:** Read `D:\\Nanobot_Storage\\BACKUP_MANIFEST.md` for includes/excludes.\n"
+        "   - **Step 2:** Use `mcp_google-surgical_package_strategic_archive` to create a ZIP.\n"
+        "   - **Step 3:** Use `mcp_google-surgical_google_drive_upload` to upload the ZIP.\n"
+        "   - **Verification:** Use `mcp_google-surgical_google_drive_list` to confirm the upload.\n"
     )
 
     strategic_instr = (
