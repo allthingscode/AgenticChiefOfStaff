@@ -182,9 +182,12 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                 # Provide a plain text fallback (stripping basic tags is complex here, so we just send raw as text fallback)
                 message.set_content("This report requires an HTML-compatible email client to view correctly.\n\n" + body)
 
-                # Inject high-readability Matte Obsidian Dark CSS
+                # Inject high-readability Matte Obsidian Dark CSS (F-014 Hardened)
                 style_block = """
                 <style>
+                  :root {
+                    color-scheme: dark light;
+                  }
                   body {
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                     line-height: 1.6;
@@ -200,9 +203,14 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                     padding: 40px;
                     border: 1px solid #30363d;
                     border-radius: 4px;
+                    color: #d1d1d1 !important;
+                  }
+                  /* Ensure all common text elements are readable on dark backgrounds */
+                  p, span, div, li, td {
+                    color: #d1d1d1 !important;
                   }
                   h1, h2, h3 {
-                    color: #58a6ff;
+                    color: #58a6ff !important;
                     text-transform: uppercase;
                     letter-spacing: 1px;
                     border-bottom: 2px solid #30363d;
@@ -211,7 +219,7 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                   }
                   .vitality, .quote {
                     font-style: italic;
-                    color: #79c0ff;
+                    color: #79c0ff !important;
                     font-size: 1.1em;
                     margin: 20px 0;
                     border-left: 4px solid #388bfd;
@@ -223,7 +231,7 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                   }
                   .time {
                     font-weight: bold;
-                    color: #58a6ff;
+                    color: #58a6ff !important;
                     min-width: 180px;
                   }
                   .goal-card {
@@ -241,20 +249,57 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                   .status-label {
                     font-weight: bold;
                     margin-bottom: 5px;
+                    color: #d1d1d1 !important;
                   }
                   .footer {
                     font-size: 0.85em;
-                    color: #8b949e;
+                    color: #8b949e !important;
                     text-align: center;
                     margin-top: 40px;
                     font-style: italic;
                   }
                   ul { list-style-type: square; }
                   li { margin-bottom: 10px; }
-                  strong { color: #58a6ff; }
-                  a { color: #58a6ff; text-decoration: none; border-bottom: 1px dotted #58a6ff; }
+                  strong { color: #58a6ff !important; }
+                  a { color: #58a6ff !important; text-decoration: none; border-bottom: 1px dotted #58a6ff; }
                   hr { border: 0; border-top: 1px solid #30363d; margin: 40px 0; }
-                  code { background: #0d1117; padding: 2px 5px; color: #79c0ff; }
+                  code { background: #0d1117; padding: 2px 5px; color: #79c0ff !important; }
+
+                  /* Light Mode Overrides for clients that force it */
+                  @media (prefers-color-scheme: light) {
+                    body {
+                      background-color: #f6f8fa;
+                      color: #24292f;
+                    }
+                    .container {
+                      background: #ffffff;
+                      border-color: #d0d7de;
+                      color: #24292f !important;
+                    }
+                    p, span, div, li, td {
+                      color: #24292f !important;
+                    }
+                    h1, h2, h3 {
+                      color: #0969da !important;
+                      border-bottom-color: #d0d7de;
+                    }
+                    .vitality, .quote {
+                      color: #0550ae !important;
+                      background-color: #f6f8fa;
+                    }
+                    .goal-card {
+                      background-color: #f6f8fa;
+                      border-left-color: #d0d7de;
+                    }
+                    .status-label {
+                      color: #24292f !important;
+                    }
+                    code {
+                      background: #afb8c133;
+                      color: #cf222e !important;
+                    }
+                    strong { color: #0969da !important; }
+                  }
                 </style>
                 """
                 # Simple wrapper if not a full HTML document
