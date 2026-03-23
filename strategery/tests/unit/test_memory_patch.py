@@ -118,7 +118,7 @@ async def test_rag_filters_junk_summaries():
 def test_strategic_get_rolling_journal(tmp_path):
     """Verify that the rolling journal correctly reads the last part of a file."""
     # Setup mock journal directory
-    journal_dir = tmp_path / "workspace" / "memory"
+    journal_dir = tmp_path / "workspace" / "journal"
     journal_dir.mkdir(parents=True)
     
     from datetime import datetime

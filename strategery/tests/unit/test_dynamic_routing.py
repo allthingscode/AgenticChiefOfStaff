@@ -52,9 +52,9 @@ async def test_spawn_tool_parameter_injection(mock_context):
         origin_chat_id="direct",
         session_key="cli:direct",
         specialist="researcher",
-        host_tools=None
+        host_tools=None,
+        attachments=None
     )
-
 @pytest.mark.asyncio
 async def test_subagent_manager_model_selection(mock_context):
     """Verify that SubagentManager correctly selects the model based on the specialist parameter."""

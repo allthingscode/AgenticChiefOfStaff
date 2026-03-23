@@ -31,7 +31,7 @@ def _get_timestamp() -> str:
 def _get_daily_journal_path(storage_root: Any) -> Path:
     """F-030: Centralized path calculation for the daily journal."""
     root = Path(storage_root) if not isinstance(storage_root, Path) else storage_root
-    return root / "workspace" / "memory" / f"{_get_date_str()}.md"
+    return root / "workspace" / "journal" / f"{_get_date_str()}.md"
 
 def prune_context(messages: List[dict], ttl_hours: int, keep_last_assistants: int) -> List[dict]:
     """

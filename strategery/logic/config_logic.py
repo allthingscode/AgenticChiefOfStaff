@@ -25,7 +25,7 @@ class MemoryRagConfig(Base):
 class StrategicEditionConfig(Base):
     user_email: str = "admin@example.com"
     storage_root: str = "D:/Nanobot_Storage"
-    app_root: str = "C:/Users/HayesChiefOfStaff/Documents/nanobot"
+    app_root: Optional[str] = None
     storage_root_backup: Optional[str] = None
     backup_folder_id: Optional[str] = None
     memory_rag: MemoryRagConfig = Field(default_factory=MemoryRagConfig)

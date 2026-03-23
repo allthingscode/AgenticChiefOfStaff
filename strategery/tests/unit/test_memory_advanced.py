@@ -75,8 +75,9 @@ def test_strategic_write_journal_entry(tmp_path):
     
     assert success is True
     today = datetime.now().strftime("%Y-%m-%d")
-    journal_path = tmp_path / "workspace" / "memory" / f"{today}.md"
+    journal_path = tmp_path / "workspace" / "journal" / f"{today}.md"
     assert journal_path.exists()
+
     content = journal_path.read_text(encoding="utf-8-sig")
     assert "### CONSOLIDATION" in content
     assert entry in content
@@ -84,7 +85,7 @@ def test_strategic_write_journal_entry(tmp_path):
 def test_strategic_get_rolling_journal(tmp_path):
     """Verify that recent journal snippets are correctly retrieved."""
     today = datetime.now().strftime("%Y-%m-%d")
-    journal_dir = tmp_path / "workspace" / "memory"
+    journal_dir = tmp_path / "workspace" / "journal"
     journal_dir.mkdir(parents=True)
     journal_path = journal_dir / f"{today}.md"
     

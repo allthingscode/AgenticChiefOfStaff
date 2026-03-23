@@ -131,6 +131,9 @@ class InfraPatch(BasePatch):
             self._patch_listdir_tool()
             result.affected_symbols.append("nanobot.agent.tools.filesystem.ListDirTool.execute")
             
+            self._patch_media_redirection(context)
+            result.affected_symbols.append("nanobot.config.paths.get_media_dir")
+            
             return result
         except Exception as e:
             import traceback
@@ -139,6 +142,42 @@ class InfraPatch(BasePatch):
             result.traceback = traceback.format_exc()
             strategic_logger.error(f"Infrastructure patch error: {e}")
             return result
+
+    def _patch_media_redirection(self, context: PatchContext):
+        """Globally redirects all media downloads to the D: drive (BUG-201, BUG-203)."""
+        import nanobot.config.paths as core_paths
+        from pathlib import Path
+        import sys
+        
+        # Resolve strategic media root
+        storage_root = context.storage_root or Path("D:/Nanobot_Storage")
+        strategic_media_root = storage_root / "workspace" / "media"
+        
+        def _strategic_get_media_dir(channel_name: str | None = None) -> Path:
+            # Force redirect to D: drive
+            path = strategic_media_root
+            if channel_name:
+                path = path / channel_name
+            
+            # Ensure directory exists
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+
+        # 1. Patch the source
+        if not hasattr(core_paths, "get_media_dir_strategic"):
+            core_paths.get_media_dir_strategic = core_paths.get_media_dir
+            core_paths.get_media_dir = _strategic_get_media_dir
+            strategic_logger.info(f"Globally redirected media to: {strategic_media_root}")
+
+        # 2. Patch already-imported references in channels (Ironclad Mandate)
+        channels = ["telegram", "discord", "feishu", "matrix"]
+        for channel in channels:
+            module_name = f"nanobot.channels.{channel}"
+            if module_name in sys.modules:
+                mod = sys.modules[module_name]
+                if hasattr(mod, "get_media_dir"):
+                    mod.get_media_dir = _strategic_get_media_dir
+                    strategic_logger.debug(f"Ironclad: Redirected get_media_dir in {module_name}")
 
     def _patch_listdir_tool(self):
         """Patches ListDirTool to handle Windows-specific junction points and restricted items (BUG-179)."""

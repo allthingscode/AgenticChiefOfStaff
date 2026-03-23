@@ -55,5 +55,6 @@ Optimized for stable long-term operation on Windows environments:
 | **Finality Mandate** | **LIVE** | **Reliability:** Enforced task completion standards that strictly forbid 'plans' from being reported as results. |
 | **Subagent Command Integrity** | **LIVE** | **Resilience:** Implemented base64 `-EncodedCommand` for subagent execution, bypassing Windows quoting issues for 100% reliable command execution (BUG-184). |
 | **Encoding Safety Refinement** | **LIVE** | **Stability:** Advanced UTF-8 handling with surgical Byte Order Mark (BOM) stripping, preventing output mangling in Windows/PowerShell (BUG-155). |
+| **Multimodal Empowerment** | **LIVE** | **Intelligence:** Ironclad handover pipeline giving Specialists "Eyes." Includes atomic manifest injection and D: drive media redirection. |
 | **Readability Reports (F-014)** | **LIVE** | **UX:** High-readability HTML email templates with dynamic CSS injection for automated briefings. |
 | **NanoGraph Phase 2** | Research | **Intelligence:** Multi-hop reasoning and Personalized PageRank (HippoRAG) for deterministic retrieval. |

@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import NetworkError
 from strategery.patches.telegram import TelegramPatch
@@ -42,9 +43,18 @@ async def test_telegram_polling_resilience():
     channel.config.token = "fake_token"
     channel._handle_message = AsyncMock()
     
+    # Create valid PatchContext
+    from strategery.patches.base import PatchContext
+    context = PatchContext(
+        config=validate_strategic_config({}),
+        storage_root=Path("/tmp/storage"),
+        user_email="test@example.com",
+        app_root=Path(".")
+    )
+    
     # Apply the patch logic
     patcher = TelegramPatch()
-    patcher._patch_telegram_channel(MockTelegramChannel, validate_strategic_config({}))
+    patcher._patch_telegram_channel(MockTelegramChannel, context)
     
     # Setup the failure scenario
     call_count = 0
@@ -106,7 +116,15 @@ async def test_telegram_error_suppression():
     """Verify that BUG-060 correctly suppresses NetworkError noise."""
     channel = MockTelegramChannel()
     patcher = TelegramPatch()
-    patcher._patch_telegram_channel(MockTelegramChannel, validate_strategic_config({}))
+    
+    from strategery.patches.base import PatchContext
+    context = PatchContext(
+        config=validate_strategic_config({}),
+        storage_root=Path("/tmp/storage"),
+        user_email="test@example.com",
+        app_root=Path(".")
+    )
+    patcher._patch_telegram_channel(MockTelegramChannel, context)
     
     # 1. Test NetworkError Suppression
     mock_context = MagicMock()

@@ -2,10 +2,19 @@ import os
 import re
 import json
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from pydantic import BaseModel
 from strategery.strategic_logger import strategic_logger
 
 if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
+
+class StrategicAttachment(BaseModel):
+    """Schema for multimodal attachments passed to subagents (ARCH-022)."""
+    id: str
+    path: str
+    content_type: str
+    filename: str
+    description: Optional[str] = None
 
 # --- Constants & Patterns ---
 
@@ -143,6 +152,11 @@ class ToolCircuitBreaker:
 
 def check_tool_loop(registry: Any, name: str, args: Any) -> Optional[str]:
     """Circuit breaker for any tool call to prevent repeating identical failures."""
+    # BUG-209: Exempt 'spawn' from circuit breaker to allow Main Agent to retry 
+    # task assignment after subagent failures.
+    if name == "spawn":
+        return None
+        
     if not hasattr(registry, "_strategic_circuit_breaker"):
         is_specialist = getattr(registry, "_is_strategic_specialist", False)
         registry._strategic_circuit_breaker = ToolCircuitBreaker(limit=3 if is_specialist else 2)
@@ -300,17 +314,19 @@ def inject_delegation_mandate(system_content: str) -> str:
         "3. **NO MODEL CONTROL:** You have NO say in which AI model is used.\n"
         "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear, STOP and ask the user.\n"
         "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately. Do NOT mention IDs in the initial turn.\n"
-        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `{LOG_ROOT}`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders."
+        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `{LOG_ROOT}`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders.\n"
+        "7. **MULTIMODAL HANDOVER (ARCH-022):** If the user asks you to analyze an image or document, and the message contains `[image: <path>]` or similar, you MUST extract that path and pass it via the `attachments` parameter in the `spawn` tool so the specialist can see it."
     )
     return system_content + mandate
 
-def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str:
+def build_specialist_instructions(base_prompt: str, specialist_type: str, attachments: Optional[List[Dict[str, Any]]] = None) -> str:
     header = f"\n## {specialist_type.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
-    
-    # Automatic Metadata Manifest (BUG-182)
+
+    # Atomic Metadata Manifest (Move to top for visibility)
     manifest = (
         "\n\n### 🗺️ STRATEGIC DISCOVERY MANIFEST\n"
         "Use these paths and procedures directly. Do NOT ask for them.\n"
+
         "1. **LOG LOCATIONS:**\n"
         f"   - Email Reporter: `{LOG_ROOT}email_reporter.log`\n"
         f"   - Dispatch/General: `{LOG_ROOT}nanobot_YYYYMMDD_*.log` (Use `list_dir` to find today's file).\n"
@@ -326,6 +342,15 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "   - **Step 3:** Use `mcp_google-surgical_google_drive_upload` to upload the ZIP.\n"
         "   - **Verification:** Use `mcp_google-surgical_google_drive_list` to confirm the upload.\n"
     )
+
+    if attachments:
+        manifest += "4. **ATTACHMENTS (ARCH-022):**\n"
+        manifest += "   You have been provided access to the following attachments. Use `mcp_multimodal_analyzer_analyze_image` or other vision tools to process them if vision is required.\n"
+        for att in attachments:
+            manifest += f"   - **File:** {att.get('filename', 'Unknown')}\n"
+            manifest += f"     **Path:** `{att.get('path', '')}`\n"
+            if att.get('description'):
+                manifest += f"     **Hint:** {att.get('description')}\n"
 
     strategic_instr = (
         "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
@@ -346,7 +371,7 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "15. **CLEAN COMMANDS (BUG-143):** Strip any trailing punctuation (like a period '.') that is not part of the command itself.\n"
         "16. **LOG AUDIT DEPTH (BUG-144):** Use `exec` with `Get-Content -Tail 500` or `Select-String` to search for 'ERROR' or 'Exception' across the entire file.\n"
         "17. **NO ASSUMPTIONS (BUG-146):** You are strictly FORBIDDEN from assuming a task or component has passed based on generic success messages. Find explicit evidence.\n"
-        "18. **FINALITY MANDATE (BUG-153 / BUG-181):** You are FORBIDDEN from ending your turn with a 'plan' or 'request for information'. You MUST use your discovery tools (`rg`, `fd`, `list_dir`) or read the STRATEGIC DISCOVERY MANIFEST to find what you need. A response without tool calls is interpreted as a COMPLETE AND FINAL ANSWER.\n"
+        "18. **FINALITY MANDATE (BUG-153 / BUG-181):** You are strictly FORBIDDEN from ending your turn with a 'plan' or 'request for information'. You MUST use your discovery tools (`rg`, `fd`, `list_dir`) or read the STRATEGIC DISCOVERY MANIFEST to find what you need. If a tool returns an error (e.g., Vision Tool 404), report the technical error directly to the user. Do NOT ask the user to fix it or provide a new path. A response without tool calls is interpreted as a COMPLETE AND FINAL ANSWER.\n"
         "19. **NO HALLUCINATED PATHS (BUG-158):** Use `list_dir` or `mcp_filesystem-d_search_files` to verify the existence of files before attempting to read them.\n"
         "20. **AUTOMATED ENCODING (BUG-155 / BUG-162):** The `exec` tool forces UTF-8. You are FORBIDDEN from manually prepending encoding fixes.\n"
         "21. **SURGICAL TOOL MANDATE:** Prioritize `rg` (ripgrep) and `fd` for speed.\n"
@@ -355,7 +380,7 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str) -> str
         "24. **LOG AUDIT TEMPORALITY (BUG-166):** You MUST filter for the current date when auditing logs to avoid Reporting stale errors (BUG-166). Use ABSOLUTE PATHS only.\n"
         f"25. **DEFINITIVE LOG ROOT (BUG-167):** All logs live EXCLUSIVELY in `{LOG_ROOT}`. Do NOT attempt to list parent directories."
     )
-    return base_prompt + header + strategic_instr
+    return base_prompt + header + manifest + strategic_instr
 
 def harden_subagent_command(command: str) -> str:
     """Hardens a shell command for a subagent by enforcing mandates and cleaning noise."""

@@ -68,8 +68,9 @@ class SubagentPatch(BasePatch):
             strategic_logger.error(f"Subagent patch error: {e}")
             return result
 
-    def _load_strategic_tools(self, registry):
+    def _load_strategic_tools(self, registry, model=None):
         from nanobot.agent.tools.base import Tool
+        import inspect
         tools_dir = Path(__file__).parent.parent / "tools"
         if not tools_dir.exists(): return
         for file in tools_dir.glob("*.py"):
@@ -85,7 +86,14 @@ class SubagentPatch(BasePatch):
                         if (isinstance(attr, type) and issubclass(attr, Tool) and attr is not Tool):
                             # Ensure we use the original register if available to avoid infinite recursion
                             reg_func = getattr(registry, "_orig_register_strategic", registry.register)
-                            reg_func(attr())
+                            
+                            # ARCH-022: Dynamic Model Assignment
+                            # Check if the tool constructor accepts a model argument
+                            sig = inspect.signature(attr.__init__)
+                            if 'model_name' in sig.parameters and model:
+                                reg_func(attr(model_name=model))
+                            else:
+                                reg_func(attr())
             except Exception as e:
                 strategic_logger.error(f"Error loading strategic tool {file.name}: {e}")
 
@@ -107,6 +115,20 @@ class SubagentPatch(BasePatch):
                             "enum": ["researcher", "architect"],
                             "description": "The type of specialist required. Default: researcher.",
                         },
+                        "attachments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {"type": "string", "description": "Absolute path to the file on the D: drive"},
+                                    "content_type": {"type": "string"},
+                                    "filename": {"type": "string"},
+                                    "description": {"type": "string", "description": "Optional hint or metadata for the subagent"}
+                                },
+                                "required": ["path", "filename"]
+                            },
+                            "description": "Optional list of attachments passed from the user or context."
+                        }
                     },
                     "required": ["task"],
                 }
@@ -116,11 +138,29 @@ class SubagentPatch(BasePatch):
         if not hasattr(SpawnTool, "_orig_execute_strategic"):
             SpawnTool._orig_execute_strategic = SpawnTool.execute
             @wraps(SpawnTool._orig_execute_strategic)
-            async def _patched_execute(self, task, label=None, specialist="researcher", **kwargs):
+            async def _patched_execute(self, task, label=None, specialist="researcher", attachments=None, **kwargs):
+                # ARCH-022: Multimodal Auto-Capture (BUG-199)
+                # If no attachments provided, scan recent history for [image: path] tags
+                if not attachments and hasattr(self, "_registry") and hasattr(self._registry, "_strategic_last_messages"):
+                    attachments = []
+                    # Scan last 2 messages for media pointers
+                    for msg in self._registry._strategic_last_messages[-2:]:
+                        content = msg.get("content", "")
+                        import re
+                        paths = re.findall(r"\[(?:image|file): (.*?)\]", content)
+                        for p in paths:
+                            attachments.append({
+                                "path": p,
+                                "filename": Path(p).name,
+                                "content_type": "image/jpeg", # Default
+                                "description": "Auto-captured from chat history."
+                            })
+
                 return await self._manager.spawn(
                     task=task, label=label, origin_channel=self._origin_channel,
                     origin_chat_id=self._origin_chat_id, session_key=self._session_key, 
-                    specialist=specialist, host_tools=getattr(self, "_registry", None)
+                    specialist=specialist, host_tools=getattr(self, "_registry", None),
+                    attachments=attachments
                 )
             SpawnTool.execute = _patched_execute
 
@@ -211,19 +251,20 @@ class SubagentPatch(BasePatch):
         if not hasattr(SubagentManager, "_orig_spawn_strategic"):
             SubagentManager._orig_spawn_strategic = SubagentManager.spawn
             @wraps(SubagentManager._orig_spawn_strategic)
-            async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher", host_tools=None):
+            async def _patched_spawn(self, task, label=None, origin_channel="cli", origin_chat_id="direct", session_key=None, specialist="researcher", host_tools=None, attachments=None):
                 task_id = str(uuid.uuid4())[:8]
                 display_label = label or task[:100] + ("..." if len(task) > 100 else "")
                 origin = {"channel": origin_channel, "chat_id": subagent_logic.clean_chat_id(origin_chat_id)}
                 
-                bg_task = asyncio.create_task(self._run_subagent(task_id, task, display_label, origin, specialist, host_tools))
+                bg_task = asyncio.create_task(self._run_subagent(task_id, task, display_label, origin, specialist, host_tools, attachments))
+
                 self._running_tasks[task_id] = bg_task
                 if session_key: self._session_tasks.setdefault(session_key, set()).add(task_id)
                 bg_task.add_done_callback(lambda _: self._running_tasks.pop(task_id, None))
                 return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
             SubagentManager.spawn = _patched_spawn
 
-        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None):
+        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None, attachments=None):
             final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
             try:
                 async with AsyncExitStack():
@@ -249,9 +290,9 @@ class SubagentPatch(BasePatch):
                     
                     # Strategic tool loading
                     p = SubagentPatch()
-                    p._load_strategic_tools(tools)
+                    p._load_strategic_tools(tools, model=final_model)
                     
-                    system_prompt = subagent_logic.build_specialist_instructions(self._build_subagent_prompt(), specialist)
+                    system_prompt = subagent_logic.build_specialist_instructions(self._build_subagent_prompt(), specialist, attachments)
                     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": task}]
                     
                     final_result = await subagent_logic.run_orchestration_loop(
@@ -359,11 +400,13 @@ class SubagentPatch(BasePatch):
         from nanobot.agent.context import ContextBuilder
         if not hasattr(ContextBuilder, "_orig_build_messages_strategic"):
             ContextBuilder._orig_build_messages_strategic = ContextBuilder.build_messages
+            
             @wraps(ContextBuilder._orig_build_messages_strategic)
-            def _patched_build_messages(self, history, current_message, **kwargs):
-                messages = self._orig_build_messages_strategic(history, current_message, **kwargs)
+            def _patched_build_messages(self_cb, history, current_message, **kwargs):
+                messages = self_cb._orig_build_messages_strategic(history, current_message, **kwargs)
                 for msg in messages:
                     if msg.get("role") == "system":
                         msg["content"] = subagent_logic.inject_delegation_mandate(msg["content"])
                 return messages
+            
             ContextBuilder.build_messages = _patched_build_messages

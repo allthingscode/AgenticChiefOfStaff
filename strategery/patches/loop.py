@@ -5,6 +5,7 @@ from typing import List
 from .base import BasePatch, PatchResult, PatchContext
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.events import OutboundMessage
+from strategery.strategic_logger import strategic_logger
 from loguru import logger
 
 class AgentLoopPatch(BasePatch):
@@ -70,6 +71,15 @@ class AgentLoopPatch(BasePatch):
                 
                 async def _patched_dispatch(self, msg):
                     """Process a message under a per-session lock instead of global lock."""
+                    # ARCH-022 Ironclad Media Tagging (BUG-202)
+                    # Ensure media paths are explicitly in the content so spawn tool can extract them.
+                    if msg.media:
+                        for path in msg.media:
+                            tag = f"\n[image: {path}]"
+                            if tag not in msg.content:
+                                msg.content += tag
+                        strategic_logger.info(f"Ironclad: Tagged {len(msg.media)} media paths in content.")
+
                     # Initialize session locks if they don't exist (for instances created before patch)
                     if not hasattr(self, "_strategic_session_locks"):
                         self._strategic_session_locks = weakref.WeakValueDictionary()
@@ -126,6 +136,10 @@ class AgentLoopPatch(BasePatch):
                     import json
                     from loguru import logger
                     
+                    # ARCH-022: Capture history for subagent handover (BUG-199)
+                    if hasattr(self, "tools"):
+                        self.tools._strategic_last_messages = initial_messages
+
                     messages = initial_messages
                     iteration = 0
                     final_content = None
@@ -178,6 +192,10 @@ class AgentLoopPatch(BasePatch):
                                 reasoning_content=response.reasoning_content,
                                 thinking_blocks=response.thinking_blocks,
                             )
+                            
+                            # ARCH-022: Update stored history for tool access (BUG-199)
+                            if hasattr(self, "tools"):
+                                self.tools._strategic_last_messages = messages
 
                             for tool_call in response.tool_calls:
                                 tools_used.append(tool_call.name)
@@ -185,6 +203,9 @@ class AgentLoopPatch(BasePatch):
                                 messages = self.context.add_tool_result(
                                     messages, tool_call.id, tool_call.name, result
                                 )
+                                # ARCH-022: Update stored history for tool access (BUG-199)
+                                if hasattr(self, "tools"):
+                                    self.tools._strategic_last_messages = messages
                         else:
                             clean = self._strip_think(response.content)
                             if response.finish_reason == "error":
