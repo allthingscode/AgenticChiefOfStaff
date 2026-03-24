@@ -396,9 +396,11 @@ def harden_subagent_command(command: str) -> str:
 
         # BUG-221: Replace 'python' or 'python.exe' with the absolute path and '&' operator for PowerShell.
         # Use a more targeted regex to avoid mangling paths that contain 'python'.
-        def _python_replacer(m):
-            return f'& "{PYTHON_EXE_PATH}"'
-        
-        command = re.sub(r"\bpython(\.exe)?\b", _python_replacer, command, flags=re.IGNORECASE)
+        # Ensure it's idempotent by checking if it's already using the & operator.
+        if f'& "{PYTHON_EXE_PATH}"' not in command:
+            def _python_replacer(m):
+                return f'& "{PYTHON_EXE_PATH}"'
+            
+            command = re.sub(r"\bpython(\.exe)?\b", _python_replacer, command, flags=re.IGNORECASE)
 
     return command
