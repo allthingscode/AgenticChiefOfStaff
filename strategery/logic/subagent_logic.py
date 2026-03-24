@@ -81,11 +81,18 @@ def is_tool_blocked(tool_name: str, is_specialist: bool) -> bool:
     name_str = tool_name.lower()
     role = "specialist" if is_specialist else "main_agent"
     
-    # MANDATE: Substring matching is required for tool names (e.g. 'google' blocks all google tools)
-    # But we want to avoid blocking legitimate non-tool usage if this logic were ever used on commands.
-    # Since tool_name is ONLY the name of the tool, simple 'in' is actually safer here than word boundaries,
-    # as tool names often use underscores or hyphens as separators.
-    return any(bp.lower() in name_str for bp in ROLE_BLOCKS[role])
+    # BUG-222: Use a more precise check for tool blocking. 
+    # If the tool name EXACTLY matches or is a logical substring (e.g. 'google' in 'mcp_google_surgical'), block it.
+    # We want to avoid blocking legitimate commands like 'redirect' if 'dir' is in the block list.
+    # Since tool_name is ONLY the name of the tool (from the LLM's perspective), we can be safer.
+    blocks = ROLE_BLOCKS[role]
+    for b in blocks:
+        b_clean = b.lower().strip()
+        # If the block pattern is in the tool name, it's blocked.
+        # Example: 'google' in 'mcp_google_surgical' -> True
+        if b_clean in name_str:
+            return True
+    return False
 
 def get_block_message(registry: Any, tool_name: str, is_specialist: bool) -> str:
     """Returns a descriptive error message for a blocked tool with circuit breaker support."""
@@ -367,16 +374,31 @@ def harden_subagent_command(command: str) -> str:
         command = pattern.sub("", command).strip()
     
     if "python " in command.lower() or "python.exe" in command.lower():
-        # BUG-185: Append the absolute project root to PYTHONPATH instead of overwriting it with "."
-        # Ensure we don't have syntax errors in PowerShell assignment
-        root_path = str(PROJECT_ROOT).replace("\\", "\\\\")
-        prefix = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path}"; '
-        if PYTHON_EXE_PATH.lower() not in command.lower():
-            # BUG-221: Use & operator for quoted executable in PowerShell
-            repl = ("& " + f'"{PYTHON_EXE_PATH}"').replace("\\", "\\\\")
-            command = re.search(r"\bpython(\.exe)?\b", command, flags=re.IGNORECASE).string.replace(
-                re.search(r"\bpython(\.exe)?\b", command, flags=re.IGNORECASE).group(), repl
-            )
-        if "$env:PYTHONPATH" not in command:
-            command = prefix + command
+        # MANDATE: Project root for module resolution.
+        root_path = str(PROJECT_ROOT)
+        
+        # BUG-221: Convert POSIX-style 'PYTHONPATH=... python' to PowerShell compatible assignment.
+        # This prevents ParserError and TerminatorExpectedAtEndOfString in EncodedCommand.
+        posix_env_pattern = re.compile(r"^\s*PYTHONPATH=([^\s]+)\s+(.*)$", re.IGNORECASE)
+        match = posix_env_pattern.match(command)
+        
+        if match:
+            path_val = match.group(1).strip("'\"")
+            rest_of_cmd = match.group(2)
+            # Combine everything into a clean PowerShell structure
+            command = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path};{path_val}"; {rest_of_cmd}'
+        elif "$env:PYTHONPATH" not in command:
+            # Prepend project root if no env assignment exists
+            command = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path}"; {command}'
+        elif root_path not in command:
+            # Inject project root into existing PowerShell env assignment
+            command = command.replace('$env:PYTHONPATH = "$env:PYTHONPATH;', f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path};')
+
+        # BUG-221: Replace 'python' or 'python.exe' with the absolute path and '&' operator for PowerShell.
+        # Use a more targeted regex to avoid mangling paths that contain 'python'.
+        def _python_replacer(m):
+            return f'& "{PYTHON_EXE_PATH}"'
+        
+        command = re.sub(r"\bpython(\.exe)?\b", _python_replacer, command, flags=re.IGNORECASE)
+
     return command

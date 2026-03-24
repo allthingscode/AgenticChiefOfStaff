@@ -61,13 +61,20 @@ async def strategic_telegram_polling_loop(channel):
                 retry_delay = 5 # Reset on success
             
             await asyncio.sleep(1)
-        except (NetworkError, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+        except (NetworkError, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, 
+                httpx.WriteError, httpx.PoolTimeout, asyncio.TimeoutError) as e:
             strategic_logger.warning(f"Telegram: Transient network error during polling: {e}. Retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60) # Exponential backoff
         except Exception as e:
-            strategic_logger.error(f"Telegram: Unexpected error in polling loop: {e}")
-            await asyncio.sleep(5)
+            err_str = str(e).lower()
+            if "timed out" in err_str or "connection reset" in err_str or "network" in err_str:
+                strategic_logger.warning(f"Telegram: Transient error detected ({type(e).__name__}): {e}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 60)
+            else:
+                strategic_logger.error(f"Telegram: Unexpected error in polling loop: {e}")
+                await asyncio.sleep(5)
 
 async def strategic_telegram_on_message(channel, update, context, orig_on_message):
     """Patched message handler with Media Redirection and Topic support."""
