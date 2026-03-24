@@ -1,7 +1,11 @@
 import os
+import warnings
 from pathlib import Path
 from typing import Any
-import google.generativeai as genai
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", FutureWarning)
+    import google.generativeai as genai
 from PIL import Image
 
 from nanobot.agent.tools.base import Tool
