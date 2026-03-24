@@ -16,9 +16,10 @@ def test_harden_subagent_command_python_path():
     # Just check for the existence of the path segment without worrying about the exact escape sequence in the assert
     assert 'nanoClaw' in hardened
     assert 'python.exe' in hardened
-    # Check that it's using the dynamic path we expect
-    assert f'"{python_abs}"' in hardened
-
+    # Check that it's using the dynamic path we expect (handle escaping)
+    expected_path = f'"{python_abs}"'.replace("\\", "\\\\")
+    assert expected_path in hardened
+    assert "& " in hardened # BUG-221: Verify call operator exists
 def test_harden_subagent_command_trailing_dot():
     # BUG-143: Trailing dots should be stripped
     cmd = "python script.py."

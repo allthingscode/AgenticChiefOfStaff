@@ -80,6 +80,11 @@ def is_tool_blocked(tool_name: str, is_specialist: bool) -> bool:
     """Determines if a tool is blocked based on the agent's role."""
     name_str = tool_name.lower()
     role = "specialist" if is_specialist else "main_agent"
+    
+    # MANDATE: Substring matching is required for tool names (e.g. 'google' blocks all google tools)
+    # But we want to avoid blocking legitimate non-tool usage if this logic were ever used on commands.
+    # Since tool_name is ONLY the name of the tool, simple 'in' is actually safer here than word boundaries,
+    # as tool names often use underscores or hyphens as separators.
     return any(bp.lower() in name_str for bp in ROLE_BLOCKS[role])
 
 def get_block_message(registry: Any, tool_name: str, is_specialist: bool) -> str:
@@ -367,8 +372,11 @@ def harden_subagent_command(command: str) -> str:
         root_path = str(PROJECT_ROOT).replace("\\", "\\\\")
         prefix = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path}"; '
         if PYTHON_EXE_PATH.lower() not in command.lower():
-            repl = f'"{PYTHON_EXE_PATH}"'.replace("\\", "\\\\")
-            command = re.sub(r"\bpython(\.exe)?\b", repl, command, flags=re.IGNORECASE)
+            # BUG-221: Use & operator for quoted executable in PowerShell
+            repl = ("& " + f'"{PYTHON_EXE_PATH}"').replace("\\", "\\\\")
+            command = re.search(r"\bpython(\.exe)?\b", command, flags=re.IGNORECASE).string.replace(
+                re.search(r"\bpython(\.exe)?\b", command, flags=re.IGNORECASE).group(), repl
+            )
         if "$env:PYTHONPATH" not in command:
             command = prefix + command
     return command

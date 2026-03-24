@@ -48,6 +48,7 @@ def strategic_prepare_telegram_media(media_path, bot):
 async def strategic_telegram_polling_loop(channel):
     """Resilience Loop for Telegram start_polling."""
     from telegram.error import NetworkError
+    import httpx
     retry_delay = 5
     while channel._running:
         try:
@@ -60,8 +61,8 @@ async def strategic_telegram_polling_loop(channel):
                 retry_delay = 5 # Reset on success
             
             await asyncio.sleep(1)
-        except NetworkError as e:
-            strategic_logger.warning(f"Telegram: Network error during polling: {e}. Retrying in {retry_delay}s...")
+        except (NetworkError, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+            strategic_logger.warning(f"Telegram: Transient network error during polling: {e}. Retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60) # Exponential backoff
         except Exception as e:
