@@ -29,9 +29,14 @@ A hardened pipeline for processing visual and structured data:
 - **Multimodal Handover:** Seamlessly passes visual context between the orchestrator and specialists, enabling complex analysis of diagrams, screenshots, and technical documentation.
 
 ### **5. Enterprise-Grade Resilience (Windows Optimized)**
-Engineered for maximum stability in professional Windows environments:
 - **Zero Core Pollution:** All strategic enhancements are applied via a non-invasive runtime architecture, allowing for immediate synchronization with upstream Nanobot updates without regression risks.
 - **Concurrent Session Management:** Replaces global locking with high-performance, per-session isolation, enabling fluid multi-tasking and concurrent user processing.
 - **High-Readability Reporting:** Includes a dedicated HTML reporting engine with dynamic CSS injection for delivering polished, high-contrast briefings via email and messaging platforms.
 - **Pre-Flight Diagnostics (Auto-Heal):** A comprehensive diagnostic engine (Strategic Doctor) validates the entire system state—from storage roots to API connectivity—before launch. Includes an `--apply` mode to automatically repair configuration BOMs, indentation, and missing storage structures.
+
+---
+
+## **Technical Reference**
+For detailed implementation mandates, sanitized path mappings, and mandatory maintenance SOPs, please refer to the [Strategic Development Guide](./STRATEGIC_DEVELOPMENT.md).
+
 
