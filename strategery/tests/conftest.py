@@ -63,3 +63,21 @@ def global_config_patch():
 
     with patch("builtins.open", side_effect=side_effect):
         yield
+
+# BUG-223: Resiliency patch for crewai.llm.FilteredStream.isatty
+# Prevents 'ValueError: I/O operation on closed file' during atexit/teardown.
+def pytest_configure(config):
+    try:
+        from crewai.llm import FilteredStream
+        _orig_isatty = FilteredStream.isatty
+        def _safe_isatty(self):
+            try:
+                # If the original stream is closed, return False instead of raising ValueError
+                if hasattr(self, "_original_stream") and self._original_stream.closed:
+                    return False
+                return _orig_isatty(self)
+            except ValueError:
+                return False
+        FilteredStream.isatty = _safe_isatty
+    except ImportError:
+        pass # CrewAI not installed or different version
