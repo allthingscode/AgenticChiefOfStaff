@@ -8,7 +8,7 @@ def test_main_agent_log_root_mandate():
     
     assert "DEFINITIVE LOG ROOT (BUG-170)" in hardened_prompt
     assert subagent_logic.LOG_ROOT in hardened_prompt
-    assert "You MUST use this absolute path" in hardened_prompt
+    assert "Use this absolute path for all log audits" in hardened_prompt
 
 def test_specialist_log_temporality_mandate():
     """Verify that BUG-166 (Specialist Log Context Drift) is addressed in specialist instructions."""
