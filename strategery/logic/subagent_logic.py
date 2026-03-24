@@ -2,6 +2,8 @@ import os
 import re
 import json
 import sys
+import base64
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from pydantic import BaseModel

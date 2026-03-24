@@ -67,9 +67,9 @@ class StrategicSimulator:
         })
         return f"mock-subagent-{len(self.captured_spawns)}"
 
-    async def run_prompt(self, prompt, mock_tool_calls=None, role="main"):
+    async def run_prompt(self, prompt, mock_tool_calls=None, role="main", mock_content="Mock response"):
         """Runs the agent loop with a mock provider and captures behavior."""
-        provider = BehavioralMockProvider(tool_calls=mock_tool_calls)
+        provider = BehavioralMockProvider(tool_calls=mock_tool_calls, content=mock_content)
         
         # 1. Apply Strategic Patches to the classes before instantiation
         # (This ensures the Strategic Registry and Spawner are active)
