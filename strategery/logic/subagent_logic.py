@@ -297,14 +297,14 @@ def format_spawn_termination_directive(result: str, task_id: str) -> str:
 
 def inject_delegation_mandate(system_content: str) -> str:
     mandate = (
-        "\n\n## ⚖️ DELEGATION & SPECIALIST ECONOMY\n"
-        "1. **DELEGATE BY DEFAULT:** For any background, research, or complex architectural task, use the 'spawn' tool.\n"
-        "2. **CHOOSE YOUR SPECIALIST:** ('researcher' (DEFAULT) or 'architect').\n"
-        "3. **NO MODEL CONTROL:** You have NO say in which AI model is used.\n"
-        "4. **WHEN IN DOUBT, ASK:** If the task's complexity is unclear, STOP and ask the user.\n"
-        "5. **SPAWN TURN:** When you call 'spawn', your turn ends immediately. Do NOT mention IDs in the initial turn.\n"
-        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All strategic and session logs reside EXCLUSIVELY in `{LOG_ROOT}`. You MUST use this absolute path when assigning log-related tasks to specialists. Do NOT assume logs live in skill folders.\n"
-        "7. **MULTIMODAL HANDOVER (ARCH-022):** If the user asks you to analyze an image or document, and the message contains `[image: <path>]` or similar, you MUST extract that path and pass it via the `attachments` parameter in the `spawn` tool so the specialist can see it."
+        "\n\n## ⚖️ STRATEGIC DELEGATION & SPECIALIST ECONOMY (MANDATORY)\n"
+        "1. **DELEGATE BY DEFAULT:** You are strictly FORBIDDEN from attempting to use surgical tools (Google Search, Email, Calendar, Tasks) directly. You MUST use the 'spawn' tool for these tasks.\n"
+        "2. **CHOOSE YOUR SPECIALIST:** ('researcher' for data/weather/news, 'architect' for code/system changes).\n"
+        "3. **STOP TURN ON SPAWN:** When you call 'spawn', your turn is OVER. Do NOT predict or hallucinate an ID. Acknowledge the spawn and END your response.\n"
+        "4. **ZERO SHELL BYPASS:** You are strictly FORBIDDEN from using the 'exec' tool to bypass restricted tools (e.g., using 'curl' instead of search_ai). Any attempt to bypass mandates via shell will be BLOCKED.\n"
+        "5. **REPORT DATA GAPS:** If you cannot find information using your provided tools, DO NOT ask the user for it. Report the failure and suggest a course of action.\n"
+        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All logs reside EXCLUSIVELY in `{LOG_ROOT}`. Use this absolute path for all log audits.\n"
+        "7. **MULTIMODAL HANDOVER:** If the message contains `[image: <path>]`, you MUST pass that path to the specialist via the `attachments` parameter."
     )
     return system_content + mandate
 
