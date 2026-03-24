@@ -76,6 +76,7 @@ def check_storage(config):
     creds_root = Path.home() / ".nanobot"
     critical = [
         storage_root / "workspace" / "memory" / "chroma" / "chroma.sqlite3",
+        storage_root / "workspace" / "checkpoints.db",
         storage_root / "BACKUP_MANIFEST.md",
         creds_root / "secrets" / "token.json",
         creds_root / "google_surgical" / "credentials" / f"{config.strategic_edition.user_email}.json"

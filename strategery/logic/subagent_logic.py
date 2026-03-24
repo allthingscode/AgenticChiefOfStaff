@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import sys
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from pydantic import BaseModel
 from strategery.strategic_logger import strategic_logger
@@ -28,13 +30,13 @@ ROLE_BLOCKS = {
     "specialist": ["spawn", "nanobot", "strategic_hello", "web_search", "web_fetch"]
 }
 
+# MANDATE: Protect D: drive and strategic files from direct shell bypass.
+# Use regex with word boundaries to avoid false positives in paths (e.g. D:\path)
 BYPASS_PATTERNS = [
-    "nanobot mcp", "nanobot status", "history.md", "findstr ", 
-    "grep ", "rg ", "ripgrep ", "fd ", "bat ", "cat ", "type ", "tail ", "get-content", "read-host",
-    "download", "curl ", "wget ", "Invoke-WebRequest", "Invoke-RestMethod",
-    "ls ", "dir ", "more ", "head ", "ping ", "iex ", "Invoke-Expression ",
-    "python ", "sh ", "bash ", "powershell ", "cmd ", "Get-ChildItem ",
-    "Select-String ", "Get-Item ", "Get-Service ", "start ", "open ", "D:"
+    r"\bnanobot\s+mcp\b", r"\bnanobot\s+status\b", r"\bhistory\.md\b",
+    r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+", r"\bInvoke-WebRequest\b", r"\bInvoke-RestMethod\b",
+    r"\bls\b\s+", r"\bdir\b\s+", r"\bmore\b\s+", r"\bhead\b\s+", r"\bping\b\s+", r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
+    r"^\s*[a-zA-Z]:\s*$" # Drive switch only
 ]
 
 # Pre-compiled regex for performance (BUG-168)
@@ -45,9 +47,6 @@ CLUTTER_PATTERNS = [
     re.compile(r"(?<!chcp\s65001)>\$null\s*([;&|]|\s|$)", re.IGNORECASE)
 ]
 
-import sys
-from pathlib import Path
-
 # MANDATE: Use dynamic resolution for the project's Python executable to avoid hard-coded personal paths.
 # We assume the venv 'nanoClaw' is in the project root (one level up from 'strategery' folder)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
@@ -57,14 +56,11 @@ if not Path(PYTHON_EXE_PATH).exists():
     PYTHON_EXE_PATH = sys.executable
 
 # MANDATE: Resolve log root dynamically from context or env.
-# Defaults to D: for this machine but supports portability.
 def get_log_root() -> str:
-    # Use env var if set, otherwise look for config.json to find storage_root
     env_log = os.environ.get("STRATEGIC_LOG_DIR")
     if env_log:
         return str(Path(env_log).absolute()) + "\\"
     
-    # Fallback search for config.json
     try:
         config_path = Path.home() / ".nanobot" / "config.json"
         if config_path.exists():
@@ -109,11 +105,24 @@ def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bo
 
 def detect_mandate_bypass(command: str) -> bool:
     """Detects attempts to bypass strategic mandates via shell commands."""
-    cmd_padded = command.lower() + " "
-    return any(p.lower() in cmd_padded for p in BYPASS_PATTERNS)
+    # MANDATE: Tool names like 'read_file' are NOT CLI commands. 
+    # If the agent tries to use them in 'exec', block it.
+    for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
+        if re.search(r"\b" + tool_name + r"\b", command):
+            return True
+
+    for pattern in BYPASS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return True
+    return False
 
 def get_bypass_message(command: str) -> str:
     """Returns a descriptive error message for a mandate bypass."""
+    # Check for tool hallucination in shell
+    for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
+        if tool_name in command.lower():
+            return f"CRITICAL ERROR: Access Denied. The term '{tool_name}' is a TOOL, not a shell command. Use the '{tool_name}' tool directly."
+
     if "history.md" in command.lower():
         return "CRITICAL ERROR: Access Denied. Bypass pattern detected. HISTORY.md is RETIRED; use chronological journals instead."
     if "nanobot mcp" in command.lower():
@@ -152,11 +161,7 @@ class ToolCircuitBreaker:
 
 def check_tool_loop(registry: Any, name: str, args: Any) -> Optional[str]:
     """Circuit breaker for any tool call to prevent repeating identical failures."""
-    # BUG-209: Exempt 'spawn' from circuit breaker to allow Main Agent to retry 
-    # task assignment after subagent failures.
-    if name == "spawn":
-        return None
-        
+    if name == "spawn": return None
     if not hasattr(registry, "_strategic_circuit_breaker"):
         is_specialist = getattr(registry, "_is_strategic_specialist", False)
         registry._strategic_circuit_breaker = ToolCircuitBreaker(limit=3 if is_specialist else 2)
@@ -166,14 +171,9 @@ def check_tool_loop(registry: Any, name: str, args: Any) -> Optional[str]:
 
 def _format_telemetry(label: str, event: str, content: Any, indent: int = 4) -> str:
     """Standardized formatting for telemetry log entries."""
-    if content is None:
-        return f"\n[{label}] {event}: [None]"
-        
-    if isinstance(content, dict):
-        text = json.dumps(content, indent=indent, ensure_ascii=False)
-    else:
-        text = str(content)
-    
+    if content is None: return f"\n[{label}] {event}: [None]"
+    if isinstance(content, dict): text = json.dumps(content, indent=indent, ensure_ascii=False)
+    else: text = str(content)
     snippet = text[:1000]
     indented = "\n" + " " * indent + ("\n" + " " * indent).join(snippet.split("\n"))
     return f"\n[{label}] {event}: {indented}..."
@@ -183,8 +183,7 @@ def log_subagent_turn(task_id: str, iteration: int, thought: Optional[str] = Non
     if thought:
         from .provider_logic import strip_reasoning_artifacts
         thought = strip_reasoning_artifacts(thought)
-        if thought:
-            msg += _format_telemetry("Subagent " + task_id, "THOUGHT", thought[:500])
+        if thought: msg += _format_telemetry("Subagent " + task_id, "THOUGHT", thought[:500])
     strategic_logger.warning(msg)
 
 def log_tool_call(task_id: str, tool_name: str, arguments: Any):
@@ -231,16 +230,7 @@ async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[st
     
     while iteration < max_iterations:
         iteration += 1
-        
-        response = await provider.chat(
-            messages=messages, 
-            tools=tools.get_definitions(), 
-            model=model,
-            temperature=temperature, 
-            max_tokens=max_tokens, 
-            reasoning_effort=reasoning_effort
-        )
-        
+        response = await provider.chat(messages=messages, tools=tools.get_definitions(), model=model, temperature=temperature, max_tokens=max_tokens, reasoning_effort=reasoning_effort)
         log_subagent_turn(task_id, iteration, response.content)
         
         if response.has_tool_calls and response.tool_calls:
@@ -252,27 +242,14 @@ async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[st
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
         else:
             final_result = response.content or "Error: Empty response."
-            
             if should_escalate_model(final_result):
                 escalation_model = get_escalation_model(model)
                 strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
-                messages.append({
-                    "role": "system", 
-                    "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."
-                })
-                escalation_response = await provider.chat(
-                    messages=messages, 
-                    tools=tools.get_definitions(), 
-                    model=escalation_model,
-                    temperature=0.5,
-                    max_tokens=max_tokens, 
-                    reasoning_effort="medium"
-                )
+                messages.append({"role": "system", "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."})
+                escalation_response = await provider.chat(messages=messages, tools=tools.get_definitions(), model=escalation_model, temperature=0.5, max_tokens=max_tokens, reasoning_effort="medium")
                 final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
-            
             log_subagent_completion(task_id, final_result)
             break
-            
     return final_result
 
 def clean_chat_id(chat_id: str) -> str:
@@ -321,12 +298,9 @@ def inject_delegation_mandate(system_content: str) -> str:
 
 def build_specialist_instructions(base_prompt: str, specialist_type: str, attachments: Optional[List[Dict[str, Any]]] = None) -> str:
     header = f"\n## {specialist_type.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
-
-    # Atomic Metadata Manifest (Move to top for visibility)
     manifest = (
         "\n\n### 🗺️ STRATEGIC DISCOVERY MANIFEST\n"
         "Use these paths and procedures directly. Do NOT ask for them.\n"
-
         "1. **LOG LOCATIONS:**\n"
         f"   - Email Reporter: `{LOG_ROOT}email_reporter.log`\n"
         f"   - Dispatch/General: `{LOG_ROOT}nanobot_YYYYMMDD_*.log` (Use `list_dir` to find today's file).\n"
@@ -342,15 +316,13 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "   - **Step 3:** Use `mcp_google-surgical_google_drive_upload` to upload the ZIP.\n"
         "   - **Verification:** Use `mcp_google-surgical_google_drive_list` to confirm the upload.\n"
     )
-
     if attachments:
         manifest += "4. **ATTACHMENTS (ARCH-022):**\n"
         manifest += "   You have been provided access to the following attachments. Use `mcp_multimodal_analyzer_analyze_image` or other vision tools to process them if vision is required.\n"
         for att in attachments:
             manifest += f"   - **File:** {att.get('filename', 'Unknown')}\n"
             manifest += f"     **Path:** `{att.get('path', '')}`\n"
-            if att.get('description'):
-                manifest += f"     **Hint:** {att.get('description')}\n"
+            if att.get('description'): manifest += f"     **Hint:** {att.get('description')}\n"
 
     strategic_instr = (
         "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
@@ -378,30 +350,25 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "22. **HIGH-FIDELITY VIEWING:** Use `bat` for high-fidelity file inspection.\n"
         "23. **CONTEXT EFFICIENCY MANDATE (BUG-164):** You are strictly FORBIDDEN from reading entire files that are larger than 10KB using `read_file`. Use `rg` or `tail`.\n"
         "24. **LOG AUDIT TEMPORALITY (BUG-166):** You MUST filter for the current date when auditing logs to avoid Reporting stale errors (BUG-166). Use ABSOLUTE PATHS only.\n"
-        f"25. **DEFINITIVE LOG ROOT (BUG-167):** All logs live EXCLUSIVELY in `{LOG_ROOT}`. Do NOT attempt to list parent directories."
+        f"25. **DEFINITIVE LOG ROOT (BUG-167):** All logs live EXCLUSIVELY in `{LOG_ROOT}`. Do NOT attempt to list parent directories.\n"
+        "26. **TOOL CALL MANDATE (CRITICAL):** You are strictly FORBIDDEN from attempting to call tools (like 'read_file', 'list_dir', etc.) as shell commands via the 'exec' tool. Use the dedicated tool directly."
     )
     return base_prompt + header + manifest + strategic_instr
 
 def harden_subagent_command(command: str) -> str:
     """Hardens a shell command for a subagent by enforcing mandates and cleaning noise."""
     command = command.strip().rstrip(".")
-    
-    # Clean clutter using pre-compiled patterns
     for pattern in CLUTTER_PATTERNS:
         command = pattern.sub("", command).strip()
     
     if "python " in command.lower() or "python.exe" in command.lower():
         # BUG-185: Append the absolute project root to PYTHONPATH instead of overwriting it with "."
-        # This ensures imports work regardless of the current working directory or drive.
-        prefix = f'$env:PYTHONPATH = "$env:PYTHONPATH;{PYTHON_EXE_PATH.replace("nanoClaw\\Scripts\\python.exe", "")}"; '
-        
-        # Use simple string replace for the Python path to avoid re.sub escape issues
+        # Ensure we don't have syntax errors in PowerShell assignment
+        root_path = str(PROJECT_ROOT).replace("\\", "\\\\")
+        prefix = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path}"; '
         if PYTHON_EXE_PATH.lower() not in command.lower():
-            # Standard boundary match for 'python'
-            # We must escape backslashes in the replacement string for re.sub (BUG-168)
             repl = f'"{PYTHON_EXE_PATH}"'.replace("\\", "\\\\")
             command = re.sub(r"\bpython(\.exe)?\b", repl, command, flags=re.IGNORECASE)
-        
         if "$env:PYTHONPATH" not in command:
             command = prefix + command
     return command

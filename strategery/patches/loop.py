@@ -115,11 +115,13 @@ class AgentLoopPatch(BasePatch):
                                 ))
                         except asyncio.CancelledError:
                             raise
-                        except Exception:
-                            logger.exception("Error processing message for session {}", msg.session_key)
+                        except Exception as e:
+                            import traceback
+                            tb = traceback.format_exc()
+                            logger.error("Error processing message for session {}: {}\n{}", msg.session_key, e, tb)
                             await self.bus.publish_outbound(OutboundMessage(
                                 channel=msg.channel, chat_id=msg.chat_id,
-                                content="Sorry, I encountered an error.",
+                                content="Sorry, I encountered an error. Strategic traceback logged.",
                             ))
                 
                 AgentLoop._dispatch = _patched_dispatch
@@ -130,7 +132,7 @@ class AgentLoopPatch(BasePatch):
             if not hasattr(AgentLoop, "_orig_run_agent_loop_strategic"):
                 AgentLoop._orig_run_agent_loop_strategic = AgentLoop._run_agent_loop
                 
-                async def _patched_run_agent_loop(self, initial_messages, on_progress=None):
+                async def _patched_run_agent_loop(self, initial_messages, on_progress=None, **kwargs):
                     """Strategic override of _run_agent_loop to prevent ID hallucination."""
                     from typing import Callable, Awaitable
                     import json

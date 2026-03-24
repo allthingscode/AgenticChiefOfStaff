@@ -19,6 +19,8 @@ from .loop import AgentLoopPatch
 from .session import SessionPatch
 from .awareness import AwarenessPatch
 from .email import EmailPatch
+from .checkpoint import CheckpointPatch
+from .cli import CLIPatch
 from strategery.strategic_logger import strategic_logger, setup_strategic_logger
 from strategery.logic.config_logic import validate_strategic_config
 
@@ -37,7 +39,9 @@ class PatchRegistry:
             TelegramPatch(),
             CronPatch(),
             AwarenessPatch(),
-            EmailPatch()
+            EmailPatch(),
+            CheckpointPatch(),
+            CLIPatch()
         ]
 
     def apply_all(self, config_data: dict, halt_on_error: bool = False, **kwargs) -> List[PatchResult]:

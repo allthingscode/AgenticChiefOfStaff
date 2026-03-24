@@ -129,7 +129,7 @@ class MemoryPatch(BasePatch):
         if not hasattr(AgentLoop, "_orig_process_message_strategic"):
             AgentLoop._orig_process_message_strategic = AgentLoop._process_message
 
-            async def _patched_process_message(self, msg, session_key=None, on_progress=None):
+            async def _patched_process_message(self, msg, on_progress=None, **kwargs):
                 is_internal = msg.channel in {"system", "cron", "heartbeat"} or msg.sender_id == "subagent"
                 original_content = msg.content or ""
 
@@ -141,7 +141,7 @@ class MemoryPatch(BasePatch):
 
                 prune_cfg = config.agents.defaults.context_pruning
                 if prune_cfg and prune_cfg.enabled:
-                    key = session_key or msg.session_key
+                    key = msg.session_key
                     session = self.sessions.get_or_create(key)
                     ttl_str = prune_cfg.ttl
                     hours = int(ttl_str[:-1]) if ttl_str.endswith("h") else 6
@@ -154,6 +154,6 @@ class MemoryPatch(BasePatch):
                     if rag_block:
                         msg.content = rag_block + "\n\n" + msg.content
 
-                return await self._orig_process_message_strategic(msg, session_key, on_progress)
+                return await self._orig_process_message_strategic(msg, on_progress=on_progress, **kwargs)
 
             AgentLoop._process_message = _patched_process_message

@@ -264,7 +264,7 @@ class SubagentPatch(BasePatch):
                 return f"Subagent [{display_label}] started (id: {task_id}). I'll notify you when it completes."
             SubagentManager.spawn = _patched_spawn
 
-        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None, attachments=None):
+        async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None, attachments=None, **kwargs):
             final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
             try:
                 async with AsyncExitStack():

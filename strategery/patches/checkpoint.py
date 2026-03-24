@@ -1,0 +1,260 @@
+"""
+STRATEGIC CHECKPOINT PATCH: Durable Execution Bridge (ARCH-024)
+Goal: Inject CheckpointManager into AgentLoop and SubagentManager.
+Mandate: Zero Core Pollution.
+"""
+import json
+import functools
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+from loguru import logger
+
+from strategery.patches.base import BasePatch, PatchContext
+from strategery.logic.checkpoint_logic import get_checkpoint_manager
+
+if TYPE_CHECKING:
+    from nanobot.agent.loop import AgentLoop
+    from nanobot.agent.subagent import SubagentManager
+
+class CheckpointPatch(BasePatch):
+    """Patches AgentLoop and SubagentManager for State Checkpointing."""
+
+    @property
+    def name(self) -> str:
+        return "Checkpoint"
+
+    required_symbols = ["AgentLoop", "SubagentManager"]
+
+    def apply(self, context: PatchContext):
+        try:
+            manager = get_checkpoint_manager(context.storage_root)
+            
+            # 1. Patch AgentLoop._run_agent_loop
+            self._patch_agent_loop(manager)
+            
+            # 2. Patch SubagentManager._run_subagent
+            self._patch_subagent_manager(manager)
+            
+            # 3. Patch AgentLoop._process_message to handle Thread ID
+            self._patch_process_message(manager)
+            
+            from strategery.patches.base import PatchResult
+            return PatchResult(patch_name=self.name, success=True)
+        except Exception as e:
+            import traceback
+            logger.error(f"Checkpoint patch application failed: {e}\n{traceback.format_exc()}")
+            from strategery.patches.base import PatchResult
+            return PatchResult(patch_name=self.name, success=False, error_msg=str(e))
+
+    def _patch_agent_loop(self, manager):
+        from nanobot.agent.loop import AgentLoop
+        original_run_loop = AgentLoop._run_agent_loop
+
+        @functools.wraps(original_run_loop)
+        async def patched_run_loop(self_loop, initial_messages, on_progress=None):
+            # Capture Thread ID from metadata if set
+            thread_id = getattr(self_loop, "_current_thread_id", None)
+            
+            async def _checkpoint_step(msgs, it):
+                if thread_id:
+                    manager.save_snapshot(thread_id, it, msgs)
+
+            # Re-implementing the core loop logic to inject checkpoints at start/after tool
+            messages = initial_messages
+            iteration = 0
+            final_content = None
+            tools_used: List[str] = []
+
+            while iteration < self_loop.max_iterations:
+                iteration += 1
+                
+                # CHECKPOINT: Start of iteration
+                await _checkpoint_step(messages, iteration)
+
+                response = await self_loop.provider.chat(
+                    messages=messages,
+                    tools=self_loop.tools.get_definitions(),
+                    model=self_loop.model,
+                    temperature=self_loop.temperature,
+                    max_tokens=self_loop.max_tokens,
+                    reasoning_effort=self_loop.reasoning_effort,
+                )
+
+                if response.has_tool_calls:
+                    if on_progress:
+                        thought = self_loop._strip_think(response.content)
+                        if thought: await on_progress(thought)
+                        await on_progress(self_loop._tool_hint(response.tool_calls), tool_hint=True)
+
+                    tool_call_dicts = [
+                        {
+                            "id": tc.id, "type": "function",
+                            "function": {
+                                "name": tc.name, 
+                                "arguments": json.dumps(tc.arguments, ensure_ascii=False)
+                            }
+                        } for tc in response.tool_calls
+                    ]
+                    messages = self_loop.context.add_assistant_message(
+                        messages, response.content, tool_call_dicts,
+                        reasoning_content=response.reasoning_content,
+                        thinking_blocks=response.thinking_blocks,
+                    )
+
+                    for tool_call in response.tool_calls:
+                        tools_used.append(tool_call.name)
+                        result = await self_loop.tools.execute(tool_call.name, tool_call.arguments)
+                        messages = self_loop.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result
+                        )
+                        # CHECKPOINT: After Tool Result
+                        await _checkpoint_step(messages, iteration)
+                else:
+                    clean = self_loop._strip_think(response.content)
+                    if response.finish_reason == "error":
+                        final_content = clean or "Sorry, I encountered an error."
+                        break
+                    messages = self_loop.context.add_assistant_message(
+                        messages, clean, reasoning_content=response.reasoning_content,
+                        thinking_blocks=response.thinking_blocks,
+                    )
+                    final_content = clean
+                    # FINAL CHECKPOINT
+                    await _checkpoint_step(messages, iteration + 1)
+                    break
+
+            if final_content is None and iteration >= self_loop.max_iterations:
+                final_content = f"I reached the maximum number of iterations ({self_loop.max_iterations})."
+
+            return final_content, tools_used, messages
+
+        AgentLoop._run_agent_loop = patched_run_loop
+
+    def _patch_subagent_manager(self, manager):
+        from nanobot.agent.subagent import SubagentManager
+        
+        # NOTE: We do NOT use functools.wraps here because we are intentionally 
+        # REPLACING the subagent loop with a durable version.
+        # However, we must accept all arguments passed by other patches (like SubagentPatch).
+
+        async def patched_run_subagent(self_sub, task_id, task, label, origin, *args, **kwargs):
+            thread_id = f"subagent:{task_id}"
+            manager.create_thread(thread_id, self_sub.model, {"label": label, "task": task, "origin": origin})
+            
+            # Resolve specialist and attachments from args/kwargs if present
+            # SubagentPatch passes: (task_id, task, label, origin, specialist, host_tools, attachments)
+            specialist = kwargs.get("specialist", args[0] if len(args) > 0 else "researcher")
+            attachments = kwargs.get("attachments", args[2] if len(args) > 2 else None)
+            
+            logger.info("Subagent [{}] starting DURABLE task: {}", task_id, label)
+
+            try:
+                # Build subagent tools (no message tool, no spawn tool)
+                from nanobot.agent.tools.registry import ToolRegistry
+                from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
+                from nanobot.agent.tools.shell import ExecTool
+                from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
+                
+                tools = ToolRegistry()
+                allowed_dir = self_sub.workspace if self_sub.restrict_to_workspace else None
+                tools.register(ReadFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                tools.register(WriteFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                tools.register(EditFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                tools.register(ListDirTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                tools.register(ExecTool(
+                    working_dir=str(self_sub.workspace),
+                    timeout=self_sub.exec_config.timeout,
+                    restrict_to_workspace=self_sub.restrict_to_workspace,
+                    path_append=self_sub.exec_config.path_append,
+                ))
+                tools.register(WebSearchTool(api_key=self_sub.brave_api_key, proxy=self_sub.web_proxy))
+                tools.register(WebFetchTool(proxy=self_sub.web_proxy))
+                
+                system_prompt = self_sub._build_subagent_prompt()
+                messages: list[dict[str, Any]] = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": task},
+                ]
+
+                # Run agent loop (limited iterations)
+                max_iterations = 15
+                iteration = 0
+                final_result: str | None = None
+
+                while iteration < max_iterations:
+                    iteration += 1
+                    
+                    # CHECKPOINT: Start of iteration
+                    manager.save_snapshot(thread_id, iteration, messages)
+
+                    response = await self_sub.provider.chat(
+                        messages=messages,
+                        tools=tools.get_definitions(),
+                        model=self_sub.model,
+                        temperature=self_sub.temperature,
+                        max_tokens=self_sub.max_tokens,
+                        reasoning_effort=self_sub.reasoning_effort,
+                    )
+
+                    if response.has_tool_calls:
+                        tool_call_dicts = [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                                },
+                            }
+                            for tc in response.tool_calls
+                        ]
+                        messages.append({
+                            "role": "assistant",
+                            "content": response.content or "",
+                            "tool_calls": tool_call_dicts,
+                        })
+
+                        # Execute tools
+                        for tool_call in response.tool_calls:
+                            result = await tools.execute(tool_call.name, tool_call.arguments)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.name,
+                                "content": result,
+                            })
+                            # CHECKPOINT: After Tool Result
+                            manager.save_snapshot(thread_id, iteration, messages)
+                    else:
+                        final_result = response.content
+                        break
+
+                if final_result is None:
+                    final_result = "Task completed but no final response was generated."
+
+                manager.save_snapshot(thread_id, iteration + 1, messages)
+                manager.complete_thread(thread_id)
+                logger.info("Subagent [{}] completed successfully", task_id)
+                await self_sub._announce_result(task_id, label, task, final_result, origin, "ok")
+
+            except Exception as e:
+                error_msg = f"Error: {str(e)}"
+                logger.error("Subagent [{}] failed: {}", task_id, e)
+                await self_sub._announce_result(task_id, label, task, error_msg, origin, "error")
+
+        SubagentManager._run_subagent = patched_run_subagent
+
+    def _patch_process_message(self, manager):
+        from nanobot.agent.loop import AgentLoop
+        original_process = AgentLoop._process_message
+
+        @functools.wraps(original_process)
+        async def patched_process(self_loop, msg, **kwargs):
+            thread_id = f"session:{msg.session_key}"
+            self_loop._current_thread_id = thread_id
+            manager.create_thread(thread_id, self_loop.model, {"channel": msg.channel, "chat_id": msg.chat_id})
+            
+            result = await original_process(self_loop, msg, **kwargs)
+            # If successfully finished, we could mark as complete, but chat sessions are persistent.
+            return result
+
+        AgentLoop._process_message = patched_process
