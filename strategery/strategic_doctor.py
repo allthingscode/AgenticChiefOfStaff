@@ -8,11 +8,13 @@ import os
 import sys
 import subprocess
 import shutil
+import argparse
 from pathlib import Path
 
 # ANSI Colors for Terminal Clarity
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
+CYAN = "\033[96m"
 RED = "\033[91m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
@@ -20,6 +22,8 @@ RESET = "\033[0m"
 def print_status(component, message, level="INFO"):
     if level == "OK":
         print(f"[{GREEN}OK{RESET}] {BOLD}{component}:{RESET} {message}")
+    elif level == "FIXED":
+        print(f"[{CYAN}FIXED{RESET}] {BOLD}{component}:{RESET} {message}")
     elif level == "WARN":
         print(f"[{YELLOW}WARN{RESET}] {BOLD}{component}:{RESET} {message}")
     elif level == "FAIL":
@@ -27,21 +31,38 @@ def print_status(component, message, level="INFO"):
     else:
         print(f"[* ] {BOLD}{component}:{RESET} {message}")
 
-def check_config():
-    """Validates the main config.json integrity against the Strategic Schema."""
+def check_config(apply=False):
+    """Validates and optionally repairs the main config.json integrity."""
     from strategery.logic.config_logic import validate_strategic_config
+    from strategery.logic.doctor_logic import fix_config_bom
+    
     config_path = Path.home() / ".nanobot" / "config.json"
     if not config_path.exists():
         print_status("Config", f"Missing at {config_path}", "FAIL")
         return None
     
     try:
-        # Use utf-8-sig for Windows BOM safety (Strategic Mandate)
+        # 1. Syntax & BOM Check (Strategic Mandate)
+        with open(config_path, "rb") as f:
+            raw_bytes = f.read()
+            has_bom = raw_bytes.startswith(b'\xef\xbb\xbf')
+
+        if has_bom:
+            if apply:
+                if fix_config_bom(config_path):
+                    print_status("Config", "UTF-8 BOM removed and 4-space indentation enforced.", "FIXED")
+                else:
+                    print_status("Config", "Failed to remove BOM.", "FAIL")
+                    return None
+            else:
+                print_status("Config", "UTF-8 BOM detected (violations Mandate 3). Use --apply to fix.", "WARN")
+        
+        # Read for schema validation
         with open(config_path, "r", encoding="utf-8-sig") as f:
             raw_data = json.load(f)
         print_status("Config", "Syntax and BOM verified.", "OK")
         
-        # 1. Perform Strategic Schema Validation (F-016)
+        # 2. Strategic Schema Validation (F-016)
         try:
             config = validate_strategic_config(raw_data)
             print_status("Config", "Strategic Schema (Pydantic) validated.", "OK")
@@ -54,14 +75,35 @@ def check_config():
         print_status("Config", f"Parsing error: {e}", "FAIL")
         return None
 
-def check_storage(config):
-    """Audits the D: drive and critical memory files."""
+def check_storage(config, apply=False):
+    """Audits and optionally provisions the D: drive and critical memory files."""
+    from strategery.logic.doctor_logic import (
+        ensure_storage_structure, 
+        initialize_strategic_manifest,
+        initialize_checkpoint_db
+    )
+    
     storage_root = Path(config.strategic_edition.storage_root)
     
     if not storage_root.exists():
-        print_status("Storage", f"Root missing at {storage_root}. D: drive disconnected?", "FAIL")
-        return False
+        if apply:
+            try:
+                storage_root.mkdir(parents=True, exist_ok=True)
+                print_status("Storage", f"Created missing storage root at {storage_root}.", "FIXED")
+            except Exception as e:
+                print_status("Storage", f"Failed to create root: {e}", "FAIL")
+                return False
+        else:
+            print_status("Storage", f"Root missing at {storage_root}. D: drive disconnected?", "FAIL")
+            return False
     
+    # Provision Missing Folders
+    if apply:
+        res = ensure_storage_structure(storage_root)
+        for folder, fixed in res.items():
+            if fixed:
+                print_status("Storage", f"Created missing folder: {folder}", "FIXED")
+
     # Check Read/Write
     test_file = storage_root / ".doctor_test"
     try:
@@ -72,8 +114,15 @@ def check_storage(config):
         print_status("Storage", f"Write failure: {e}", "FAIL")
         return False
 
-    # Check Critical Files (Standardized C: drive credentials & D: drive data)
+    # Check Critical Files
     creds_root = Path.home() / ".nanobot"
+    
+    # Initializers for critical files
+    initializers = {
+        "BACKUP_MANIFEST.md": initialize_strategic_manifest,
+        "checkpoints.db": initialize_checkpoint_db
+    }
+
     critical = [
         storage_root / "workspace" / "memory" / "chroma" / "chroma.sqlite3",
         storage_root / "workspace" / "checkpoints.db",
@@ -81,13 +130,21 @@ def check_storage(config):
         creds_root / "secrets" / "token.json",
         creds_root / "google_surgical" / "credentials" / f"{config.strategic_edition.user_email}.json"
     ]
+    
     for p in critical:
         if p.exists():
             print_status("Storage", f"Found: {p.name}", "OK")
         else:
-            # For secrets, show the standard path for clarity if missing
-            loc = "C:" if ".nanobot" in str(p) else "D:"
-            print_status("Storage", f"Missing [{loc}]: {p.name}", "WARN")
+            if apply and p.name in initializers:
+                if initializers[p.name](p):
+                    print_status("Storage", f"Initialized: {p.name}", "FIXED")
+                else:
+                    print_status("Storage", f"Failed to initialize: {p.name}", "FAIL")
+            else:
+                # For secrets, show the standard path for clarity if missing
+                loc = "C:" if ".nanobot" in str(p) else "D:"
+                lvl = "WARN" if p.name in initializers else "FAIL"
+                print_status("Storage", f"Missing [{loc}]: {p.name}", lvl)
     
     return True
 
@@ -216,13 +273,19 @@ def check_static_analysis():
     return all_ok
 
 def main():
+    parser = argparse.ArgumentParser(description="Strategic Doctor: Pre-Flight Diagnostic Engine")
+    parser.add_argument("--apply", action="store_true", help="Automatically attempt to fix identified issues.")
+    args = parser.parse_args()
+
     print(f"\n{BOLD}Strategic Doctor: Diagnostic Run ({Path(__file__).name}){RESET}")
+    if args.apply:
+        print(f"{CYAN}{BOLD}MODE: Auto-Heal Enabled{RESET}")
     print("="*50)
     
-    config = check_config()
+    config = check_config(apply=args.apply)
     if not config: sys.exit(1)
     
-    if not check_storage(config): sys.exit(1)
+    if not check_storage(config, apply=args.apply): sys.exit(1)
     if not check_patch_application(config): sys.exit(1)
     if not check_patch_integrity(config): sys.exit(1)
     if not check_static_analysis(): sys.exit(1)
@@ -230,7 +293,10 @@ def main():
     if not check_batch_jobs(config): sys.exit(1)
     
     print("="*50)
-    print(f"{GREEN}{BOLD}SUCCESS: All Strategic pillars are healthy. Proceeding with launch.{RESET}\n")
+    if args.apply:
+        print(f"{GREEN}{BOLD}SUCCESS: All Strategic pillars are healthy and repaired. Proceeding with launch.{RESET}\n")
+    else:
+        print(f"{GREEN}{BOLD}SUCCESS: All Strategic pillars are healthy. Proceeding with launch.{RESET}\n")
 
 if __name__ == "__main__":
     main()
