@@ -14,13 +14,14 @@ def strategic_bridge_mcp_sessions(mcp_configs, registry, stack, core_connect_fun
     Extracted to module level for testing.
     """
     async def _bridged_connect(configs, reg, st):
+        from strategery.logic.infra_logic import strategic_mcp_logic
         # 1. Call original core connection logic
         results = await core_connect_func(configs, reg, st)
         
         # 2. Bridging: Since core doesn't return the (session, stack, tools) directly,
         # we scan the registry for the newly created MCP tools.
         for name in configs.keys():
-            if name not in strategic_mcp_manager._connections:
+            if name not in strategic_mcp_logic._connections:
                 for tool_inst in reg._tools.values():
                     if hasattr(tool_inst, "name") and tool_inst.name.startswith(f"mcp_{name}_"):
                         session = getattr(tool_inst, "_session", None)
@@ -38,7 +39,7 @@ def strategic_bridge_mcp_sessions(mcp_configs, registry, stack, core_connect_fun
                                         inputSchema=t.parameters
                                     ))
 
-                            strategic_mcp_manager.register_connection(name, session, st, server_tools_defs)
+                            strategic_mcp_logic.register_connection(name, session, st, server_tools_defs)
                             break
         return results
     return _bridged_connect
@@ -148,20 +149,13 @@ class InfraPatch(BasePatch):
         import nanobot.config.paths as core_paths
         from pathlib import Path
         import sys
+        from strategery.logic.infra_logic import resolve_strategic_media_path
         
-        # Resolve strategic media root
-        storage_root = context.storage_root or Path("D:/Nanobot_Storage")
-        strategic_media_root = storage_root / "workspace" / "media"
+        # Logic Isolation (BUG-212): Use pure logic for path resolution
+        strategic_media_root = resolve_strategic_media_path(context.storage_root)
         
         def _strategic_get_media_dir(channel_name: str | None = None) -> Path:
-            # Force redirect to D: drive
-            path = strategic_media_root
-            if channel_name:
-                path = path / channel_name
-            
-            # Ensure directory exists
-            path.mkdir(parents=True, exist_ok=True)
-            return path
+            return resolve_strategic_media_path(context.storage_root, channel_name)
 
         # 1. Patch the source
         if not hasattr(core_paths, "get_media_dir_strategic"):
@@ -181,71 +175,32 @@ class InfraPatch(BasePatch):
 
     def _patch_listdir_tool(self):
         """Patches ListDirTool to handle Windows-specific junction points and restricted items (BUG-179)."""
-        from nanobot.agent.tools.filesystem import ListDirTool, _resolve_path
+        from nanobot.agent.tools.filesystem import ListDirTool
+        from strategery.logic.infra_logic import list_directory_robust
         
         if not hasattr(ListDirTool, "_orig_execute_strategic"):
             ListDirTool._orig_execute_strategic = ListDirTool.execute
             
             async def _patched_execute(self, path: str, **kwargs: Any) -> str:
-                try:
-                    dir_path = _resolve_path(path, self._workspace, self._allowed_dir)
-                    if not dir_path.exists():
-                        return f"Error: Directory not found: {path}"
-                    if not dir_path.is_dir():
-                        return f"Error: Not a directory: {path}"
-
-                    items = []
-                    # BUG-179: Iterate individually to skip restricted items (junctions)
-                    try:
-                        for item in sorted(dir_path.iterdir()):
-                            try:
-                                prefix = "📁 " if item.is_dir() else "📄 "
-                                items.append(f"{prefix}{item.name}")
-                            except (PermissionError, OSError):
-                                # Skip restricted items without failing the entire list
-                                continue
-                    except (PermissionError, OSError) as e:
-                        return f"Error accessing directory contents: {str(e)}"
-
-                    if not items:
-                        return f"Directory {path} is empty (or all items are restricted)"
-
-                    return "\n".join(items)
-                except Exception as e:
-                    return f"Error listing directory strategically: {str(e)}"
+                # Logic Isolation (BUG-212): Robust listing moved to logic
+                return list_directory_robust(path, self._workspace, self._allowed_dir)
 
             ListDirTool.execute = _patched_execute
             strategic_logger.debug("Patched ListDirTool for robust Windows directory listing (BUG-179).")
 
     def _patch_filesystem_tools(self):
         """Patches ReadFileTool to handle Windows-specific log encoding (BUG-133)."""
-        from nanobot.agent.tools.filesystem import ReadFileTool, _resolve_path
+        from nanobot.agent.tools.filesystem import ReadFileTool
+        from strategery.logic.infra_logic import read_log_file_robust
         
         if not hasattr(ReadFileTool, "_orig_execute_strategic"):
             ReadFileTool._orig_execute_strategic = ReadFileTool.execute
             
             async def _patched_execute(self, path: str, **kwargs: Any) -> str:
-                # MANDATE: For .log files on Windows, use utf-8-sig and backslashreplace 
-                # to prevent UnicodeDecodeError from shell-redirected outputs.
-                if path.lower().endswith(".log") and sys.platform == "win32":
-                    try:
-                        file_path = _resolve_path(path, self._workspace, self._allowed_dir)
-                        if not file_path.exists():
-                            return f"Error: File not found: {path}"
-                        
-                        size = file_path.stat().st_size
-                        if size > self._MAX_CHARS * 4:
-                            return f"Error: File too large ({size:,} bytes)."
-
-                        # Strategic encoding bridge
-                        with open(file_path, "r", encoding="utf-8-sig", errors="backslashreplace") as f:
-                            content = f.read()
-                        
-                        if len(content) > self._MAX_CHARS:
-                            return content[: self._MAX_CHARS] + f"\n\n... (truncated)"
-                        return content
-                    except Exception as e:
-                        return f"Error reading log file strategically: {str(e)}"
+                # Logic Isolation (BUG-212): Log reading logic moved to logic
+                res = read_log_file_robust(path, self._workspace, self._allowed_dir, self._MAX_CHARS)
+                if res is not None:
+                    return res
                 
                 return await self._orig_execute_strategic(path, **kwargs)
 
@@ -254,75 +209,13 @@ class InfraPatch(BasePatch):
 
     def _patch_mcp_bridging(self):
         import nanobot.agent.tools.mcp as core_mcp
+        from strategery.logic.infra_logic import strategic_mcp_logic
         if not hasattr(core_mcp, "connect_mcp_servers_strategic"):
             core_mcp.connect_mcp_servers_strategic = core_mcp.connect_mcp_servers
+            # Logic Isolation (BUG-212): Bridge logic moved to logic manager
             core_mcp.connect_mcp_servers = strategic_bridge_mcp_sessions(
                 None, None, None, core_mcp.connect_mcp_servers_strategic
             )
             strategic_logger.debug("Bridged core MCP connection logic with Strategic Manager.")
 
-class StrategicMcpManager:
-    """Manages persistent MCP server connections across subagent spawns."""
-    _instance = None
-    
-    def __init__(self):
-        if not hasattr(self, "_initialized"):
-            self._connections = {} 
-            self._lock = asyncio.Lock()
-            self._initialized = True
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(StrategicMcpManager, cls).__new__(cls)
-        return cls._instance
-
-    def register_connection(self, name, session, stack, tools_def):
-        if name not in self._connections:
-            strategic_logger.debug(f"[StrategicMCP] Bridged external connection for '{name}'.")
-            self._connections[name] = (session, stack, tools_def)
-
-    async def _ensure_connection(self, name, cfg):
-        from mcp import ClientSession
-        from mcp.client.stdio import stdio_client, StdioServerParameters
-        from contextlib import AsyncExitStack
-
-        async with self._lock:
-            if name in self._connections:
-                return self._connections[name]
-
-            try:
-                strategic_logger.info(f"[StrategicMCP] Initializing persistent connection for '{name}'...")
-                stack = AsyncExitStack()
-                if not cfg.command: return None
-
-                params = StdioServerParameters(command=cfg.command, args=cfg.args, env=cfg.env or None)
-                client_ctx = stdio_client(params)
-                read, write = await stack.enter_async_context(client_ctx)
-                session_ctx = ClientSession(read, write)
-                session = await stack.enter_async_context(session_ctx)
-                await session.initialize()
-                
-                tools_response = await session.list_tools()
-                conn = (session, stack, tools_response.tools)
-                self._connections[name] = conn
-                lifecycle_manager.register_shutdown_hook(stack.aclose)
-                return conn
-            except Exception as e:
-                strategic_logger.error(f"[StrategicMCP] Failed to connect to '{name}': {e}")
-                return None
-
-    async def get_tools_for_subagent(self, mcp_configs, registry, subagent_id):
-        from nanobot.agent.tools.mcp import MCPToolWrapper
-        tasks = [self._ensure_connection(name, cfg) for name, cfg in mcp_configs.items()]
-        results = await asyncio.gather(*tasks)
-        for (name, cfg), conn in zip(mcp_configs.items(), results):
-            if not conn: continue
-            try:
-                session, _, tools_def = conn
-                for tool_def in tools_def:
-                    wrapper = MCPToolWrapper(session, name, tool_def, tool_timeout=60)
-                    registry.register(wrapper)
-            except Exception as e:
-                strategic_logger.error(f"[StrategicMCP] Failed to register tools for '{name}': {e}")
-
-strategic_mcp_manager = StrategicMcpManager()
+# Logic Isolation (BUG-212): StrategicMcpManager moved to strategery.logic.infra_logic

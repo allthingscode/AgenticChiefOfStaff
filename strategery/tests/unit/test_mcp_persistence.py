@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
-from strategery.patches.infra import StrategicMcpManager
+from strategery.logic.infra_logic import McpConnectionManager, strategic_mcp_logic
 
 class AsyncContextManagerMock:
     def __init__(self, return_value):
@@ -13,8 +13,8 @@ class AsyncContextManagerMock:
 
 @pytest.mark.asyncio
 async def test_mcp_manager_persistence():
-    """Verify that StrategicMcpManager reuses existing sessions."""
-    manager = StrategicMcpManager()
+    """Verify that McpConnectionManager reuses existing sessions."""
+    manager = McpConnectionManager()
     manager._connections = {}
     
     mock_registry = MagicMock()
@@ -35,10 +35,11 @@ async def test_mcp_manager_persistence():
          patch("mcp.ClientSession", return_value=AsyncContextManagerMock(mock_session)) as mock_session_call, \
          patch("strategery.patches.infra.lifecycle_manager"):
         
-        await manager.get_tools_for_subagent(mcp_configs, mock_registry, "subagent-1")
+        # Use register_tools instead of get_tools_for_subagent
+        await manager.register_tools(mcp_configs, mock_registry, lambda x: None)
         assert "test-server" in manager._connections
         
-        await manager.get_tools_for_subagent(mcp_configs, mock_registry, "subagent-2")
+        await manager.register_tools(mcp_configs, mock_registry, lambda x: None)
         
         # Should only have been called once due to persistence
         assert mock_stdio_call.call_count == 1
@@ -47,7 +48,7 @@ async def test_mcp_manager_persistence():
 @pytest.mark.asyncio
 async def test_mcp_manager_error_isolation():
     """Verify that one failed MCP server doesn't block others."""
-    manager = StrategicMcpManager()
+    manager = McpConnectionManager()
     manager._connections = {}
     
     mock_registry = MagicMock()
@@ -70,7 +71,7 @@ async def test_mcp_manager_error_isolation():
          patch("mcp.ClientSession", return_value=AsyncContextManagerMock(mock_session)), \
          patch("strategery.patches.infra.lifecycle_manager"):
         
-        await manager.get_tools_for_subagent(mcp_configs, mock_registry, "subagent-1")
+        await manager.register_tools(mcp_configs, mock_registry, lambda x: None)
         
         assert "ok-server" in manager._connections
         assert "fail-server" not in manager._connections

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from strategery.patches.infra import strategic_bridge_mcp_sessions, strategic_mcp_manager
+from strategery.patches.infra import strategic_bridge_mcp_sessions
+from strategery.logic.infra_logic import strategic_mcp_logic
 
 @pytest.mark.asyncio
 async def test_strategic_bridge_mcp_sessions():
@@ -23,7 +24,7 @@ async def test_strategic_bridge_mcp_sessions():
     core_connect = AsyncMock(return_value={"test-server": "OK"})
     
     # Reset manager connections for a clean test
-    strategic_mcp_manager._connections = {}
+    strategic_mcp_logic._connections = {}
     
     # Create the bridged function
     bridged_func = strategic_bridge_mcp_sessions(None, None, None, core_connect)
@@ -36,8 +37,8 @@ async def test_strategic_bridge_mcp_sessions():
     core_connect.assert_called_once_with(mcp_configs, registry, stack)
     
     # 2. Bridge detected the session and registered it in the Strategic manager
-    assert "test-server" in strategic_mcp_manager._connections
-    session, st, tools_def = strategic_mcp_manager._connections["test-server"]
+    assert "test-server" in strategic_mcp_logic._connections
+    session, st, tools_def = strategic_mcp_logic._connections["test-server"]
     assert session == mock_tool._session
     assert st == stack
     assert len(tools_def) == 1

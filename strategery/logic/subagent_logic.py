@@ -234,6 +234,43 @@ def get_escalation_model(current_model: str) -> str:
     if "flash-lite" in current_model.lower(): return "gemini-3-flash-preview"
     return "gemini-3.1-pro-preview"
 
+async def execute_powershell_command(command: str, cwd: str, app_root: str, timeout: int) -> str:
+    """Executes a PowerShell command with UTF-8 encoding and BOM stripping (BUG-184/155)."""
+    try:
+        # ProgressPreference to avoid XML noise in stderr
+        encoding_fix = '$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
+        
+        ps_command = f"{encoding_fix}{command}"
+        encoded_cmd = base64.b64encode(ps_command.encode("utf-16le")).decode("utf-8")
+        
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(app_root)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        
+        proc = await asyncio.create_subprocess_exec(
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_cmd,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=cwd, env=env
+        )
+        
+        # Brief sleep to allow process to start
+        await asyncio.sleep(0.1)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        
+        out_str = stdout.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
+        err_str = stderr.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
+        
+        if proc.returncode != 0:
+            return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
+        return out_str or err_str
+    except Exception as e:
+        return f"Error executing PowerShell: {str(e)}"
+
+def prepare_subagent_run(task_id: str, specialist: str, host_config: Any, default_model: str) -> str:
+    """Determines the correct model for a specialist run (BUG-136)."""
+    return get_specialist_model(specialist, host_config, default_model)
+
 async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[str, Any]], provider: Any, model: str, tools: Any, temperature: float, max_tokens: int, reasoning_effort: str) -> str:
     """Executes the core multi-turn subagent loop (F-029)."""
     max_iterations = 20

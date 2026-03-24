@@ -179,37 +179,12 @@ class SubagentPatch(BasePatch):
                     command = subagent_logic.harden_subagent_command(command)
                 
                 if os.name == "nt":
-                    try:
-                        # Add ProgressPreference to avoid XML noise in stderr from module loading
-                        encoding_fix = '$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
-                        
-                        # BUG-184: Use EncodedCommand to bypass all quoting issues for native executables like rg
-                        ps_command = f"{encoding_fix}{command}"
-                        encoded_cmd = base64.b64encode(ps_command.encode("utf-16le")).decode("utf-8")
-                        
-                        env = os.environ.copy()
-                        env["PYTHONPATH"] = str(context.app_root)
-                        env["PYTHONIOENCODING"] = "utf-8"
-                        
-                        proc = await asyncio.create_subprocess_exec(
-                            "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_cmd,
-                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                            cwd=effective_cwd, env=env
-                        )
-                        await asyncio.sleep(0.1)
-                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
-                        
-                        # BUG-155: Use plain utf-8 and surgically remove the BOM (\ufeff) if present.
-                        # utf-8-sig can sometimes fail or behave inconsistently with certain buffer captures.
-                        # We also remove the aggressive regex that was stripping valid non-ASCII chars.
-                        out_str = stdout.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
-                        err_str = stderr.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
-                        
-                        if proc.returncode != 0:
-                            return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
-                        return out_str or err_str
-                    except Exception as e:
-                        return f"Error: {str(e)}"
+                    return await subagent_logic.execute_powershell_command(
+                        command=command,
+                        cwd=effective_cwd,
+                        app_root=str(context.app_root),
+                        timeout=self.timeout
+                    )
                             
                 return await self._orig_execute_strategic(command, working_dir, **kwargs)
             ExecTool.execute = _patched_exec_execute
@@ -223,6 +198,8 @@ class SubagentPatch(BasePatch):
             async def _patched_read_execute(self, path: str, **kwargs: Any) -> str:
                 registry = getattr(self, "_registry", None)
                 if getattr(registry, "_is_strategic_specialist", False):
+                    # Logic Isolation (BUG-212): File size check moved to logic if needed, 
+                    # but here it's simple enough for a bridge or we could move it to logic.
                     file_path = Path(path)
                     if file_path.exists() and file_path.is_file() and (file_path.stat().st_size / 1024) > 10:
                         return (f"ERROR: File '{path}' is too large for direct reading. "
@@ -239,7 +216,7 @@ class SubagentPatch(BasePatch):
         from nanobot.config.schema import Config
         from .vsa import VectorStoreFactory
         from .config import strategic_migrate_config
-        from .infra import strategic_mcp_manager
+        from strategery.logic.infra_logic import strategic_mcp_logic
 
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
@@ -265,9 +242,16 @@ class SubagentPatch(BasePatch):
             SubagentManager.spawn = _patched_spawn
 
         async def _strategic_run_subagent(self, task_id, task, label, origin, specialist="researcher", host_tools=None, attachments=None, **kwargs):
-            final_model = subagent_logic.get_specialist_model(specialist, context.config, self.model)
+            # Logic Isolation (BUG-212): Preparation logic moved to subagent_logic
+            final_model = subagent_logic.prepare_subagent_run(task_id, specialist, context.config, self.model)
+            
+            # Clean up kwargs for original compatibility if ever needed
+            kwargs.pop('specialist', None)
+            kwargs.pop('host_tools', None)
+            kwargs.pop('attachments', None)
+            
             try:
-                async with AsyncExitStack():
+                async with AsyncExitStack() as stack:
                     VectorStoreFactory.get_store(provider=self.provider)
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
@@ -285,7 +269,8 @@ class SubagentPatch(BasePatch):
                         pydantic_cfg = strategic_migrate_config(context.config.model_dump(by_alias=True))
                         validated_config = Config.model_validate(pydantic_cfg)
                         if validated_config.tools.mcp_servers:
-                            await strategic_mcp_manager.get_tools_for_subagent(validated_config.tools.mcp_servers, tools, task_id)
+                            # Logic Isolation (BUG-212): Use pure logic manager for MCP registration
+                            await strategic_mcp_logic.register_tools(validated_config.tools.mcp_servers, tools, stack.enter_async_context)
                     except: pass
                     
                     # Strategic tool loading
