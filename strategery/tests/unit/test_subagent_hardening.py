@@ -20,6 +20,18 @@ def test_harden_subagent_command_python_path():
     assert f'"{python_abs}"' in hardened
     assert "& " in hardened # BUG-221: Verify call operator exists
 
+def test_harden_subagent_command_posix_env():
+    # BUG-221: POSIX-style PYTHONPATH=... should be converted to PowerShell
+    cmd = "PYTHONPATH=. python -m strategery.strategic_doctor"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    # Should contain the converted PowerShell assignment
+    assert '$env:PYTHONPATH = "$env:PYTHONPATH;' in hardened
+    # Should contain the original value ('.')
+    assert ';.;' in hardened or ';."' in hardened or hardened.endswith(';.";') or '";' in hardened
+    # Should contain the call operator and absolute path
+    assert '& "' in hardened
+    assert 'python.exe"' in hardened
+
 def test_harden_subagent_command_trailing_dot():
     # BUG-143: Trailing dots should be stripped
     cmd = "python script.py."
