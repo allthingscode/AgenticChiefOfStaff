@@ -24,8 +24,12 @@ class StrategicHybridStore(VectorStoreInterface):
         return cls._instance
 
     def __init__(self, storage_root=None, provider=None):
-        # BUG-FIX: Re-initialize if storage_root changes (prevents test pollution)
-        root = Path(storage_root or Path.home() / ".nanobot")
+        # BUG-FIX (BUG-248): Resolve root via strategic context to prevent drift to home
+        if storage_root is None:
+            from .config import load_strategic_context
+            _, _, storage_root = load_strategic_context()
+        
+        root = Path(storage_root)
         target_sqlite_path = root / "workspace" / "memory" / "keyword_index.db"
         
         if getattr(self, "_initialized", False):

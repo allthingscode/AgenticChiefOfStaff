@@ -188,9 +188,9 @@ def load_strategic_context():
     """Utility to load core strategic context (email, storage root)."""
     user_email = "admin@example.com"
     
-    # BUG-FIX: Remove hard-coded D: drive default. Use env var or portable default.
-    # The 'D:/Nanobot_Storage' mandate should be configured in config.json, not code.
-    storage_root = Path(os.environ.get("STRATEGIC_STORAGE_ROOT", Path.home() / ".nanobot" / "storage"))
+    # MANDATE (BUG-248): Definitive fallback to D: drive to prevent drift to C: drive
+    # We prioritize Environment Variable -> config.json -> Strategic Mandate (D:)
+    storage_root = Path(os.environ.get("STRATEGIC_STORAGE_ROOT", "D:/Nanobot_Storage"))
     raw_config = {}
 
     try:

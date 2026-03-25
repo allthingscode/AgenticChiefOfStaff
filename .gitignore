@@ -44,3 +44,6 @@ test_write.txt
 *.tmp
 .doctor_root_test
 .doctor_workspace_test
+
+test_c_drive.txt
+*.txt.tmp

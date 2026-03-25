@@ -67,14 +67,18 @@ def resolve_routable_channel(payload: Any, storage_root: Any) -> Tuple[Optional[
     if "[SILENT]" in message:
         return None, None
 
+    # BUG-250: 'cli' is unroutable in gateway mode. We MUST resolve to a routable channel.
     if not current_channel or current_channel == "cli":
         from strategery.patches.batch import strategic_resolve_job_channel
         try:
             new_channel, new_to = strategic_resolve_job_channel(storage_root)
-            if new_channel != "cli":
-                return new_channel, new_to
+            # If resolution still gives 'cli' or fails, default to 'telegram' to avoid channel manager warnings
+            if not new_channel or new_channel == "cli":
+                return "telegram", None
+            return new_channel, new_to
         except Exception as re:
             strategic_logger.error(f"Cron: Channel resolution failed: {re}")
+            return "telegram", None
 
     return current_channel, None
 

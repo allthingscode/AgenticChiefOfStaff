@@ -218,12 +218,27 @@ def send_email_report(subject: str, body: str, to: str = None) -> str:
                     margin-top: 30px;
                   }
                   .vitality, .quote {
+                    font-family: 'Georgia', serif;
                     font-style: italic;
-                    color: #79c0ff !important;
-                    font-size: 1.1em;
+                    color: #a5d6ff !important;
+                    font-size: 1.25em;
+                    line-height: 1.5;
+                    margin: 25px 0;
+                    border-left: 5px solid #388bfd;
+                    padding: 15px 20px;
+                    background-color: #0d1117;
+                    border-radius: 0 4px 4px 0;
+                  }
+                  .audit {
+                    font-family: 'Cascadia Code', 'Consolas', monospace;
+                    background-color: #0d1117;
+                    border: 1px solid #30363d;
+                    padding: 15px;
+                    border-radius: 4px;
                     margin: 20px 0;
-                    border-left: 4px solid #388bfd;
-                    padding-left: 15px;
+                    color: #79c0ff !important;
+                    font-size: 0.95em;
+                    line-height: 1.4;
                   }
                   .schedule-item {
                     padding: 12px 0;

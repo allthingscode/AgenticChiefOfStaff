@@ -331,7 +331,7 @@ async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[st
     """Executes the core multi-turn subagent loop (F-029)."""
     max_iterations = 20
     iteration = 0
-    final_result = "Error: Timeout"
+    final_result = "Error: Timeout or Max Iterations reached."
     
     while iteration < max_iterations:
         iteration += 1
@@ -347,12 +347,23 @@ async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[st
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
         else:
             final_result = response.content or "Error: Empty response."
+            
+            # BUG-252: Harden against premature exit. 
+            # If the model didn't call tools but didn't provide a final answer (e.g. just a plan),
+            # we MUST nudge it to actually execute the tools.
+            if iteration == 1 and not response.has_tool_calls:
+                strategic_logger.warning(f"Subagent [{task_id}]: Premature exit detected on turn 1. Nudging for execution.")
+                messages.append({"role": "assistant", "content": final_result})
+                messages.append({"role": "user", "content": "### 🛡️ STRATEGIC MANDATE: STOP Turn Violation\nYour previous turn provided a plan but did NOT call any tools. You are STRICTLY FORBIDDEN from ending your turn with a plan or a promise. You MUST execute the required tools NOW to fulfill the task. Do NOT ask for permission."})
+                continue
+
             if should_escalate_model(final_result):
                 escalation_model = get_escalation_model(model)
                 strategic_logger.warning(f"Subagent [{task_id}]: Safety Refusal or Failure detected. Escalating to {escalation_model} for final summary.")
                 messages.append({"role": "system", "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."})
                 escalation_response = await provider.chat(messages=messages, tools=tools.get_definitions(), model=escalation_model, temperature=0.5, max_tokens=max_tokens, reasoning_effort="medium")
                 final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
+            
             log_subagent_completion(task_id, final_result)
             break
     return final_result

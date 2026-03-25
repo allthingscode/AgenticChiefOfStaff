@@ -133,10 +133,6 @@ class CheckpointPatch(BasePatch):
     def _patch_subagent_manager(self, manager, context: PatchContext):
         from nanobot.agent.subagent import SubagentManager
         
-        # NOTE: We do NOT use functools.wraps here because we are intentionally 
-        # REPLACING the subagent loop with a durable version.
-        # However, we must accept all arguments passed by other patches (like SubagentPatch).
-
         async def patched_run_subagent(self_sub, task_id, task, label, origin, *args, **kwargs):
             try:
                 # Resolve specialist, host_tools, attachments from args/kwargs if present
@@ -153,9 +149,9 @@ class CheckpointPatch(BasePatch):
 
                 logger.info("Subagent [{}] starting DURABLE task: {} using model {}", task_id, label, final_model)
 
+                # BUG-253: Logic Isolation & Resource Leak. 
+                # We must ensure MCP tools are bridged efficiently.
                 async with AsyncExitStack() as stack:
-                    # Build subagent tools (no message tool, no spawn tool)
-
                     from nanobot.agent.tools.registry import ToolRegistry
                     from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
                     from nanobot.agent.tools.shell import ExecTool
@@ -190,79 +186,69 @@ class CheckpointPatch(BasePatch):
                     sp = SubagentPatch()
                     sp._load_strategic_tools(tools, model=final_model)
 
-                # Use Strategic Instructions (BUG-223)
-                system_prompt = subagent_logic.build_specialist_instructions(self_sub._build_subagent_prompt(), specialist, attachments)
-                
-                messages: list[dict[str, Any]] = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": task},
-                ]
-
-                # Run agent loop (limited iterations)
-                max_iterations = 20
-                iteration = 0
-                final_result: str | None = None
-
-                while iteration < max_iterations:
-                    iteration += 1
+                    # Use Strategic Instructions (BUG-223)
+                    system_prompt = subagent_logic.build_specialist_instructions(self_sub._build_subagent_prompt(), specialist, attachments)
                     
-                    # CHECKPOINT: Start of iteration
-                    manager.save_snapshot(thread_id, iteration, messages)
+                    messages: list[dict[str, Any]] = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": task},
+                    ]
 
-                    response = await self_sub.provider.chat(
+                    # BUG-252: Delegate to durable orchestration loop with checkpointing
+                    async def _checkpoint_provider_wrapper(messages, tools, model, temperature, max_tokens, reasoning_effort):
+                        # Save snapshot before each chat turn
+                        current_it = (len([m for m in messages if m["role"] == "assistant"]) + 1)
+                        manager.save_snapshot(thread_id, current_it, messages)
+                        
+                        resp = await self_sub.provider.chat(
+                            messages=messages,
+                            tools=tools,
+                            model=model,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            reasoning_effort=reasoning_effort
+                        )
+                        return resp
+
+                    # We patch the execute method of tools to inject checkpoints after each call
+                    orig_tools_execute = tools.execute
+                    async def _patched_tools_execute(name, arguments):
+                        res = await orig_tools_execute(name, arguments)
+                        # Save snapshot after each tool result
+                        current_it = (len([m for m in messages if m["role"] == "assistant"]))
+                        manager.save_snapshot(thread_id, current_it, messages)
+                        return res
+                    tools.execute = _patched_tools_execute
+
+                    # Wrap the provider to use our checkpointing logic
+                    provider_proxy = type('ProviderProxy', (), {
+                        'chat': _checkpoint_provider_wrapper
+                    })
+
+                    final_result = await subagent_logic.run_orchestration_loop(
+                        task_id=task_id,
+                        task=task,
                         messages=messages,
-                        tools=tools.get_definitions(),
+                        provider=provider_proxy,
                         model=final_model,
+                        tools=tools,
                         temperature=self_sub.temperature,
                         max_tokens=self_sub.max_tokens,
-                        reasoning_effort=self_sub.reasoning_effort,
+                        reasoning_effort=self_sub.reasoning_effort
                     )
 
-                    if response.has_tool_calls:
-                        tool_call_dicts = [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.arguments, ensure_ascii=False),
-                                },
-                            }
-                            for tc in response.tool_calls
-                        ]
-                        messages.append({
-                            "role": "assistant",
-                            "content": response.content or "",
-                            "tool_calls": tool_call_dicts,
-                        })
-
-                        # Execute tools
-                        for tool_call in response.tool_calls:
-                            result = await tools.execute(tool_call.name, tool_call.arguments)
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_call.name,
-                                "content": result,
-                            })
-                            # CHECKPOINT: After Tool Result
-                            manager.save_snapshot(thread_id, iteration, messages)
-                    else:
-                        final_result = response.content
-                        break
-
-                if final_result is None:
-                    final_result = "Task completed but no final response was generated."
-
-                manager.save_snapshot(thread_id, iteration + 1, messages)
+                manager.save_snapshot(thread_id, 99, messages) # Final State
                 manager.complete_thread(thread_id)
                 logger.info("Subagent [{}] completed successfully", task_id)
                 await self_sub._announce_result(task_id, label, task, final_result, origin, "ok")
 
             except Exception as e:
+                import traceback
                 error_msg = f"Error: {str(e)}"
-                logger.error("Subagent [{}] failed: {}", task_id, e)
+                logger.error("Subagent [{}] failed: {}\n{}", task_id, e, traceback.format_exc())
                 await self_sub._announce_result(task_id, label, task, error_msg, origin, "error")
+
+        SubagentManager._run_subagent = patched_run_subagent
 
         SubagentManager._run_subagent = patched_run_subagent
 

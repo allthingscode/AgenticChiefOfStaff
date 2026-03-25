@@ -25,8 +25,12 @@ class StrategicVectorStore(VectorStoreInterface):
                 self.provider = provider
             return
             
-        # MANDATE: Storage root MUST be provided or resolved to home
-        root = Path(storage_root or Path.home() / ".nanobot")
+        # BUG-FIX (BUG-248): Resolve root via strategic context to prevent drift to home
+        if storage_root is None:
+            from .config import load_strategic_context
+            _, _, storage_root = load_strategic_context()
+
+        root = Path(storage_root)
         self.storage_path = root / "workspace" / "memory" / "chroma"
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self.storage_path.mkdir(parents=True, exist_ok=True)
