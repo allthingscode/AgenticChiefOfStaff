@@ -37,3 +37,10 @@ logs/
 uv.lock
 *.log
 package-lock.json
+
+# Test Artifacts
+canary.txt
+test_write.txt
+*.tmp
+.doctor_root_test
+.doctor_workspace_test
