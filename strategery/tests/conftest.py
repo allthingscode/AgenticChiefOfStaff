@@ -54,10 +54,15 @@ def global_config_patch():
     
     def side_effect(file, *args, **kwargs):
         f_str = str(file).lower()
+        mode = args[0] if args else kwargs.get("mode", "r")
         # Mock only the central config and jobs files
         if f_str.endswith("config.json") or f_str.endswith("jobs.json"):
             m = MagicMock()
-            m.__enter__.return_value.read.return_value = get_mock_config_json()
+            mock_data = get_mock_config_json()
+            if "b" in mode:
+                m.__enter__.return_value.read.return_value = mock_data.encode("utf-8")
+            else:
+                m.__enter__.return_value.read.return_value = mock_data
             return m
         return orig_open(file, *args, **kwargs)
 

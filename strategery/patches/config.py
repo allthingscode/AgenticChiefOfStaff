@@ -107,7 +107,7 @@ class ConfigPatch(BasePatch):
                 
                 @wraps(builtins._orig_open_strategic)
                 def _strategic_open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
-                    if 'r' in mode and (encoding is None or encoding == 'utf-8'):
+                    if 'r' in mode and 'b' not in mode and (encoding is None or encoding == 'utf-8'):
                         f_str = str(file).lower()
                         if f_str.endswith('.json') or f_str.endswith('.jsonl'):
                             encoding = 'utf-8-sig'

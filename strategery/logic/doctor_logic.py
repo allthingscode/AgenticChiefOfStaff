@@ -4,25 +4,53 @@ Mandate: Decouple 'brains' from the CLI tool for 100% testability.
 """
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from strategery.logic.config_logic import StrategicConfig
 
 def fix_config_bom(config_path: Path) -> bool:
     """Removes UTF-8 BOM and enforces 4-space indentation for config.json."""
     try:
         if not config_path.exists():
             return False
-            
+
         # Read with utf-8-sig to handle existing BOM
         with open(config_path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
-            
+
         # Write back with standard utf-8 (no BOM) and 4-space indent
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
         return True
     except Exception:
         return False
+
+def check_config_health(config_path: Path) -> Tuple[bool, str, Optional[Any]]:
+    """Logic for validating config file health."""
+    from strategery.logic.config_logic import validate_strategic_config
+    
+    if not config_path.exists():
+        return False, f"Missing at {config_path}", None
+
+    try:
+        with open(config_path, "rb") as f:
+            raw_bytes = f.read()
+            has_bom = raw_bytes.startswith(b'\xef\xbb\xbf')
+        
+        if has_bom:
+            return True, "UTF-8 BOM detected", None # Warn level handled by caller
+
+        with open(config_path, "r", encoding="utf-8-sig") as f:
+            raw_data = json.load(f)
+        
+        config = validate_strategic_config(raw_data)
+        return True, "OK", config
+    except Exception as e:
+        return False, str(e), None
 
 def ensure_storage_structure(storage_root: Path) -> Dict[str, bool]:
     """Provisions missing strategic folder structures on the D: drive."""
@@ -34,7 +62,7 @@ def ensure_storage_structure(storage_root: Path) -> Dict[str, bool]:
         "workspace/media",
         "workspace/skills"
     ]
-    
+
     for sd in subdirs:
         target = storage_root / sd
         if not target.exists():
@@ -45,14 +73,115 @@ def ensure_storage_structure(storage_root: Path) -> Dict[str, bool]:
                 results[sd] = False
         else:
             results[sd] = False # Already exists
-            
+
+    return results
+
+def check_storage_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str]]:
+    """Logic for auditing storage integrity."""
+    storage_root = Path(config.strategic_edition.storage_root)
+    checks = []
+
+    # 1. Root existence
+    if not storage_root.exists():
+        checks.append(("Root", False, f"Missing at {storage_root}"))
+        return checks
+
+    # 2. Write test
+    test_file = storage_root / ".doctor_test"
+    try:
+        test_file.write_text("health_check")
+        test_file.unlink()
+        checks.append(("WriteAccess", True, f"Verified on {storage_root.drive}"))
+    except Exception as e:
+        checks.append(("WriteAccess", False, str(e)))
+
+    # 3. Critical Files
+    creds_root = Path.home() / ".nanobot"
+    critical = {
+        "chroma.sqlite3": storage_root / "workspace" / "memory" / "chroma" / "chroma.sqlite3",
+        "checkpoints.db": storage_root / "workspace" / "checkpoints.db",
+        "BACKUP_MANIFEST.md": storage_root / "BACKUP_MANIFEST.md",
+        "token.json": creds_root / "secrets" / "token.json",
+        "credentials.json": creds_root / "google_surgical" / "credentials" / f"{config.strategic_edition.user_email}.json"
+    }
+
+    for name, p in critical.items():
+        if p.exists():
+            checks.append((name, True, "Found"))
+        else:
+            checks.append((name, False, "Missing"))
+
+    return checks
+
+def check_mcp_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str]]:
+    """Logic for verifying MCP server executables."""
+    results = []
+    mcp_servers = config.tools.mcp_servers
+
+    for name, srv in mcp_servers.items():
+        cmd = srv.command
+        if not cmd: continue
+        if shutil.which(cmd) or Path(cmd).exists():
+            results.append((name, True, f"Verified: {Path(cmd).name}"))
+        else:
+            results.append((name, False, f"Not found: {cmd}"))
+    return results
+
+def check_batch_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str]]:
+    """Logic for validating batch job metadata."""
+    storage_root = Path(config.strategic_edition.storage_root)
+    items_dir = storage_root / "workspace" / "cron" / "items"
+    results = []
+
+    if not items_dir.exists():
+        return results
+
+    for md_file in items_dir.glob("*.md"):
+        try:
+            content = md_file.read_text(encoding="utf-8-sig")
+            if not content.strip().startswith("---"):
+                results.append((md_file.name, False, "Missing front-matter"))
+                continue
+
+            meta = {}
+            for line in content.split("---")[1].splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    meta[k.strip()] = v.strip()
+
+            required = ["id", "schedule", "specialist"]
+            missing = [k for k in required if k not in meta]
+            if missing:
+                results.append((md_file.name, False, f"Missing: {missing}"))
+            else:
+                results.append((meta['id'], True, "Verified"))
+        except Exception as e:
+            results.append((md_file.name, False, str(e)))
+    return results
+
+def check_linter_health() -> List[Tuple[str, bool, str]]:
+    """Logic for static analysis of strategic files."""
+    strat_dir = Path(__file__).parent.parent
+    targets = list((strat_dir / "patches").glob("*.py")) + list(strat_dir.glob("*.py"))
+    results = []
+
+    for py_file in targets:
+        try:
+            with open(py_file, "r", encoding="utf-8-sig") as f:
+                content = f.read()
+            compile(content, str(py_file), 'exec')
+            results.append((py_file.name, True, "Syntax OK"))
+        except SyntaxError as se:
+            results.append((py_file.name, False, f"Syntax ERROR: {se}"))
+        except Exception as e:
+            results.append((py_file.name, False, f"Analysis error: {e}"))
     return results
 
 def initialize_strategic_manifest(manifest_path: Path) -> bool:
     """Creates a default BACKUP_MANIFEST.md if missing."""
     if manifest_path.exists():
         return False
-        
+
     content = """# 🛡️ Strategic Backup Manifest
 This file tracks the integrity and backup status of the Nanobot Strategic Edition storage root.
 
@@ -80,12 +209,10 @@ def initialize_checkpoint_db(db_path: Path) -> bool:
     """Initializes the SQLite checkpoints database if missing."""
     if db_path.exists():
         return False
-        
+
     try:
-        # We import the logic here to avoid circular dependencies
         from strategery.logic.checkpoint_logic import CheckpointStore
-        store = CheckpointStore(db_path=str(db_path))
-        # Initializing the store automatically creates the tables
+        CheckpointStore(db_path=str(db_path))
         return True
     except Exception:
         return False
