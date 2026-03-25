@@ -1,0 +1,12 @@
+{
+  "id": "BR-005",
+  "name": "Researcher: External Research via Search AI",
+  "input": "Find the current stock price of Google and the weather in New York.",
+  "role": "specialist",
+  "specialist_type": "researcher",
+  "expectations": {
+    "required_tools": ["mcp_google-ai-search_search_ai", "exec"],
+    "forbidden_tools": ["web_search", "web_fetch"],
+    "prompt_contains": ["MANDATE", "researcher"]
+  }
+}

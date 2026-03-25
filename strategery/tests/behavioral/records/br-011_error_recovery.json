@@ -1,0 +1,25 @@
+{
+  "id": "BR-011",
+  "name": "Error Handling: Recovery from Simulated 404 MCP Failure",
+  "input": "Search for the weather in New York.",
+  "role": "specialist",
+  "specialist_type": "researcher",
+  "mock_tool_calls": [
+    {
+      "id": "call-fail-123",
+      "type": "function",
+      "function": {
+        "name": "mcp_google-ai-search_search_ai",
+        "arguments": {"query": "weather in New York"}
+      }
+    }
+  ],
+  "mock_tool_results": {
+    "mcp_google-ai-search_search_ai": "ERROR (Exit 404): Server not found"
+  },
+  "expectations": {
+    "required_tools": ["mcp_google-ai-search_search_ai", "exec", "list_dir", "read_file"],
+    "prompt_contains": ["If a tool returns an error", "report the technical error directly to the user"],
+    "tool_result_contains": ["ERROR (Exit"]
+  }
+}

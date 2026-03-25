@@ -1,0 +1,12 @@
+{
+  "id": "BR-007",
+  "name": "Architect: Valid Python Module Execution",
+  "input": "Run the strategic doctor logic module using the python executable.",
+  "role": "specialist",
+  "specialist_type": "architect",
+  "expectations": {
+    "required_tools": ["exec"],
+    "prompt_contains": ["PYTHON EXECUTION (MANDATE - BUG-141)", "architect"],
+    "forbidden_tools": ["spawn"]
+  }
+}

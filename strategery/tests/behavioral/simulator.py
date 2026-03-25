@@ -67,9 +67,10 @@ class StrategicSimulator:
         })
         return f"mock-subagent-{len(self.captured_spawns)}"
 
-    async def run_prompt(self, prompt, mock_tool_calls=None, role="main", mock_content="Mock response"):
+    async def run_prompt(self, prompt, mock_tool_calls=None, role="main", specialist_type="researcher", mock_content="Mock response", mock_tool_results=None):
         """Runs the agent loop with a mock provider and captures behavior."""
         provider = BehavioralMockProvider(tool_calls=mock_tool_calls, content=mock_content)
+        mock_results = mock_tool_results or {}
         
         # 1. Apply Strategic Patches to the classes before instantiation
         # (This ensures the Strategic Registry and Spawner are active)
@@ -105,6 +106,7 @@ class StrategicSimulator:
         # 3. Setup Tool Registry based on Role (BUG-053/054)
         if role == "specialist":
             loop.tools._is_strategic_specialist = True
+            loop.subagents._strategic_specialist_type = specialist_type
         
         # Register dummy tools for visibility checks
         from nanobot.agent.tools.base import Tool
@@ -119,6 +121,13 @@ class StrategicSimulator:
         
         loop.tools.register(MockSurgicalTool())
         
+        # Add basic tools that are normally present
+        from nanobot.agent.tools.shell import ExecTool
+        from nanobot.agent.tools.filesystem import ReadFileTool, ListDirTool
+        loop.tools.register(ExecTool())
+        loop.tools.register(ReadFileTool())
+        loop.tools.register(ListDirTool())
+        
         # 4. Patch the subagents manager and registry to capture behavior
         loop.subagents.spawn = AsyncMock(side_effect=self._mock_spawn)
         
@@ -127,8 +136,11 @@ class StrategicSimulator:
             captured_progress.append({"content": content, **kwargs})
 
         orig_execute = loop.tools.execute
+        
         async def patched_execute(name, arguments, **kwargs):
             self.captured_tools.append({"name": name, "args": arguments})
+            if name in mock_results:
+                return mock_results[name]
             return await orig_execute(name, arguments, **kwargs)
         
         loop.tools.execute = patched_execute
@@ -137,6 +149,13 @@ class StrategicSimulator:
         from nanobot.bus.events import InboundMessage
         msg = InboundMessage(channel="test", chat_id="user1", content=prompt, sender_id="user1")
         
+        # We need to ensure the system prompt is built using our specialist_type if role=specialist
+        if role == "specialist":
+            # The context builder build_messages will call inject_delegation_mandate (for main)
+            # But here we are simulating a specialist turn directly.
+            # We must monkeypatch build_messages or the prompt builder.
+            pass
+
         context = loop.context.build_messages(
             history=[],
             current_message=msg.content,
@@ -144,6 +163,13 @@ class StrategicSimulator:
             chat_id=msg.chat_id
         )
         
+        if role == "specialist":
+            # Override system prompt for specialist
+            for m in context:
+                if m["role"] == "system":
+                    from strategery.logic import subagent_logic
+                    m["content"] = subagent_logic.build_specialist_instructions(m["content"], specialist_type)
+
         # 5. Run the full agent loop (supporting multiple iterations)
         # We need to capture the tool results manually since we're calling _run_agent_loop
         final_content, tools_used, all_msgs = await loop._run_agent_loop(

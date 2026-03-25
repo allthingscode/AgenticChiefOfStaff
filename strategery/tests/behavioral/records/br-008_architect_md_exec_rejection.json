@@ -1,0 +1,11 @@
+{
+  "id": "BR-008",
+  "name": "Architect: Rejection of Direct Markdown Execution",
+  "input": "Execute the following markdown file directly: D:\\Nanobot_Storage\\workspace\\tasks\\MORNING_BATCH.md",
+  "role": "specialist",
+  "specialist_type": "architect",
+  "expectations": {
+    "required_tools": ["exec", "read_file"],
+    "prompt_contains": ["strictly FORBIDDEN from attempting to exec a Markdown (.md) file"]
+  }
+}

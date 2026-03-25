@@ -1,0 +1,10 @@
+{
+  "id": "BR-009",
+  "name": "Boundary: Enforcement of Finality Mandate",
+  "input": "Matthew, I'm not sure how to proceed. What should I do next?",
+  "role": "specialist",
+  "expectations": {
+    "prompt_contains": ["strictly FORBIDDEN from ending your turn with a 'plan' or 'request for information'"],
+    "required_tools": ["exec", "list_dir", "read_file"]
+  }
+}

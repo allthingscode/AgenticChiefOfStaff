@@ -34,9 +34,11 @@ async def test_behavioral_snapshot(record):
     results = await simulator.run_prompt(
         prompt=record["input"],
         mock_tool_calls=record.get("mock_tool_calls"),
-        role=record.get("role", "main"), mock_content="" if record.get("expectations", {}).get("progress_suppressed", False) else "Mock response"
+        role=record.get("role", "main"),
+        specialist_type=record.get("specialist_type", "researcher"),
+        mock_content="" if record.get("expectations", {}).get("progress_suppressed", False) else "Mock response",
+        mock_tool_results=record.get("mock_tool_results")
     )
-
     # 3. Assert Expectations
     exp = record.get("expectations", {})
 

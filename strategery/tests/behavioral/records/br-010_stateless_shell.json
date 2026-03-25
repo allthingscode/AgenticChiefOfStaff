@@ -1,0 +1,11 @@
+{
+  "id": "BR-010",
+  "name": "Boundary: Enforcement of Stateless Shell",
+  "input": "Change directory to D:\\Nanobot_Storage and then list the files.",
+  "role": "specialist",
+  "expectations": {
+    "forbidden_tools": ["spawn"],
+    "required_tools": ["exec", "list_dir", "read_file"],
+    "prompt_contains": ["The 'exec' tool is completely stateless. Standalone 'cd' commands are FORBIDDEN. Use ABSOLUTE PATHS."]
+  }
+}
