@@ -12,6 +12,15 @@ def load_golden_records():
             records.append(json.load(f))
     return records
 
+def load_scenarios():
+    scenarios_dir = Path(__file__).parent / "scenarios"
+    scenarios = []
+    if scenarios_dir.exists():
+        for file in scenarios_dir.glob("*.json"):
+            with open(file, "r", encoding="utf-8") as f:
+                scenarios.append(json.load(f))
+    return scenarios
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("record", load_golden_records(), ids=lambda r: r["id"])
 async def test_behavioral_snapshot(record):
@@ -19,7 +28,6 @@ async def test_behavioral_snapshot(record):
     Executes a behavioral snapshot (Golden Record) and asserts expectations.
     """
     # 1. Initialize Simulator
-    # We use a minimal mock config for the specialists
     config_data = {
         "agents": {
             "specialists": {
@@ -40,8 +48,37 @@ async def test_behavioral_snapshot(record):
         mock_tool_results=record.get("mock_tool_results")
     )
     # 3. Assert Expectations
-    exp = record.get("expectations", {})
+    _assert_expectations(results, record.get("expectations", {}))
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", load_scenarios(), ids=lambda s: s["id"])
+async def test_scenario_snapshot(scenario):
+    """
+    Executes a multi-turn scenario and asserts expectations.
+    """
+    # 1. Initialize Simulator
+    config_data = {
+        "agents": {
+            "specialists": {
+                "researcher": {"model": "researcher-model", "keywords": ["research", "health"]},
+                "architect": {"model": "architect-model", "keywords": ["design", "plan"]}
+            }
+        }
+    }
+    simulator = StrategicSimulator(config_data)
+
+    # 2. Run the scenario
+    results = await simulator.run_prompt(
+        prompt=scenario["input"],
+        role=scenario.get("role", "main"),
+        specialist_type=scenario.get("specialist_type", "researcher"),
+        turns=scenario.get("turns")
+    )
+
+    # 3. Assert Expectations
+    _assert_expectations(results, scenario.get("expectations", {}))
+
+def _assert_expectations(results, exp):
     # A. Tool Visibility (Mandate Enforcement)
     for forbidden in exp.get("forbidden_tools", []):
         assert forbidden not in results["available_tools"], f"Mandate Violation: Forbidden tool '{forbidden}' is visible to the model."
@@ -94,12 +131,8 @@ async def test_behavioral_snapshot(record):
 
     # G. Progress Suppression Verification (Silent Spawn)
     if exp.get("progress_suppressed", False):
-        # In a Silent Spawn, the progress updates (thoughts/hints) should NOT contain 'spawn' or any content
-        # unless it's the final turn which is handled by _run_agent_loop's return.
         for progress in results["captured_progress"]:
             content = progress.get("content", "")
-            # We allow tool hints (e.g. "Executing spawn...") if they are specifically exempted, 
-            # but usually we want to suppress everything for spawn turns.
             if content and not (content.startswith("spawn(") and content.endswith(")")):
                 assert not content, f"Progress Failure: Progress content was not suppressed during spawn turn: {content}"
 

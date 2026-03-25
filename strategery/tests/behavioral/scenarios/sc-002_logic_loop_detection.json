@@ -1,0 +1,38 @@
+{
+  "id": "SC-002",
+  "name": "Logic Loop Detection",
+  "input": "Matthew, read the file D:\\Nanobot_Storage\\logs\\email_reporter.log.",
+  "turns": [
+    {
+      "content": "I'll read the log file.",
+      "tool_calls": [
+        {
+          "name": "read_file",
+          "arguments": {"path": "D:\\Nanobot_Storage\\logs\\email_reporter.log"}
+        }
+      ],
+      "tool_results": {
+        "read_file": "CRITICAL: Tool Loop Detected! You have attempted to call 'read_file' with the EXACT same arguments 3 times in a row."
+      }
+    },
+    {
+      "content": "It seems I am in a loop. I will try using 'rg' instead.",
+      "tool_calls": [
+        {
+          "name": "exec",
+          "arguments": {"command": "rg . D:\\Nanobot_Storage\\logs\\email_reporter.log"}
+        }
+      ],
+      "tool_results": {
+        "exec": "2026-03-24 INFO: Email sent."
+      }
+    },
+    {
+      "content": "I have successfully read the log using ripgrep after a loop was detected."
+    }
+  ],
+  "expectations": {
+    "executed_tools": ["read_file", "exec"],
+    "tool_result_contains": ["Tool Loop Detected", "Email sent"]
+  }
+}

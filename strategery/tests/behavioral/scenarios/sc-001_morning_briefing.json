@@ -1,0 +1,42 @@
+{
+  "id": "SC-001",
+  "name": "Multi-turn Morning Briefing",
+  "input": "Matthew, run the morning briefing for Dallas.",
+  "turns": [
+    {
+      "content": "I'll start by checking the weather in Dallas.",
+      "tool_calls": [
+        {
+          "name": "mcp_google-ai-search_search_ai",
+          "arguments": {"query": "current weather in Dallas"}
+        }
+      ],
+      "tool_results": {
+        "mcp_google-ai-search_search_ai": "The weather in Dallas is 72°F and sunny."
+      }
+    },
+    {
+      "content": "Now I will send the briefing email.",
+      "tool_calls": [
+        {
+          "name": "mcp_email-reporter_send_email_report",
+          "arguments": {
+            "subject": "Morning Briefing: Dallas",
+            "body": "Good morning! The weather in Dallas is 72°F and sunny."
+          }
+        }
+      ],
+      "tool_results": {
+        "mcp_email-reporter_send_email_report": "OK: Email sent."
+      }
+    },
+    {
+      "content": "The morning briefing for Dallas is complete. I've sent the email report."
+    }
+  ],
+  "expectations": {
+    "executed_tools": ["mcp_google-ai-search_search_ai", "mcp_email-reporter_send_email_report"],
+    "final_content_contains": ["complete", "sent the email"],
+    "tool_result_contains": ["72°F", "OK: Email sent"]
+  }
+}
