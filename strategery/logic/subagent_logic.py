@@ -85,13 +85,9 @@ def is_tool_blocked(tool_name: str, is_specialist: bool) -> bool:
     
     # BUG-222: Use a more precise check for tool blocking. 
     # If the tool name EXACTLY matches or is a logical substring (e.g. 'google' in 'mcp_google_surgical'), block it.
-    # We want to avoid blocking legitimate commands like 'redirect' if 'dir' is in the block list.
-    # Since tool_name is ONLY the name of the tool (from the LLM's perspective), we can be safer.
     blocks = ROLE_BLOCKS[role]
     for b in blocks:
         b_clean = b.lower().strip()
-        # If the block pattern is in the tool name, it's blocked.
-        # Example: 'google' in 'mcp_google_surgical' -> True
         if b_clean in name_str:
             return True
     return False
@@ -119,8 +115,6 @@ def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bo
 
 def detect_mandate_bypass(command: str) -> bool:
     """Detects attempts to bypass strategic mandates via shell commands."""
-    # MANDATE: Tool names like 'read_file' are NOT CLI commands. 
-    # If the agent tries to use them in 'exec', block it.
     for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
         if re.search(r"\b" + tool_name + r"\b", command):
             return True
@@ -132,7 +126,6 @@ def detect_mandate_bypass(command: str) -> bool:
 
 def get_bypass_message(command: str) -> str:
     """Returns a descriptive error message for a mandate bypass."""
-    # Check for tool hallucination in shell
     for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
         if tool_name in command.lower():
             return f"CRITICAL ERROR: Access Denied. The term '{tool_name}' is a TOOL, not a shell command. Use the '{tool_name}' tool directly."
@@ -239,7 +232,6 @@ def get_escalation_model(current_model: str) -> str:
 async def execute_powershell_command(command: str, cwd: str, app_root: str, timeout: int) -> str:
     """Executes a PowerShell command with UTF-8 encoding and BOM stripping (BUG-184/155)."""
     try:
-        # ProgressPreference to avoid XML noise in stderr
         encoding_fix = '$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
         
         ps_command = f"{encoding_fix}{command}"
@@ -256,7 +248,6 @@ async def execute_powershell_command(command: str, cwd: str, app_root: str, time
             cwd=cwd, env=env
         )
         
-        # Brief sleep to allow process to start
         await asyncio.sleep(0.1)
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         
@@ -349,61 +340,91 @@ def inject_delegation_mandate(system_content: str) -> str:
 
 def build_specialist_instructions(base_prompt: str, specialist_type: str, attachments: Optional[List[Dict[str, Any]]] = None) -> str:
     header = f"\n## {specialist_type.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
+    
+    # Base Manifest
     manifest = (
         "\n\n### 🗺️ STRATEGIC DISCOVERY MANIFEST\n"
         "Use these paths and procedures directly. Do NOT ask for them.\n"
         "1. **LOG LOCATIONS:**\n"
-        f"   - Email Reporter: `{LOG_ROOT}email_reporter.log`\n"
-        f"   - Dispatch/General: `{LOG_ROOT}nanobot_YYYYMMDD_*.log` (Use `list_dir` to find today's file).\n"
+        f"   - Email Reporter: {LOG_ROOT}email_reporter.log\n"
+        f"   - Dispatch/General: {LOG_ROOT}nanobot_YYYYMMDD_*.log (Use list_dir to find today's file).\n"
         "2. **STATUS PROCEDURES:**\n"
-        "   - **Network:** Use `ping` or `Invoke-WebRequest` via `exec` to verify connectivity.\n"
-        "   - **Hybrid Memory:** Check `D:\\Nanobot_Storage\\workspace\\memory\\chroma.sqlite3` and `keyword_index.db` existence/size.\n"
-        f"   - **SOP-001 (Unit Tests):** Run `$env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m pytest strategery/tests/unit/`.\n"
-        f"   - **SOP-006 (Strategic Doctor):** Run `$env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.strategic_doctor`.\n"
-        "3. **WEEKLY BACKUP PROTOCOL (BUG-192):**\n"
-        "   - **Task:** Package and upload system state to Google Drive.\n"
-        "   - **Step 1:** Read `D:\\Nanobot_Storage\\BACKUP_MANIFEST.md` for includes/excludes.\n"
-        "   - **Step 2:** Use `mcp_google-surgical_package_strategic_archive` to create a ZIP.\n"
-        "   - **Step 3:** Use `mcp_google-surgical_google_drive_upload` to upload the ZIP.\n"
-        "   - **Verification:** Use `mcp_google-surgical_google_drive_list` to confirm the upload.\n"
+        "   - **Network:** Use ping or Invoke-WebRequest via exec to verify connectivity.\n"
+        "   - **Hybrid Memory:** Check D:\\Nanobot_Storage\\workspace\\memory\\chroma.sqlite3 and keyword_index.db existence/size.\n"
     )
+    
+    # Role-Specific Manifest Additions
+    if specialist_type == "architect":
+        manifest += (
+            f"   - **SOP-001 (Unit Tests):** Run $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m pytest strategery/tests/unit/.\n"
+            f"   - **SOP-006 (Strategic Doctor):** Run $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.strategic_doctor.\n"
+        )
+    
+    if specialist_type == "researcher":
+        manifest += (
+            "3. **WEEKLY BACKUP PROTOCOL (BUG-192):**\n"
+            "   - **Task:** Package and upload system state to Google Drive.\n"
+            "   - **Step 1:** Read D:\\Nanobot_Storage\\BACKUP_MANIFEST.md for includes/excludes.\n"
+            "   - **Step 2:** Use mcp_google-surgical_package_strategic_archive to create a ZIP.\n"
+            "   - **Step 3:** Use mcp_google-surgical_google_drive_upload to upload the ZIP.\n"
+            "   - **Verification:** Use mcp_google-surgical_google_drive_list to confirm the upload.\n"
+        )
+
     if attachments:
         manifest += "4. **ATTACHMENTS (ARCH-022):**\n"
-        manifest += "   You have been provided access to the following attachments. Use `mcp_multimodal_analyzer_analyze_image` or other vision tools to process them if vision is required.\n"
+        manifest += "   You have been provided access to the following attachments. Use mcp_multimodal_analyzer_analyze_image or other vision tools to process them if vision is required.\n"
         for att in attachments:
             manifest += f"   - **File:** {att.get('filename', 'Unknown')}\n"
-            manifest += f"     **Path:** `{att.get('path', '')}`\n"
+            manifest += f"     **Path:** {att.get('path', '')}\n"
             if att.get('description'): manifest += f"     **Hint:** {att.get('description')}\n"
 
-    strategic_instr = (
-        "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
-        "1. **STATELESS SHELL MANDATE (CRITICAL):** The 'exec' tool is completely stateless. Standalone 'cd' commands are FORBIDDEN. Use ABSOLUTE PATHS.\n"
-        "2. **MARKDOWN DIRECTIVE MANDATE (BUG-132/138):** You are strictly FORBIDDEN from attempting to `exec` a Markdown (.md) file. Markdown files are NOT executable scripts. If a task points to a `.md` file, you MUST use `read_file` to read the instructions inside and THEN execute the steps manually.\n"
-        "3. **EMAIL ATTACHMENT RESTRICTION (BUG-137):** The tool `mcp_email-reporter_send_email_report` does NOT support attachments. Use the `body` field.\n"
-        "4. **MANDATORY VERIFICATION:** You are only successful when you have executed all required tools and confirmed the outcome.\n"
-        "5. **SEARCH MANDATE:** You MUST use 'mcp_google-ai-search_search_ai' for ALL research and weather data. You are strictly FORBIDDEN from using this tool to 'audit' internal logs, check component statuses, or verify local file contents. Internal data audits MUST use 'read_file', 'rg', or 'Get-Content' on local paths.\n"
-        "6. **BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. IGNORE THEM.\n"
-        "7. **MEMORY ACCESS (D: DRIVE):** Long-term memory is at `D:\\Nanobot_Storage\\workspace\\memory`. You MUST use ABSOLUTE PATHS. Do NOT attempt to verify access by listing the root 'D:\\' as it may trigger false-positive permission errors.\n"
-        "8. **RECURSION MANDATE:** When auditing storage, you MUST use recursive search tools.\n"
-        "9. **CALENDAR MANDATE:** Use `mcp_google-surgical_list_calendar_events` with `calendar_id='all'`.\n"
-        "10. **SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: `powershell -File \"D:\\path\\to\\script.ps1\"`. To run a PowerShell command/cmdlet, you MUST use `powershell -Command \"...\"`.\n"
-        "11. **SURGICAL PRECISION:** Use 'read_file' to examine config or history.\n"
-        "12. **CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.\n"
-        "13. **EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted.\n"
-        f"14. **PYTHON EXECUTION (MANDATE - BUG-141):** You MUST use the absolute path to the project's Python executable: `{PYTHON_EXE_PATH}`. Use module-style calls with PYTHONPATH: `$env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.module_name`.\n"
-        "15. **CLEAN COMMANDS (BUG-143):** Strip any trailing punctuation (like a period '.') that is not part of the command itself.\n"
-        "16. **LOG AUDIT DEPTH (BUG-144):** Use `exec` with `Get-Content -Tail 500` or `Select-String` to search for 'ERROR' or 'Exception' across the entire file.\n"
-        "17. **NO ASSUMPTIONS (BUG-146):** You are strictly FORBIDDEN from assuming a task or component has passed based on generic success messages. Find explicit evidence.\n"
-        "18. **FINALITY MANDATE (BUG-153 / BUG-181):** You are strictly FORBIDDEN from ending your turn with a 'plan' or 'request for information'. You MUST use your discovery tools (`rg`, `fd`, `list_dir`) or read the STRATEGIC DISCOVERY MANIFEST to find what you need. If a tool returns an error (e.g., Vision Tool 404), report the technical error directly to the user. Do NOT ask the user to fix it or provide a new path. A response without tool calls is interpreted as a COMPLETE AND FINAL ANSWER.\n"
-        "19. **NO HALLUCINATED PATHS (BUG-158):** Use `list_dir` or `mcp_filesystem-d_search_files` to verify the existence of files before attempting to read them.\n"
-        "20. **AUTOMATED ENCODING (BUG-155 / BUG-162):** The `exec` tool forces UTF-8. You are FORBIDDEN from manually prepending encoding fixes.\n"
-        "21. **SURGICAL TOOL MANDATE:** Prioritize `rg` (ripgrep) and `fd` for speed.\n"
-        "22. **HIGH-FIDELITY VIEWING:** Use `bat` for high-fidelity file inspection.\n"
-        "23. **CONTEXT EFFICIENCY MANDATE (BUG-164):** You are strictly FORBIDDEN from reading entire files that are larger than 10KB using `read_file`. Use `rg` or `tail`.\n"
-        "24. **LOG AUDIT TEMPORALITY (BUG-166):** You MUST filter for the current date when auditing logs to avoid Reporting stale errors (BUG-166). Use ABSOLUTE PATHS only.\n"
-        f"25. **DEFINITIVE LOG ROOT (BUG-167):** All logs live EXCLUSIVELY in `{LOG_ROOT}`. Do NOT attempt to list parent directories.\n"
-        "26. **TOOL CALL MANDATE (CRITICAL):** You are strictly FORBIDDEN from attempting to call tools (like 'read_file', 'list_dir', etc.) as shell commands via the 'exec' tool. Use the dedicated tool directly."
-    )
+    # Rule Categorization
+    global_rules = [
+        "**STATELESS SHELL MANDATE (CRITICAL):** The 'exec' tool is completely stateless. Standalone 'cd' commands are FORBIDDEN. Use ABSOLUTE PATHS.",
+        "**MANDATORY VERIFICATION:** You are only successful when you have executed all required tools and confirmed the outcome.",
+        "**SEARCH MANDATE:** You MUST use 'mcp_google-ai-search_search_ai' for ALL research and weather data. You are strictly FORBIDDEN from using this tool to 'audit' internal logs, check component statuses, or verify local file contents. Internal data audits MUST use 'read_file', 'rg', or 'Get-Content' on local paths.",
+        "**BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. IGNORE THEM.",
+        "**MEMORY ACCESS (D: DRIVE):** Long-term memory is at D:\\Nanobot_Storage\\workspace\\memory. You MUST use ABSOLUTE PATHS. Do NOT attempt to verify access by listing the root 'D:\\' as it may trigger false-positive permission errors.",
+        "**SURGICAL PRECISION:** Use 'read_file' to examine config or history.",
+        "**CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.",
+        "**EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted.",
+        "**CLEAN COMMANDS (BUG-143):** Strip any trailing punctuation (like a period '.') that is not part of the command itself.",
+        "**NO ASSUMPTIONS (BUG-146):** You are strictly FORBIDDEN from assuming a task or component has passed based on generic success messages. Find explicit evidence.",
+        "**FINALITY MANDATE (BUG-153 / BUG-181):** You are strictly FORBIDDEN from ending your turn with a 'plan' or 'request for information'. You MUST use your discovery tools ('rg', 'fd', 'list_dir') or read the STRATEGIC DISCOVERY MANIFEST to find what you need. If a tool returns an error (e.g., Vision Tool 404), report the technical error directly to the user. Do NOT ask the user to fix it or provide a new path. A response without tool calls is interpreted as a COMPLETE AND FINAL ANSWER.",
+        "**NO HALLUCINATED PATHS (BUG-158):** Use list_dir or mcp_filesystem-d_search_files to verify the existence of files before attempting to read them.",
+        "**SURGICAL TOOL MANDATE:** Prioritize 'rg' (ripgrep) and 'fd' for speed.",
+        "**HIGH-FIDELITY VIEWING:** Use 'bat' for high-fidelity file inspection.",
+        "**CONTEXT EFFICIENCY MANDATE (BUG-164):** You are strictly FORBIDDEN from reading entire files that are larger than 10KB using 'read_file'. Use 'rg' or 'tail'.",
+        "**LOG AUDIT TEMPORALITY (BUG-166):** You MUST filter for the current date when auditing logs to avoid Reporting stale errors (BUG-166). Use ABSOLUTE PATHS only.",
+        f"**DEFINITIVE LOG ROOT (BUG-167):** All logs live EXCLUSIVELY in {LOG_ROOT}. Do NOT attempt to list parent directories.",
+        "**TOOL CALL MANDATE (CRITICAL):** You are strictly FORBIDDEN from attempting to call tools (like 'read_file', 'list_dir', etc.) as shell commands via the 'exec' tool. Use the dedicated tool directly."
+    ]
+
+    architect_rules = [
+        "**MARKDOWN DIRECTIVE MANDATE (BUG-132/138):** You are strictly FORBIDDEN from attempting to exec a Markdown (.md) file. Markdown files are NOT executable scripts. If a task points to a .md file, you MUST use 'read_file' to read the instructions inside and THEN execute the steps manually.",
+        "**SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: powershell -File \"D:\\path\\to\\script.ps1\". To run a PowerShell command/cmdlet, you MUST use powershell -Command \"...\".",
+        f"**PYTHON EXECUTION (MANDATE - BUG-141):** You MUST use the absolute path to the project's Python executable: {PYTHON_EXE_PATH}. Use module-style calls with PYTHONPATH: $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.module_name.",
+        "**AUTOMATED ENCODING (BUG-155 / BUG-162):** The exec tool forces UTF-8. You are FORBIDDEN from manually prepending encoding fixes."
+    ]
+
+    researcher_rules = [
+        "**EMAIL ATTACHMENT RESTRICTION (BUG-137):** The tool mcp_email-reporter_send_email_report does NOT support attachments. Use the 'body' field.",
+        "**RECURSION MANDATE:** When auditing storage, you MUST use recursive search tools.",
+        "**CALENDAR MANDATE:** Use mcp_google-surgical_list_calendar_events with calendar_id='all'.",
+        "**LOG AUDIT DEPTH (BUG-144):** Use exec with Get-Content -Tail 500 or Select-String to search for 'ERROR' or 'Exception' across the entire file."
+    ]
+
+    # Assembly
+    active_rules = list(global_rules)
+    if specialist_type == "architect":
+        active_rules.extend(architect_rules)
+    elif specialist_type == "researcher":
+        active_rules.extend(researcher_rules)
+        
+    strategic_instr = "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
+    for i, rule in enumerate(active_rules, 1):
+        strategic_instr += f"{i}. {rule}\n"
+
     return base_prompt + header + manifest + strategic_instr
 
 def harden_subagent_command(command: str) -> str:
@@ -434,8 +455,6 @@ def harden_subagent_command(command: str) -> str:
             command = command.replace('$env:PYTHONPATH = "$env:PYTHONPATH;', f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path};')
 
         # BUG-221: Replace 'python' or 'python.exe' with the absolute path and '&' operator for PowerShell.
-        # Use a more targeted regex to avoid mangling paths that contain 'python'.
-        # Ensure it's idempotent by checking if it's already using the & operator.
         if f'& "{PYTHON_EXE_PATH}"' not in command:
             def _python_replacer(m):
                 return f'& "{PYTHON_EXE_PATH}"'
