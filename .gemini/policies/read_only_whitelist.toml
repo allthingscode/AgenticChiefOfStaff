@@ -1,0 +1,44 @@
+[[rule]]
+toolName = [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob",
+    "cli_help",
+    "mcp_filesystem-d_read_file",
+    "mcp_filesystem-d_read_text_file",
+    "mcp_filesystem-d_read_multiple_files",
+    "mcp_filesystem-d_list_directory",
+    "mcp_filesystem-d_list_directory_with_sizes",
+    "mcp_filesystem-d_directory_tree",
+    "mcp_filesystem-d_search_files",
+    "mcp_filesystem-d_get_file_info",
+    "mcp_filesystem-d_list_allowed_directories",
+    "google_web_search",
+    "web_fetch",
+    "codebase_investigator",
+]
+decision = "allow"
+priority = 100
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "(?i).*python.*-m pytest.*"
+decision = "allow"
+priority = 2000
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "(?i).*pytest.*"
+decision = "allow"
+priority = 2001
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "(?i).*(dir|ls|Get-ChildItem|gci|type|cat|Get-Content|gc|grep|Select-String|sls|git status|git log|git diff|git show|git blame|tail|head|Test-Path|whoami|hostname|echo|jq|rg|fd|findstr).*"
+decision = "allow"
+priority = 110
+
+[[rule]]
+decision = "ask_user"
+priority = 1
