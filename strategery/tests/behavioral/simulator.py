@@ -1,9 +1,6 @@
-import asyncio
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 from nanobot.agent.loop import AgentLoop
-from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.providers.base import LLMProvider, ToolCallRequest
 from strategery.patches.subagent import SubagentPatch
 from strategery.patches.loop import AgentLoopPatch

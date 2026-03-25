@@ -1,6 +1,5 @@
 import sqlite3
 import json
-import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -158,7 +157,7 @@ class StrategicHybridStore(VectorStoreInterface):
             # Clean query for FTS5
             # MANDATE: Wrap query in double quotes to handle IDs with hyphens (e.g. BUG-042)
             # as FTS5 treats hyphen as a NOT operator if not quoted.
-            safe_query = f'"{query.replace('"', '""')}"'
+            safe_query = f'"{query.replace("\"", """")}"'
             
             # Clean query for FTS5 (escape special chars if needed, but porter helps)
             # We use the BM25 ranking built into FTS5

@@ -1,10 +1,7 @@
 import asyncio
 import json
-import inspect
-import textwrap
 from .base import BasePatch, PatchResult, PatchContext
 from nanobot.session.manager import SessionManager, Session
-from nanobot.agent.loop import AgentLoop
 from loguru import logger
 
 class SessionPatch(BasePatch):

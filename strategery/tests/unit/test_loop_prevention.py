@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 from nanobot.agent.tools.registry import ToolRegistry
 from strategery.patches.subagent import SubagentPatch
 

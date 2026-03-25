@@ -1,4 +1,3 @@
-import pytest
 from strategery.logic import subagent_logic
 
 def test_harden_command_strips_chcp():

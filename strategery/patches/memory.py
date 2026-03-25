@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 from .config import load_strategic_context
 from .vsa import VectorStoreFactory

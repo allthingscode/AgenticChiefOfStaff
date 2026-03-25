@@ -17,8 +17,6 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 # Absolute Path to Project Python
-import sys
-from pathlib import Path
 
 # MANDATE: Use dynamic resolution for the project's Python executable.
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
@@ -94,7 +92,6 @@ def policy_linter():
     
     # 1. Async Check: Avoid get_event_loop() (SOP: Use get_running_loop())
     # We use a regex-style check to avoid false positives from strings/comments
-    cmd = 'grep -r "asyncio.get_event_loop()" strategery --exclude="strategic_guard.py" --exclude-dir="tests"'
     # Note: On Windows 'grep' is grep_search tool, but for shell we use findstr.
     # Let's use a Python-based check for portability and precision.
     
@@ -112,7 +109,6 @@ def policy_linter():
             except Exception: pass
         
     # 2. Path Check: No relative D: drive paths
-    cmd = 'findstr /S /M "D:\\" strategery\\*.py'
     # This is complex because we USE D:\ in strings, so we audit for literal relative path usage
     # For now, we rely on the Doctor for storage pathing.
 

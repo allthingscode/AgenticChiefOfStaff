@@ -1,7 +1,5 @@
 import asyncio
 from pathlib import Path
-from functools import wraps
-from unittest.mock import patch
 from strategery.strategic_logger import strategic_logger
 
 def strategic_get_media_path(base_workspace, original_path):
@@ -141,16 +139,16 @@ async def strategic_telegram_send(channel, msg):
                 kwargs = {"chat_id": chat_id, "text": html, "parse_mode": "HTML", "reply_parameters": reply_params}
                 if thread_id: kwargs["message_thread_id"] = int(thread_id)
                 await channel._app.bot.send_message(**kwargs)
-            except Exception as e:
+            except Exception:
                 kwargs = {"chat_id": chat_id, "text": chunk, "reply_parameters": reply_params}
                 if thread_id: kwargs["message_thread_id"] = int(thread_id)
                 await channel._app.bot.send_message(**kwargs)
 
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 
 if TYPE_CHECKING:
-    from strategery.logic.config_logic import StrategicConfig
+    pass
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
@@ -221,7 +219,7 @@ class TelegramPatch(BasePatch):
             return result
 
     def _patch_telegram_channel(self, TelegramChannel, context: PatchContext):
-        from telegram.ext import CommandHandler, ExtBot
+        from telegram.ext import CommandHandler
         
         config = context.config
         disable_commands = config.strategic_edition.disable_bot_commands
@@ -234,7 +232,6 @@ class TelegramPatch(BasePatch):
                 
                 # BUG-207: Final Hardening - Force instance patching on start
                 if hasattr(self_ch, "_app") and self_ch._app and self_ch._app.bot:
-                    bot = self_ch._app.bot
                     # Re-verify that the instance is using our class-level patch
                     # bot.get_file should already point to _strategic_get_file due to class override
                     # but we can force it if needed.

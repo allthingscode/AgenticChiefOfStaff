@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timedelta
 from strategery.logic import memory_logic
 from strategery.patches.memory import strategic_inject_rag_context

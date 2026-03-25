@@ -17,7 +17,7 @@ def apply_patches():
 
 def test_process_message_signature_consistency():
     """Verify that all patches keep _process_message signature compatible with core."""
-    core_sig = inspect.signature(AgentLoop._process_message)
+    inspect.signature(AgentLoop._process_message)
     
     # Core expects: (self, msg, *, on_progress=None, session_key=None)
     # But wait, let's check what it actually is in the current environment after patches

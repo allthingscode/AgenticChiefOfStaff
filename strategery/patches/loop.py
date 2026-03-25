@@ -1,5 +1,4 @@
 import asyncio
-import json
 import weakref
 from typing import List
 from .base import BasePatch, PatchResult, PatchContext
@@ -134,7 +133,6 @@ class AgentLoopPatch(BasePatch):
                 
                 async def _patched_run_agent_loop(self, initial_messages, on_progress=None, **kwargs):
                     """Strategic override of _run_agent_loop to prevent ID hallucination."""
-                    from typing import Callable, Awaitable
                     import json
                     from loguru import logger
                     

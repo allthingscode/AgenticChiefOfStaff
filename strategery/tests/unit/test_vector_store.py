@@ -1,7 +1,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-import asyncio
 from pathlib import Path
 import sys
 import os

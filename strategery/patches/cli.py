@@ -3,8 +3,6 @@ STRATEGIC CLI PATCH: Durable Commands (ARCH-024)
 Goal: Inject /checkpoints and /resume into the interactive CLI.
 """
 import functools
-import asyncio
-from typing import Any
 from rich.table import Table
 from rich.console import Console
 

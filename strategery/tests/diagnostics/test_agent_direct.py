@@ -7,12 +7,10 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # CRITICAL: Import the strategic launcher's patching logic first
-import strategery.strategic_launcher
 
 from nanobot.config.loader import load_config
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.queue import MessageBus
-from nanobot.bus.events import InboundMessage
 from loguru import logger
 
 # Ensure logs are written for verification, but disable console output to keep the test clean

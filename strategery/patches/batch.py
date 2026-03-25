@@ -4,9 +4,7 @@ Strategic Batch Patch: Implements modular cron task loading and silent delivery.
 Scans the configured workspace cron directory for Markdown files and converts them to CronJobs.
 """
 
-import os
 import re
-import uuid
 import yaml
 from pathlib import Path
 from datetime import datetime

@@ -3,8 +3,6 @@ STRATEGIC DOCTOR: Pre-Flight Diagnostic Engine
 Goal: Ensure 100% stability of Nanobot Strategic Edition before launch.
 Mandate: Fail fast, fail loud, and provide actionable fixes.
 """
-import json
-import os
 import sys
 import argparse
 from pathlib import Path
@@ -161,9 +159,9 @@ def check_patch_integrity(config):
             all_ok = False
     return all_ok
 
-def check_static_analysis():
+def check_static_analysis(apply=False):
     """Validates Python syntax across all strategic files."""
-    checks = doctor_logic.check_linter_health()
+    checks = doctor_logic.check_linter_health(apply=apply)
     all_ok = True
     for name, ok, msg in checks:
         if ok:

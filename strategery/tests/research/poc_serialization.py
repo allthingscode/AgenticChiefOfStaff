@@ -1,6 +1,5 @@
-import json
 from typing import Annotated, Literal, Union, List, Optional, Dict, Any
-from pydantic import BaseModel, Field, TypeAdapter, ConfigDict
+from pydantic import BaseModel, Field, TypeAdapter
 
 # 1. Define Discriminated Content Types for Multimodal/Thinking
 class TextContent(BaseModel):

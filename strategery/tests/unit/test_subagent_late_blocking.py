@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.base import Tool
 from strategery.patches.subagent import SubagentPatch

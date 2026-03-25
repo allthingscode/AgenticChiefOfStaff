@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 import pytest
 from strategery.logic import subagent_logic
@@ -12,7 +11,7 @@ def test_harden_subagent_command_python_path():
     
     cmd = "python -m strategery.strategic_doctor"
     hardened = subagent_logic.harden_subagent_command(cmd)
-    assert '$env:PYTHONPATH = "$env:PYTHONPATH;' in hardened
+    assert "$env:PYTHONPATH = '$env:PYTHONPATH;" in hardened
     # Just check for the existence of the path segment without worrying about the exact escape sequence in the assert
     assert 'nanoClaw' in hardened
     assert 'python.exe' in hardened
@@ -25,9 +24,9 @@ def test_harden_subagent_command_posix_env():
     cmd = "PYTHONPATH=. python -m strategery.strategic_doctor"
     hardened = subagent_logic.harden_subagent_command(cmd)
     # Should contain the converted PowerShell assignment
-    assert '$env:PYTHONPATH = "$env:PYTHONPATH;' in hardened
+    assert "$env:PYTHONPATH = '$env:PYTHONPATH;" in hardened
     # Should contain the original value ('.')
-    assert ';.;' in hardened or ';."' in hardened or hardened.endswith(';.";') or '";' in hardened
+    assert ";.';" in hardened
     # Should contain the call operator and absolute path
     assert '& "' in hardened
     assert 'python.exe"' in hardened
@@ -52,6 +51,23 @@ def test_harden_subagent_command_powershell():
     cmd = "Get-Content log.txt."
     hardened = subagent_logic.harden_subagent_command(cmd)
     assert hardened == "Get-Content log.txt"
+
+def test_harden_subagent_command_separators():
+    # BUG-225/227: Translate POSIX && and || to PowerShell ;
+    # Test standard case
+    cmd = "echo test && del file.txt"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert hardened == "echo test; del file.txt"
+    
+    # Test inconsistent whitespace
+    cmd = "mkdir tmp   &&   cd tmp"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert hardened == "mkdir tmp; cd tmp"
+
+    # Test OR separator
+    cmd = "ls file.txt || echo missing"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert hardened == "ls file.txt; echo missing"
 
 @pytest.mark.asyncio
 async def test_exectool_project_root_enforcement():

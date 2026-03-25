@@ -3,11 +3,11 @@ import os
 import builtins
 from pathlib import Path
 from functools import wraps
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 
 if TYPE_CHECKING:
-    from strategery.logic.config_logic import StrategicConfig
+    pass
 
 def strategic_migrate_config(data, config_data_capture=None):
     """
@@ -64,12 +64,12 @@ class ConfigPatch(BasePatch):
             if isinstance(Config.model_config, dict):
                 Config.model_config["extra"] = "ignore"
             else:
-                setattr(Config, "model_config", {**Config.model_config, "extra": "ignore"})
+                Config.model_config = {**Config.model_config, "extra": "ignore"}
 
             if isinstance(Base.model_config, dict):
                 Base.model_config["extra"] = "ignore"
             else:
-                setattr(Base, "model_config", {**Base.model_config, "extra": "ignore"})
+                Base.model_config = {**Base.model_config, "extra": "ignore"}
             result.affected_symbols.append("Config.model_config (extra=ignore)")
 
             # 2. Patch get_data_dir to point to strategic storage (D: drive)

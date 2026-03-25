@@ -30,7 +30,7 @@ async def test_strategic_bridge_mcp_sessions():
     bridged_func = strategic_bridge_mcp_sessions(None, None, None, core_connect)
     
     # Execute
-    results = await bridged_func(mcp_configs, registry, stack)
+    await bridged_func(mcp_configs, registry, stack)
     
     # VERIFY:
     # 1. Core function was called

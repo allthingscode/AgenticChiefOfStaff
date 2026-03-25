@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from nanobot.cron.service import CronService
 from nanobot.cron.types import CronSchedule
 from strategery.patches.cron import CronPatch
@@ -24,7 +23,6 @@ async def test_cron_patch_logic(tmp_path):
     
     # Load it once
     service._load_store()
-    initial_mtime = service._last_mtime
     initial_size = service._last_size
     assert initial_size > 0
 

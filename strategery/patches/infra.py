@@ -209,7 +209,6 @@ class InfraPatch(BasePatch):
 
     def _patch_mcp_bridging(self):
         import nanobot.agent.tools.mcp as core_mcp
-        from strategery.logic.infra_logic import strategic_mcp_logic
         if not hasattr(core_mcp, "connect_mcp_servers_strategic"):
             core_mcp.connect_mcp_servers_strategic = core_mcp.connect_mcp_servers
             # Logic Isolation (BUG-212): Bridge logic moved to logic manager

@@ -1,5 +1,5 @@
-from typing import Dict, Any, Optional, List
-from pydantic import Field, ConfigDict, ValidationError
+from typing import Dict, Any, Optional
+from pydantic import Field, ConfigDict
 from nanobot.config.schema import Config, Base, AgentsConfig, AgentDefaults
 
 # 1. Strategic Sub-models

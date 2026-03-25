@@ -1,11 +1,8 @@
 import pytest
-import asyncio
-import sys
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from nanobot.providers.litellm_provider import LiteLLMProvider
-import strategery.patches.vsa
 from strategery.patches.vsa import VectorStoreFactory
 from strategery.patches.vector_store import StrategicVectorStore
 

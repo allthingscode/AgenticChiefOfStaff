@@ -1,7 +1,6 @@
 import pytest
 import json
 from unittest.mock import MagicMock, patch
-from pathlib import Path
 import strategery.strategic_google_surgical as google_tool
 
 @pytest.fixture(autouse=True)
@@ -70,7 +69,7 @@ def test_google_surgical_credential_fallback(tmp_path):
          patch("strategery.strategic_google_surgical.CREDS_PATH", creds_dir / "unknown@example.com.json"), \
          patch("strategery.strategic_google_surgical.USER_EMAIL", "unknown@example.com"):
 
-        with patch("strategery.strategic_google_surgical.Credentials", wraps=google_tool.Credentials) as mock_creds_class, \
+        with patch("strategery.strategic_google_surgical.Credentials", wraps=google_tool.Credentials), \
              patch("strategery.strategic_google_surgical.build"):
 
             # Calling get_service should now find default.json and NOT trigger auth

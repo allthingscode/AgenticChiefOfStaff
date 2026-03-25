@@ -1,6 +1,6 @@
 import re
 import asyncio
-from typing import Any, Optional
+from typing import Any
 from strategery.strategic_logger import strategic_logger
 
 def format_provider_log(provider_name: str, model: str) -> str:

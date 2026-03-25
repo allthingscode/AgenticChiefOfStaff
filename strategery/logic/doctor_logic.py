@@ -3,9 +3,8 @@ DOCTOR LOGIC: Core recovery and repair functions for the Strategic Doctor.
 Mandate: Decouple 'brains' from the CLI tool for 100% testability.
 """
 import json
-import os
 import shutil
-import sys
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
@@ -159,18 +158,52 @@ def check_batch_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str]]
             results.append((md_file.name, False, str(e)))
     return results
 
-def check_linter_health() -> List[Tuple[str, bool, str]]:
-    """Logic for static analysis of strategic files."""
+def check_linter_health(apply: bool = False) -> List[Tuple[str, bool, str]]:
+    """Logic for static analysis of strategic files. Uses ruff if available, otherwise basic compile."""
     strat_dir = Path(__file__).parent.parent
     targets = list((strat_dir / "patches").glob("*.py")) + list(strat_dir.glob("*.py"))
     results = []
 
+    # 1. Try Ruff first (High Performance)
+    ruff_bin = shutil.which("ruff")
+    if ruff_bin:
+        try:
+            # If apply=True, try to auto-fix first
+            if apply:
+                subprocess.run([ruff_bin, "check", str(strat_dir), "--fix", "--select", "E,F,B", "--no-cache"], 
+                               capture_output=True, text=True)
+                results.append(("Ruff Fix", True, "Attempted auto-fixes for fixable linting issues."))
+
+            # MANDATE: Only block on CRITICAL errors (F=Pyflakes, E9=Syntax, B9=Bugbear critical)
+            # We treat E501 (Line Length) and others as warnings.
+            critical_cmd = [ruff_bin, "check", str(strat_dir), "--select", "F,E9,B9", "--no-cache"]
+            critical_proc = subprocess.run(critical_cmd, capture_output=True, text=True, encoding="utf-8")
+            
+            if critical_proc.returncode != 0:
+                results.append(("Ruff Critical", False, f"CRITICAL issues detected (startup blocked):\n{critical_proc.stdout}"))
+                return results # Block startup
+
+            # Secondary pass for non-critical warnings
+            warn_cmd = [ruff_bin, "check", str(strat_dir), "--select", "E,B", "--ignore", "E501", "--no-cache"]
+            warn_proc = subprocess.run(warn_cmd, capture_output=True, text=True, encoding="utf-8")
+            
+            if warn_proc.returncode == 0:
+                results.append(("Ruff Audit", True, "All strategic files passed analysis."))
+            else:
+                # We return True (Success) but include the warning message
+                results.append(("Ruff Audit", True, f"Non-critical warnings detected:\n{warn_proc.stdout}"))
+            
+            return results
+        except Exception as e:
+            results.append(("Ruff", False, f"Ruff execution failed: {e}"))
+
+    # 2. Fallback to basic compilation
     for py_file in targets:
         try:
             with open(py_file, "r", encoding="utf-8-sig") as f:
                 content = f.read()
             compile(content, str(py_file), 'exec')
-            results.append((py_file.name, True, "Syntax OK"))
+            results.append((py_file.name, True, "Syntax OK (Fallback)"))
         except SyntaxError as se:
             results.append((py_file.name, False, f"Syntax ERROR: {se}"))
         except Exception as e:

@@ -1,7 +1,6 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
-from strategery.logic.infra_logic import McpConnectionManager, strategic_mcp_logic
+from strategery.logic.infra_logic import McpConnectionManager
 
 class AsyncContextManagerMock:
     def __init__(self, return_value):

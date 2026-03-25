@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from typing import List, Dict, Any, Optional
 from strategery.patches.vsa import VectorStoreInterface, VectorStoreFactory
 

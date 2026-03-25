@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from strategery.strategic_logger import strategic_logger
 
 class VectorStoreInterface(ABC):

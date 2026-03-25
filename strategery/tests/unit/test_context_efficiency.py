@@ -1,6 +1,4 @@
 import pytest
-import os
-from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 from nanobot.agent.tools.filesystem import ReadFileTool
 from strategery.patches.subagent import SubagentPatch

@@ -5,15 +5,15 @@ Mandate: Zero Core Pollution.
 """
 import json
 import functools
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, List
 from loguru import logger
 
 from strategery.patches.base import BasePatch, PatchContext
 from strategery.logic.checkpoint_logic import get_checkpoint_manager
+from strategery.logic import subagent_logic
 
 if TYPE_CHECKING:
-    from nanobot.agent.loop import AgentLoop
-    from nanobot.agent.subagent import SubagentManager
+    pass
 
 class CheckpointPatch(BasePatch):
     """Patches AgentLoop and SubagentManager for State Checkpointing."""
@@ -29,13 +29,13 @@ class CheckpointPatch(BasePatch):
             manager = get_checkpoint_manager(context.storage_root)
             
             # 1. Patch AgentLoop._run_agent_loop
-            self._patch_agent_loop(manager)
+            self._patch_agent_loop(manager, context)
             
             # 2. Patch SubagentManager._run_subagent
-            self._patch_subagent_manager(manager)
+            self._patch_subagent_manager(manager, context)
             
             # 3. Patch AgentLoop._process_message to handle Thread ID
-            self._patch_process_message(manager)
+            self._patch_process_message(manager, context)
             
             from strategery.patches.base import PatchResult
             return PatchResult(patch_name=self.name, success=True)
@@ -45,7 +45,7 @@ class CheckpointPatch(BasePatch):
             from strategery.patches.base import PatchResult
             return PatchResult(patch_name=self.name, success=False, error_msg=str(e))
 
-    def _patch_agent_loop(self, manager):
+    def _patch_agent_loop(self, manager, context: PatchContext):
         from nanobot.agent.loop import AgentLoop
         original_run_loop = AgentLoop._run_agent_loop
 
@@ -129,7 +129,7 @@ class CheckpointPatch(BasePatch):
 
         AgentLoop._run_agent_loop = patched_run_loop
 
-    def _patch_subagent_manager(self, manager):
+    def _patch_subagent_manager(self, manager, context: PatchContext):
         from nanobot.agent.subagent import SubagentManager
         
         # NOTE: We do NOT use functools.wraps here because we are intentionally 
@@ -137,15 +137,19 @@ class CheckpointPatch(BasePatch):
         # However, we must accept all arguments passed by other patches (like SubagentPatch).
 
         async def patched_run_subagent(self_sub, task_id, task, label, origin, *args, **kwargs):
-            thread_id = f"subagent:{task_id}"
-            manager.create_thread(thread_id, self_sub.model, {"label": label, "task": task, "origin": origin})
-            
             # Resolve specialist and attachments from args/kwargs if present
             # SubagentPatch passes: (task_id, task, label, origin, specialist, host_tools, attachments)
             specialist = kwargs.get("specialist", args[0] if len(args) > 0 else "researcher")
             attachments = kwargs.get("attachments", args[2] if len(args) > 2 else None)
+            kwargs.get("host_tools", args[1] if len(args) > 1 else None)
+
+            # MANDATE (BUG-223): Use strategic model routing
+            final_model = subagent_logic.get_specialist_model(specialist, context.config, self_sub.model)
             
-            logger.info("Subagent [{}] starting DURABLE task: {}", task_id, label)
+            thread_id = f"subagent:{task_id}"
+            manager.create_thread(thread_id, final_model, {"label": label, "task": task, "origin": origin, "specialist": specialist})
+            
+            logger.info("Subagent [{}] starting DURABLE task: {} using model {}", task_id, label, final_model)
 
             try:
                 # Build subagent tools (no message tool, no spawn tool)
@@ -153,8 +157,14 @@ class CheckpointPatch(BasePatch):
                 from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
                 from nanobot.agent.tools.shell import ExecTool
                 from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
-                
+                from .vsa import VectorStoreFactory
+
                 tools = ToolRegistry()
+                tools._is_strategic_specialist = True
+                tools._task_id = task_id
+
+                # Warm up Vector Store
+                VectorStoreFactory.get_store(provider=self_sub.provider)
                 allowed_dir = self_sub.workspace if self_sub.restrict_to_workspace else None
                 tools.register(ReadFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
                 tools.register(WriteFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
@@ -162,21 +172,28 @@ class CheckpointPatch(BasePatch):
                 tools.register(ListDirTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
                 tools.register(ExecTool(
                     working_dir=str(self_sub.workspace),
-                    timeout=self_sub.exec_config.timeout,
+                    timeout=max(self_sub.exec_config.timeout, 300),
                     restrict_to_workspace=self_sub.restrict_to_workspace,
                     path_append=self_sub.exec_config.path_append,
                 ))
                 tools.register(WebSearchTool(api_key=self_sub.brave_api_key, proxy=self_sub.web_proxy))
                 tools.register(WebFetchTool(proxy=self_sub.web_proxy))
                 
-                system_prompt = self_sub._build_subagent_prompt()
+                # Load Strategic Tools (Multimodal, etc)
+                from strategery.patches.subagent import SubagentPatch
+                sp = SubagentPatch()
+                sp._load_strategic_tools(tools, model=final_model)
+
+                # Use Strategic Instructions (BUG-223)
+                system_prompt = subagent_logic.build_specialist_instructions(self_sub._build_subagent_prompt(), specialist, attachments)
+                
                 messages: list[dict[str, Any]] = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": task},
                 ]
 
                 # Run agent loop (limited iterations)
-                max_iterations = 15
+                max_iterations = 20
                 iteration = 0
                 final_result: str | None = None
 
@@ -189,7 +206,7 @@ class CheckpointPatch(BasePatch):
                     response = await self_sub.provider.chat(
                         messages=messages,
                         tools=tools.get_definitions(),
-                        model=self_sub.model,
+                        model=final_model,
                         temperature=self_sub.temperature,
                         max_tokens=self_sub.max_tokens,
                         reasoning_effort=self_sub.reasoning_effort,
@@ -243,7 +260,7 @@ class CheckpointPatch(BasePatch):
 
         SubagentManager._run_subagent = patched_run_subagent
 
-    def _patch_process_message(self, manager):
+    def _patch_process_message(self, manager, context: PatchContext):
         from nanobot.agent.loop import AgentLoop
         original_process = AgentLoop._process_message
 

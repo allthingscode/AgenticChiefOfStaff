@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock
 from strategery.logic import cron_logic
 

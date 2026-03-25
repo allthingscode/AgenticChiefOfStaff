@@ -1,4 +1,3 @@
-import pytest
 import builtins
 from pathlib import Path
 from strategery.logic import doctor_logic

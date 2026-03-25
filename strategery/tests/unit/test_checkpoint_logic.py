@@ -1,6 +1,4 @@
 import pytest
-import shutil
-from pathlib import Path
 from strategery.logic.checkpoint_logic import get_checkpoint_manager
 
 @pytest.fixture

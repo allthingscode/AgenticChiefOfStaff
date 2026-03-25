@@ -1,6 +1,4 @@
 import logging
-import sys
-import io
 import pytest
 from unittest.mock import MagicMock, patch
 from strategery.strategic_logger import setup_strategic_logger

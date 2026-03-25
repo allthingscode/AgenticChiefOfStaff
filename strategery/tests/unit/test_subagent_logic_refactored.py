@@ -1,18 +1,16 @@
-import pytest
-import json
 from strategery.logic import subagent_logic
 
 def test_role_blocks_logic():
     """Verify that role-based tool blocking still works after F-028 consolidation."""
     # Main Agent should be blocked from google-surgical
-    assert subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=False) == True
+    assert subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=False)
     # Specialist should be allowed
-    assert subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=True) == False
+    assert not subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=True)
     
     # Specialist should be blocked from spawn
-    assert subagent_logic.is_tool_blocked("spawn", is_specialist=True) == True
+    assert subagent_logic.is_tool_blocked("spawn", is_specialist=True)
     # Main Agent should be allowed
-    assert subagent_logic.is_tool_blocked("spawn", is_specialist=False) == False
+    assert not subagent_logic.is_tool_blocked("spawn", is_specialist=False)
 
 def test_telemetry_formatter():
     """Verify that the new _format_telemetry helper works correctly."""

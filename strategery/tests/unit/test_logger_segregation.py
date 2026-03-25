@@ -2,10 +2,9 @@
 import os
 import shutil
 from pathlib import Path
-import logging
 
 # 1. First import (should default to ./logs)
-from strategery.strategic_logger import strategic_logger, setup_strategic_logger
+from strategery.strategic_logger import setup_strategic_logger
 
 def test_logger_segregation():
     log_dir_1 = Path("./test_logs_1")

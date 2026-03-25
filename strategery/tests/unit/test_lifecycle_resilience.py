@@ -1,8 +1,6 @@
 import pytest
 import asyncio
-import sys
 from unittest.mock import MagicMock, patch
-import strategery.patches.lifecycle
 from strategery.patches.lifecycle import LifecycleManager
 
 @pytest.fixture

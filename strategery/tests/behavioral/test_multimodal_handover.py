@@ -1,9 +1,6 @@
 import pytest
-import asyncio
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import patch
 from strategery.patches.subagent import SubagentPatch
-from strategery.patches.base import PatchContext
 from strategery.logic import subagent_logic
 from strategery.tools.strategic_vision import MultimodalAnalyzerTool
 
@@ -33,13 +30,12 @@ async def test_subagent_model_and_manifest_integrity():
 async def test_subagent_patch_model_propagation():
     """Verify that SubagentPatch passes the correct model to loaded tools."""
     from nanobot.agent.tools.registry import ToolRegistry
-    import strategery.tools.strategic_vision
     
     patch_inst = SubagentPatch()
     registry = ToolRegistry()
     
     # We patch the specific method on the class that is imported by the loader
-    with patch("strategery.tools.strategic_vision.MultimodalAnalyzerTool.__init__", return_value=None) as mock_init:
+    with patch("strategery.tools.strategic_vision.MultimodalAnalyzerTool.__init__", return_value=None):
         # We also need to mock the module name in sys.modules to ensure importlib uses our mock
         test_model = "models/gemini-2.0-flash"
         patch_inst._load_strategic_tools(registry, model=test_model)

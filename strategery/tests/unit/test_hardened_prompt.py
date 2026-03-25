@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from strategery.patches.config import ConfigPatch

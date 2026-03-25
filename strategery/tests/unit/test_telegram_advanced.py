@@ -1,15 +1,10 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from pathlib import Path
-from telegram import File
-from telegram.ext import ExtBot
 from strategery.patches.telegram import (
     strategic_get_media_path,
     strategic_detect_thread_metadata,
     strategic_prepare_telegram_media,
-    strategic_telegram_on_message,
-    strategic_telegram_send,
-    TelegramPatch
+    strategic_telegram_send
 )
 
 def test_strategic_get_media_path_redirection():

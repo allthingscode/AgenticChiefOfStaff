@@ -70,9 +70,9 @@ def get_log_root() -> str:
                 import json
                 cfg = json.load(f)
                 root = cfg.get("strategic_edition", {}).get("storage_root", "D:/Nanobot_Storage")
-                return str(Path(root) / "workspace" / "logs") + "\\"
+                return str(Path(root) / "logs") + "\\"
     except: pass
-    return r"D:\Nanobot_Storage\workspace\logs\\"
+    return r"D:\Nanobot_Storage\logs\\"
 
 LOG_ROOT = get_log_root()
 
@@ -351,6 +351,7 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "2. **STATUS PROCEDURES:**\n"
         "   - **Network:** Use ping or Invoke-WebRequest via exec to verify connectivity.\n"
         "   - **Hybrid Memory:** Check D:\\Nanobot_Storage\\workspace\\memory\\chroma.sqlite3 and keyword_index.db existence/size.\n"
+        "   - **Custom Skills (BUG-230):** All strategic skills live in D:\\Nanobot_Storage\\workspace\\skills\\. Do NOT search core 'nanobot/skills/'.\n"
     )
     
     # Role-Specific Manifest Additions
@@ -386,6 +387,8 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "**BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. IGNORE THEM.",
         "**MEMORY ACCESS (D: DRIVE):** Long-term memory is at D:\\Nanobot_Storage\\workspace\\memory. You MUST use ABSOLUTE PATHS. Do NOT attempt to verify access by listing the root 'D:\\' as it may trigger false-positive permission errors.",
         "**SURGICAL PRECISION:** Use 'read_file' to examine config or history.",
+        "**ZERO DRIVE-ROOT WRITES (BUG-228):** You are STRICTLY FORBIDDEN from writing files directly to the root of ANY drive (e.g., C:\\, D:\\). You MUST use the provided workspace subdirectories.",
+        "**MCP TOOLS vs. URIs (BUG-229):** MCP servers (e.g., 'google-ai-search', 'filesystem-d') are TOOLS registered in your ToolRegistry. They are NOT network hosts. You are STRICTLY FORBIDDEN from attempting to use 'Invoke-WebRequest' or 'curl' against MCP server names. Call the dedicated MCP tool directly.",
         "**CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.",
         "**EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted.",
         "**CLEAN COMMANDS (BUG-143):** Strip any trailing punctuation (like a period '.') that is not part of the command itself.",
@@ -432,27 +435,37 @@ def harden_subagent_command(command: str) -> str:
     command = command.strip().rstrip(".")
     for pattern in CLUTTER_PATTERNS:
         command = pattern.sub("", command).strip()
+
+    # BUG-225/227: Translate POSIX separators to PowerShell.
+    # PowerShell 5.1 does not support && or ||. We use ';' for sequential execution.
+    # We use regex to catch them even with inconsistent whitespace.
+    command = re.sub(r"\s+&&\s+", "; ", command)
+    command = re.sub(r"\s+\|\|\s+", "; ", command)
     
     if "python " in command.lower() or "python.exe" in command.lower():
         # MANDATE: Project root for module resolution.
         root_path = str(PROJECT_ROOT)
         
-        # BUG-221: Convert POSIX-style 'PYTHONPATH=... python' to PowerShell compatible assignment.
+        # BUG-221/225: Convert POSIX-style 'PYTHONPATH=... python' to PowerShell compatible assignment.
         # This prevents ParserError and TerminatorExpectedAtEndOfString in EncodedCommand.
+        # We use a non-capturing group for the env assignment to keep the command intact.
         posix_env_pattern = re.compile(r"^\s*PYTHONPATH=([^\s]+)\s+(.*)$", re.IGNORECASE)
         match = posix_env_pattern.match(command)
         
         if match:
             path_val = match.group(1).strip("'\"")
             rest_of_cmd = match.group(2)
-            # Combine everything into a clean PowerShell structure
-            command = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path};{path_val}"; {rest_of_cmd}'
+            # Use single quotes for the path value to avoid terminator issues with internal double quotes
+            command = f"$env:PYTHONPATH = '$env:PYTHONPATH;{root_path};{path_val}'; {rest_of_cmd}"
         elif "$env:PYTHONPATH" not in command:
             # Prepend project root if no env assignment exists
-            command = f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path}"; {command}'
+            command = f"$env:PYTHONPATH = '$env:PYTHONPATH;{root_path}'; {command}"
         elif root_path not in command:
             # Inject project root into existing PowerShell env assignment
-            command = command.replace('$env:PYTHONPATH = "$env:PYTHONPATH;', f'$env:PYTHONPATH = "$env:PYTHONPATH;{root_path};')
+            # We must be careful not to double-wrap if it already exists
+            if ";{root_path}" not in command and f"'{root_path}" not in command:
+                command = command.replace("$env:PYTHONPATH = '", f"$env:PYTHONPATH = '{root_path};")
+                command = command.replace('$env:PYTHONPATH = "', f'$env:PYTHONPATH = "{root_path};')
 
         # BUG-221: Replace 'python' or 'python.exe' with the absolute path and '&' operator for PowerShell.
         if f'& "{PYTHON_EXE_PATH}"' not in command:

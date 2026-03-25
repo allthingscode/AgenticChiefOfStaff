@@ -1,6 +1,4 @@
-import os
 import sys
-import io
 import asyncio
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Tuple
@@ -69,7 +67,7 @@ def read_log_file_robust(path_str: str, workspace_path: Path, allowed_dir: Optio
             content = f.read()
         
         if len(content) > max_chars:
-            return content[:max_chars] + f"\n\n... (truncated)"
+            return content[:max_chars] + "\n\n... (truncated)"
         return content
     except Exception as e:
         return f"Error reading log file strategically: {str(e)}"
@@ -127,7 +125,7 @@ class McpConnectionManager:
         tasks = [self.ensure_connection(name, cfg, shutdown_registrar) for name, cfg in mcp_configs.items()]
         results = await asyncio.gather(*tasks)
         
-        for (name, cfg), conn in zip(mcp_configs.items(), results):
+        for (name, _cfg), conn in zip(mcp_configs.items(), results, strict=False):
             if not conn: continue
             try:
                 session, _, tools_def = conn

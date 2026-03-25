@@ -7,7 +7,7 @@ without modifying the core Nanobot codebase.
 import sys
 from pathlib import Path
 from typing import List
-from .base import BasePatch, PatchResult, PatchContext
+from .base import BasePatch as BasePatch, PatchResult, PatchContext
 from .infra import InfraPatch
 from .config import ConfigPatch, load_strategic_context
 from .provider import ProviderPatch
@@ -132,7 +132,7 @@ class PatchRegistry:
                     break
         
         # Set global flag on sys module to survive reloads within the same process
-        setattr(sys, "_STRATEGIC_INITIALIZED", True)
+        sys._STRATEGIC_INITIALIZED = True
         strategic_logger.info("Strategic Edition initialization complete.")
         return results
 

@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from pathlib import Path
 from strategery.patches.memory import MemoryPatch

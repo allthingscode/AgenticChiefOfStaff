@@ -1,13 +1,8 @@
 import pytest
-import asyncio
-import json
-import uuid
 from unittest.mock import MagicMock, AsyncMock, patch
-from pathlib import Path
 from strategery.patches.subagent import SubagentPatch
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.spawn import SpawnTool
-from nanobot.agent.tools.registry import ToolRegistry
 
 @pytest.fixture
 def mock_config():

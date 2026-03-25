@@ -1,6 +1,5 @@
 import pytest
 import json
-import asyncio
 from pathlib import Path
 from strategery.tests.behavioral.simulator import StrategicSimulator
 

@@ -7,7 +7,6 @@ import json
 import sys
 import os
 import zipfile
-import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 # MANDATE (F-014): Added Drive scope for sandboxed backup management
@@ -246,7 +245,7 @@ async def package_strategic_archive(zip_name: str, includes: list[str], excludes
                 if not should_exclude(path):
                     zipf.write(path, path.relative_to(path.parent))
             else:
-                for root, dirs, files in os.walk(path):
+                for root, _dirs, files in os.walk(path):
                     for file in files:
                         file_path = Path(root) / file
                         if not should_exclude(file_path):

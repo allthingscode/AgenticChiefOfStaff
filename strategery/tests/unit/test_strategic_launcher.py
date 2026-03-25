@@ -1,8 +1,7 @@
-import pytest
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +31,7 @@ def test_pre_start_cleanup_deletes_files(tmp_path):
     temp_file.write_text("dummy")
     
     mcp_dir = Path.home() / ".google_workspace_mcp"
-    mcp_file = mcp_dir / "temp_session.json"
+    mcp_dir / "temp_session.json"
     
     with patch("pathlib.Path.home", return_value=tmp_path):
         # We need to recreate the mcp_dir under the mocked home

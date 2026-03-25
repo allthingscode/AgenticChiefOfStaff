@@ -1,14 +1,12 @@
 import importlib.util
 import re
 import asyncio
-import json
 import uuid
 import os
-import base64
 from pathlib import Path
 from contextlib import AsyncExitStack
 from functools import wraps
-from typing import List, Any, TYPE_CHECKING, Callable
+from typing import List, Any, TYPE_CHECKING
 from .base import BasePatch, PatchResult, PatchContext
 
 if TYPE_CHECKING:
@@ -310,7 +308,7 @@ class SubagentPatch(BasePatch):
             ToolRegistry._orig_register_strategic = ToolRegistry.register
             @wraps(ToolRegistry._orig_register_strategic)
             def _patched_register(self, tool):
-                setattr(tool, "_registry", self)
+                tool._registry = self
                 return self._orig_register_strategic(tool)
             ToolRegistry.register = _patched_register
 

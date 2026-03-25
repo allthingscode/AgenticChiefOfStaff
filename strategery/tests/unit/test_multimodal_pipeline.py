@@ -8,14 +8,13 @@ from strategery.patches.subagent import SubagentPatch
 from strategery.patches.telegram import TelegramPatch
 from strategery.patches.base import PatchContext
 from nanobot.bus.events import InboundMessage
-from nanobot.config.paths import get_media_dir
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_media_dir_redirection():
     """Assert that get_media_dir is globally redirected to D: drive (BUG-201)."""
     # Mock core module to avoid side effects on other tests
-    with patch("nanobot.config.paths.get_media_dir") as mock_get_dir:
+    with patch("nanobot.config.paths.get_media_dir"):
         context = PatchContext(
             config=MagicMock(),
             storage_root=Path("D:/Nanobot_Storage"),
@@ -84,7 +83,6 @@ async def test_telegram_patch_signature():
     """Assert that the patched get_file method has the correct signature (BUG-204)."""
     from nanobot.channels.telegram import TelegramChannel
     from unittest.mock import AsyncMock
-    from telegram.ext import ExtBot
     
     # Mock bot
     mock_bot = AsyncMock()

@@ -1,4 +1,3 @@
-import pytest
 from datetime import datetime, timedelta
 from strategery.logic import memory_logic
 
