@@ -5,6 +5,7 @@ Mandate: Zero Core Pollution.
 """
 import json
 import functools
+from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, List
 from loguru import logger
 
@@ -137,52 +138,57 @@ class CheckpointPatch(BasePatch):
         # However, we must accept all arguments passed by other patches (like SubagentPatch).
 
         async def patched_run_subagent(self_sub, task_id, task, label, origin, *args, **kwargs):
-            # Resolve specialist and attachments from args/kwargs if present
-            # SubagentPatch passes: (task_id, task, label, origin, specialist, host_tools, attachments)
-            specialist = kwargs.get("specialist", args[0] if len(args) > 0 else "researcher")
-            attachments = kwargs.get("attachments", args[2] if len(args) > 2 else None)
-            kwargs.get("host_tools", args[1] if len(args) > 1 else None)
-
-            # MANDATE (BUG-223): Use strategic model routing
-            final_model = subagent_logic.get_specialist_model(specialist, context.config, self_sub.model)
-            
-            thread_id = f"subagent:{task_id}"
-            manager.create_thread(thread_id, final_model, {"label": label, "task": task, "origin": origin, "specialist": specialist})
-            
-            logger.info("Subagent [{}] starting DURABLE task: {} using model {}", task_id, label, final_model)
-
             try:
-                # Build subagent tools (no message tool, no spawn tool)
-                from nanobot.agent.tools.registry import ToolRegistry
-                from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
-                from nanobot.agent.tools.shell import ExecTool
-                from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
-                from .vsa import VectorStoreFactory
+                # Resolve specialist, host_tools, attachments from args/kwargs if present
+                # SubagentPatch passes: (task_id, task, label, origin, specialist, host_tools, attachments)
+                specialist = kwargs.get("specialist", args[0] if len(args) > 0 else "researcher")
+                host_tools = kwargs.get("host_tools", args[1] if len(args) > 1 else None)
+                attachments = kwargs.get("attachments", args[2] if len(args) > 2 else None)
 
-                tools = ToolRegistry()
-                tools._is_strategic_specialist = True
-                tools._task_id = task_id
+                # MANDATE (BUG-223): Use strategic model routing
+                final_model = subagent_logic.get_specialist_model(specialist, context.config, self_sub.model)
 
-                # Warm up Vector Store
-                VectorStoreFactory.get_store(provider=self_sub.provider)
-                allowed_dir = self_sub.workspace if self_sub.restrict_to_workspace else None
-                tools.register(ReadFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
-                tools.register(WriteFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
-                tools.register(EditFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
-                tools.register(ListDirTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
-                tools.register(ExecTool(
-                    working_dir=str(self_sub.workspace),
-                    timeout=max(self_sub.exec_config.timeout, 300),
-                    restrict_to_workspace=self_sub.restrict_to_workspace,
-                    path_append=self_sub.exec_config.path_append,
-                ))
-                tools.register(WebSearchTool(api_key=self_sub.brave_api_key, proxy=self_sub.web_proxy))
-                tools.register(WebFetchTool(proxy=self_sub.web_proxy))
-                
-                # Load Strategic Tools (Multimodal, etc)
-                from strategery.patches.subagent import SubagentPatch
-                sp = SubagentPatch()
-                sp._load_strategic_tools(tools, model=final_model)
+                thread_id = f"subagent:{task_id}"
+                manager.create_thread(thread_id, final_model, {"label": label, "task": task, "origin": origin, "specialist": specialist})
+
+                logger.info("Subagent [{}] starting DURABLE task: {} using model {}", task_id, label, final_model)
+
+                async with AsyncExitStack() as stack:
+                    # Build subagent tools (no message tool, no spawn tool)
+
+                    from nanobot.agent.tools.registry import ToolRegistry
+                    from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
+                    from nanobot.agent.tools.shell import ExecTool
+                    from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
+                    from .vsa import VectorStoreFactory
+
+                    tools = ToolRegistry()
+                    tools._is_strategic_specialist = True
+                    tools._task_id = task_id
+
+                    # Warm up Vector Store
+                    VectorStoreFactory.get_store(provider=self_sub.provider)
+                    allowed_dir = self_sub.workspace if self_sub.restrict_to_workspace else None
+                    tools.register(ReadFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                    tools.register(WriteFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                    tools.register(EditFileTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                    tools.register(ListDirTool(workspace=self_sub.workspace, allowed_dir=allowed_dir))
+                    tools.register(ExecTool(
+                        working_dir=str(self_sub.workspace),
+                        timeout=max(self_sub.exec_config.timeout, 300),
+                        restrict_to_workspace=self_sub.restrict_to_workspace,
+                        path_append=self_sub.exec_config.path_append,
+                    ))
+                    tools.register(WebSearchTool(api_key=self_sub.brave_api_key, proxy=self_sub.web_proxy))
+                    tools.register(WebFetchTool(proxy=self_sub.web_proxy))
+                    
+                    # BUG-235: Bridge host tools and MCP servers
+                    await subagent_logic.bridge_subagent_tools(tools, host_tools, context.config, stack.enter_async_context)
+
+                    # Load Strategic Tools (Multimodal, etc)
+                    from strategery.patches.subagent import SubagentPatch
+                    sp = SubagentPatch()
+                    sp._load_strategic_tools(tools, model=final_model)
 
                 # Use Strategic Instructions (BUG-223)
                 system_prompt = subagent_logic.build_specialist_instructions(self_sub._build_subagent_prompt(), specialist, attachments)

@@ -27,6 +27,10 @@ This document serves as the primary technical "Source of Truth" for AI agents an
 - **Mandate:** All patches targeting core Nanobot code MUST define `required_symbols`. 
 - **Goal:** Ensures the bot fails fast if an upstream update changes core logic signatures, preventing silent regressions.
 
+### 6. Transition-First Mandate (EPIC-001)
+- **Mandate:** To minimize technical debt during the Golang transition, any new high-complexity features or fragile I/O tools must be prioritized for implementation in Go (via the gRPC Bridge) rather than expanding the Python codebase.
+- **Goal:** Focus Python work on stabilization and the transition handshake.
+
 ---
 
 ## 🗺️ System Map & Pathing
@@ -60,11 +64,12 @@ To maintain context efficiency and model precision, the system enforces a strict
 
 Before proposing a commit or finalizing any task, the following steps MUST be executed:
 
-1.  **[SOP-001] Testing:** Run all unit tests: `python -m pytest strategery/tests/unit/`.
-2.  **[SOP-002] Strategic Roadmap:** Update `<PROJECT_ROOT>\strategery\STRATEGIC_EDITION.md` to reflect new capabilities (Public-facing only; no internal bug IDs).
-3.  **[SOP-003] Privacy Audit:** Verify no hard-coded personal paths (e.g., `C:\Users\...`) or credentials in committed code.
-4.  **[SOP-004] Strategic Doctor:** Run the diagnostic suite: `$env:PYTHONPATH="."; <PYTHON_EXE> -m strategery.strategic_doctor` to ensure all strategic pillars are healthy.
-5.  **[SOP-005] Live Verification (LEV):** For behavioral changes, provide a "Live Environment Verification" prompt for the user to send to the running instance.
+1.  **[SOP-000] Speed Analysis:** Run high-speed linting: `ruff check .`. All syntax and logic violations must be resolved or auto-healed via `ruff check . --fix`.
+2.  **[SOP-001] Testing:** Run all unit tests: `python -m pytest strategery/tests/unit/`.
+3.  **[SOP-002] Strategic Roadmap:** Update `<PROJECT_ROOT>\strategery\STRATEGIC_EDITION.md` to reflect new capabilities (Public-facing only; no internal bug IDs).
+4.  **[SOP-003] Privacy Audit:** Verify no hard-coded personal paths (e.g., `C:\Users\...`) or credentials in committed code.
+5.  **[SOP-004] Strategic Doctor:** Run the diagnostic suite: `$env:PYTHONPATH="."; <PYTHON_EXE> -m strategery.strategic_doctor` to ensure all strategic pillars are healthy.
+6.  **[SOP-005] Live Verification (LEV):** For behavioral changes, provide a "Live Environment Verification" prompt for the user to send to the running instance.
 
 ---
 *Document Version: 1.0.0 (2026-03-24)*

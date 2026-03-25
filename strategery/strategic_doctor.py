@@ -97,7 +97,15 @@ def check_storage(config, apply=False):
                     print_status("Storage", f"Failed to initialize: {name}", "FAIL")
                     all_ok = False
             else:
-                lvl = "WARN" if name in initializers else "FAIL"
+                # BUG-242: Demote token.json to WARN if missing (expected during re-auth cycles)
+                lvl = "WARN" if (name in initializers or name == "token.json") else "FAIL"
+                
+                # BUG-236: Auto-repair for revoked Google OAuth token
+                if name == "token.json" and apply:
+                    if doctor_logic.repair_oauth_token(config):
+                        print_status("Storage", f"{name}: Revoked token moved to .bak. Next launch will re-authenticate.", "FIXED")
+                        continue
+
                 print_status("Storage", f"{name}: {msg}", lvl)
                 if lvl == "FAIL": all_ok = False
     return all_ok

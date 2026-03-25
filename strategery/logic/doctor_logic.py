@@ -85,14 +85,29 @@ def check_storage_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str
         checks.append(("Root", False, f"Missing at {storage_root}"))
         return checks
 
-    # 2. Write test
-    test_file = storage_root / ".doctor_test"
+    # 2. Write tests (BUG-239: Distinguish between Root and Workspace)
+    # Subagents frequently fail if they try to write to root.
+    
+    # Root Test
+    test_root = storage_root / ".doctor_root_test"
     try:
-        test_file.write_text("health_check")
-        test_file.unlink()
-        checks.append(("WriteAccess", True, f"Verified on {storage_root.drive}"))
+        test_root.write_text("health_check")
+        test_root.unlink()
+        checks.append(("RootWrite", True, f"Verified on {storage_root.drive}"))
     except Exception as e:
-        checks.append(("WriteAccess", False, str(e)))
+        checks.append(("RootWrite", False, f"Restricted (Expected): {e}"))
+
+    # Workspace Test (CRITICAL for Subagents)
+    workspace_dir = storage_root / "workspace"
+    test_work = workspace_dir / ".doctor_workspace_test"
+    try:
+        if not workspace_dir.exists():
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+        test_work.write_text("health_check")
+        test_work.unlink()
+        checks.append(("WorkspaceWrite", True, "Verified (Subagents OK)"))
+    except Exception as e:
+        checks.append(("WorkspaceWrite", False, f"FAILED: Specialists will not be able to function: {e}"))
 
     # 3. Critical Files
     creds_root = Path.home() / ".nanobot"
@@ -106,11 +121,36 @@ def check_storage_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str
 
     for name, p in critical.items():
         if p.exists():
-            checks.append((name, True, "Found"))
+            if name == "token.json":
+                # BUG-236: Deep validation of token health
+                try:
+                    with open(p, "r") as f:
+                        token_data = json.load(f)
+                    if not token_data.get("refresh_token"):
+                        checks.append((name, False, "MALFORMED (Missing refresh token)"))
+                    else:
+                        checks.append((name, True, "Found"))
+                except Exception as e:
+                    checks.append((name, False, f"CORRUPT: {e}"))
+            else:
+                checks.append((name, True, "Found"))
         else:
             checks.append((name, False, "Missing"))
 
     return checks
+
+def repair_oauth_token(config: 'StrategicConfig') -> bool:
+    """Removes expired/revoked token.json to trigger re-auth (BUG-236)."""
+    token_path = Path.home() / ".nanobot" / "secrets" / "token.json"
+    if token_path.exists():
+        try:
+            bak_path = token_path.with_suffix(".json.bak")
+            if bak_path.exists(): bak_path.unlink()
+            token_path.rename(bak_path)
+            return True
+        except:
+            return False
+    return False
 
 def check_mcp_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str]]:
     """Logic for verifying MCP server executables."""

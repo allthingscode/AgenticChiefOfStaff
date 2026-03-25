@@ -157,7 +157,8 @@ class StrategicHybridStore(VectorStoreInterface):
             # Clean query for FTS5
             # MANDATE: Wrap query in double quotes to handle IDs with hyphens (e.g. BUG-042)
             # as FTS5 treats hyphen as a NOT operator if not quoted.
-            safe_query = f'"{query.replace("\"", """")}"'
+            escaped_query = query.replace('"', '""')
+            safe_query = f'"{escaped_query}"'
             
             # Clean query for FTS5 (escape special chars if needed, but porter helps)
             # We use the BM25 ranking built into FTS5

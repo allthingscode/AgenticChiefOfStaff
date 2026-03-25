@@ -173,6 +173,10 @@ class SubagentPatch(BasePatch):
                 is_specialist = getattr(registry, "_is_strategic_specialist", False)
                 effective_cwd = working_dir or self.working_dir or str(context.app_root)
                 
+                # BUG-246: Enforce mandate bypass and stateless shell for specialists
+                if subagent_logic.detect_mandate_bypass(command, is_specialist=is_specialist):
+                    return subagent_logic.get_bypass_message(command, is_specialist=is_specialist)
+
                 if is_specialist:
                     command = subagent_logic.harden_subagent_command(command)
                 
@@ -211,10 +215,7 @@ class SubagentPatch(BasePatch):
         from nanobot.agent.tools.registry import ToolRegistry
         from nanobot.agent.tools.shell import ExecTool
         from nanobot.agent.tools.web import WebFetchTool
-        from nanobot.config.schema import Config
         from .vsa import VectorStoreFactory
-        from .config import strategic_migrate_config
-        from strategery.logic.infra_logic import strategic_mcp_logic
 
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
@@ -258,18 +259,8 @@ class SubagentPatch(BasePatch):
                     tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=max(self.exec_config.timeout, 300)))
                     tools.register(WebFetchTool(proxy=self.web_proxy))
                     
-                    if host_tools and hasattr(host_tools, "_tools"):
-                        for name, tool in host_tools._tools.items():
-                            if name not in tools._tools and not subagent_logic.is_tool_blocked(name, True):
-                                tools.register(tool)
-                    
-                    try:
-                        pydantic_cfg = strategic_migrate_config(context.config.model_dump(by_alias=True))
-                        validated_config = Config.model_validate(pydantic_cfg)
-                        if validated_config.tools.mcp_servers:
-                            # Logic Isolation (BUG-212): Use pure logic manager for MCP registration
-                            await strategic_mcp_logic.register_tools(validated_config.tools.mcp_servers, tools, stack.enter_async_context)
-                    except: pass
+                    # BUG-235: Bridge host tools and MCP servers
+                    await subagent_logic.bridge_subagent_tools(tools, host_tools, context.config, stack.enter_async_context)
                     
                     # Strategic tool loading
                     p = SubagentPatch()

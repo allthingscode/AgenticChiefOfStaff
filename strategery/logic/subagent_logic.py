@@ -32,14 +32,23 @@ ROLE_BLOCKS = {
     "specialist": ["spawn", "nanobot", "strategic_hello", "web_search", "web_fetch"]
 }
 
-# MANDATE: Protect D: drive and strategic files from direct shell bypass.
-# Use regex with word boundaries to avoid false positives in paths (e.g. D:\path)
-BYPASS_PATTERNS = [
-    r"\bnanobot\s+mcp\b", r"\bnanobot\s+status\b", r"\bhistory\.md\b",
-    r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+", r"\bInvoke-WebRequest\b", r"\bInvoke-RestMethod\b",
-    r"\bls\b\s+", r"\bdir\b\s+", r"\bmore\b\s+", r"\bhead\b\s+", r"\bping\b\s+", r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
-    r"^\s*[a-zA-Z]:\s*$" # Drive switch only
-]
+# Role-based command pattern mapping (unifies bypass and architectural mandates)
+COMMAND_BLOCKS = {
+    "main_agent": [
+        r"\bnanobot\s+mcp\b", r"\bnanobot\s+status\b", r"\bhistory\.md\b",
+        r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+", r"\bInvoke-WebRequest\b", r"\bInvoke-RestMethod\b",
+        r"\bls\b\s+", r"\bdir\b\s+", r"\bmore\b\s+", r"\bhead\b\s+", r"\bping\b\s+", r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
+        r"^\s*[a-zA-Z]:\s*$" # Drive switch only
+    ],
+    "specialist": [
+        r"\bcd\b\s+", # BUG-246: Block cd to enforce stateless shell
+        r"\bnanobot\s+mcp\b", r"\bhistory\.md\b",
+        r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+",
+        r"\bls\b\s+", r"\bdir\b\s+", # Force usage of list_dir for better enforcement
+        r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
+        r"^\s*[a-zA-Z]:\s*$" # Drive switch only
+    ]
+}
 
 # Pre-compiled regex for performance (BUG-168)
 CLUTTER_PATTERNS = [
@@ -113,22 +122,32 @@ def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bo
     blocked = ROLE_BLOCKS[role]
     return [d for d in definitions if not any(bp.lower() in d.get("function", {}).get("name", "").lower() for bp in blocked)]
 
-def detect_mandate_bypass(command: str) -> bool:
+def detect_mandate_bypass(command: str, is_specialist: bool = False) -> bool:
     """Detects attempts to bypass strategic mandates via shell commands."""
+    role = "specialist" if is_specialist else "main_agent"
+    
+    # 1. Tool name hallucination (Always blocked)
     for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
         if re.search(r"\b" + tool_name + r"\b", command):
             return True
 
-    for pattern in BYPASS_PATTERNS:
+    # 2. Role-based command pattern blocking
+    patterns = COMMAND_BLOCKS[role]
+    for pattern in patterns:
         if re.search(pattern, command, re.IGNORECASE):
             return True
     return False
 
-def get_bypass_message(command: str) -> str:
+def get_bypass_message(command: str, is_specialist: bool = False) -> str:
     """Returns a descriptive error message for a mandate bypass."""
+    # Check for tool hallucination in shell
     for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
         if tool_name in command.lower():
             return f"CRITICAL ERROR: Access Denied. The term '{tool_name}' is a TOOL, not a shell command. Use the '{tool_name}' tool directly."
+
+    # Check for Stateless Shell Violation (BUG-246)
+    if is_specialist and re.search(r"\bcd\b\s+", command, re.IGNORECASE):
+        return "CRITICAL ERROR: Access Denied. Stateless Shell Mandate (BUG-246) forbids 'cd'. Use ABSOLUTE PATHS for all file and tool operations."
 
     if "history.md" in command.lower():
         return "CRITICAL ERROR: Access Denied. Bypass pattern detected. HISTORY.md is RETIRED; use chronological journals instead."
@@ -229,6 +248,25 @@ def get_escalation_model(current_model: str) -> str:
     if "flash-lite" in current_model.lower(): return "gemini-3-flash-preview"
     return "gemini-3.1-pro-preview"
 
+def strip_clixml(text: str) -> str:
+    """Strips PowerShell CLIXML markers and attempts to extract the plain error message (BUG-247)."""
+    if "#< CLIXML" not in text:
+        return text
+    
+    # Simple extraction: find the first <S S="Error"> block and extract its content
+    # This is a heuristic to avoid full XML parsing for performance
+    error_match = re.search(r'<S S="Error">(.*?)<\/S>', text, re.DOTALL)
+    if error_match:
+        # Replace _x000D__x000A_ with newlines and unescape basic XML
+        msg = error_match.group(1)
+        msg = msg.replace("_x000D__x000A_", "\n").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+        return f"POWERSHELL ERROR: {msg.strip()}"
+    
+    # Fallback: Strip the CLIXML header and common XML tags if regex fails
+    clean = re.sub(r'#< CLIXML', '', text)
+    clean = re.sub(r'<[^>]+>', '', clean)
+    return f"POWERSHELL ERROR (Raw): {clean.strip()}"
+
 async def execute_powershell_command(command: str, cwd: str, app_root: str, timeout: int) -> str:
     """Executes a PowerShell command with UTF-8 encoding and BOM stripping (BUG-184/155)."""
     try:
@@ -255,7 +293,9 @@ async def execute_powershell_command(command: str, cwd: str, app_root: str, time
         err_str = stderr.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
         
         if proc.returncode != 0:
-            return f"ERROR (Exit {proc.returncode}): {err_str}\n{out_str}".strip()
+            # BUG-247: Strip CLIXML from stderr
+            err_clean = strip_clixml(err_str)
+            return f"ERROR (Exit {proc.returncode}): {err_clean}\n{out_str}".strip()
         return out_str or err_str
     except Exception as e:
         return f"Error executing PowerShell: {str(e)}"
@@ -263,6 +303,29 @@ async def execute_powershell_command(command: str, cwd: str, app_root: str, time
 def prepare_subagent_run(task_id: str, specialist: str, host_config: Any, default_model: str) -> str:
     """Determines the correct model for a specialist run (BUG-136)."""
     return get_specialist_model(specialist, host_config, default_model)
+
+async def bridge_subagent_tools(tools: Any, host_tools: Any, config: 'StrategicConfig', stack_enter: Any) -> None:
+    """Bridges tools from the host registry and configured MCP servers to a subagent."""
+    # 1. Bridge tools from Host (Main Agent)
+    if host_tools and hasattr(host_tools, "_tools"):
+        for name, tool in host_tools._tools.items():
+            # Don't re-register already local tools (filesystem, shell)
+            # and respect role-based blocking
+            if name not in tools._tools and not is_tool_blocked(name, True):
+                tools.register(tool)
+    
+    # 2. Re-register MCP servers from config (Logic Isolation BUG-212)
+    try:
+        from strategery.patches.config import strategic_migrate_config
+        from nanobot.config.schema import Config
+        from strategery.logic.infra_logic import strategic_mcp_logic
+        
+        pydantic_cfg = strategic_migrate_config(config.model_dump(by_alias=True))
+        validated_config = Config.model_validate(pydantic_cfg)
+        if validated_config.tools.mcp_servers:
+            await strategic_mcp_logic.register_tools(validated_config.tools.mcp_servers, tools, stack_enter)
+    except Exception as e:
+        strategic_logger.error(f"MCP Bridging failed: {e}")
 
 async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[str, Any]], provider: Any, model: str, tools: Any, temperature: float, max_tokens: int, reasoning_effort: str) -> str:
     """Executes the core multi-turn subagent loop (F-029)."""
@@ -351,7 +414,9 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "2. **STATUS PROCEDURES:**\n"
         "   - **Network:** Use ping or Invoke-WebRequest via exec to verify connectivity.\n"
         "   - **Hybrid Memory:** Check D:\\Nanobot_Storage\\workspace\\memory\\chroma.sqlite3 and keyword_index.db existence/size.\n"
+        "   - **Health Integration Suite (BUG-244):** The full health suite is located at D:\\Nanobot_Storage\\workspace\\skills\\system-health\\run_suite.ps1. Do NOT hallucinate 'run_tests.ps1'.\n"
         "   - **Custom Skills (BUG-230):** All strategic skills live in D:\\Nanobot_Storage\\workspace\\skills\\. Do NOT search core 'nanobot/skills/'.\n"
+        "   - **Storage (BUG-238):** You MUST use D:\\Nanobot_Storage\\workspace\\ for all temporary file creation and testing. Do NOT write to drive roots (C:\\, D:\\).\n"
     )
     
     # Role-Specific Manifest Additions
@@ -387,7 +452,8 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "**BANNED TOOLS (DO NOT USE):** The tools 'web_search' and 'web_fetch' are DEPRECATED and UNSTABLE. IGNORE THEM.",
         "**MEMORY ACCESS (D: DRIVE):** Long-term memory is at D:\\Nanobot_Storage\\workspace\\memory. You MUST use ABSOLUTE PATHS. Do NOT attempt to verify access by listing the root 'D:\\' as it may trigger false-positive permission errors.",
         "**SURGICAL PRECISION:** Use 'read_file' to examine config or history.",
-        "**ZERO DRIVE-ROOT WRITES (BUG-228):** You are STRICTLY FORBIDDEN from writing files directly to the root of ANY drive (e.g., C:\\, D:\\). You MUST use the provided workspace subdirectories.",
+        "**ZERO DRIVE-ROOT WRITES (BUG-228/238):** You are STRICTLY FORBIDDEN from writing files directly to the root of ANY drive (e.g., C:\\, D:\\). This will result in an OS Permission Denied error. You MUST use D:\\Nanobot_Storage\\workspace\\ for all file creation, testing, and temporary storage.",
+        "**CANARY WRITE MANDATE:** Before performing complex file operations, you MUST perform a 'canary write' to 'D:\\Nanobot_Storage\\workspace\\canary.txt' to verify your environment.",
         "**MCP TOOLS vs. URIs (BUG-229):** MCP servers (e.g., 'google-ai-search', 'filesystem-d') are TOOLS registered in your ToolRegistry. They are NOT network hosts. You are STRICTLY FORBIDDEN from attempting to use 'Invoke-WebRequest' or 'curl' against MCP server names. Call the dedicated MCP tool directly.",
         "**CHAIN OF THOUGHT:** Show your reasoning and state which tool you are about to call.",
         "**EFFICIENT EXECUTION:** Do NOT attempt to delegate to other specialists. The 'spawn' tool is restricted.",
@@ -405,6 +471,7 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
 
     architect_rules = [
         "**MARKDOWN DIRECTIVE MANDATE (BUG-132/138):** You are strictly FORBIDDEN from attempting to exec a Markdown (.md) file. Markdown files are NOT executable scripts. If a task points to a .md file, you MUST use 'read_file' to read the instructions inside and THEN execute the steps manually.",
+        "**SHELL SCRIPT RESTRICTION (BUG-234):** You are strictly FORBIDDEN from attempting to execute shell scripts (.sh) directly. This is a Windows environment. If you encounter a .sh file, you MUST use 'read_file' to examine its contents and then implement the equivalent steps using PowerShell or individual tool calls.",
         "**SCRIPT EXECUTION (WINDOWS):** To run PowerShell scripts (.ps1), you MUST use: powershell -File \"D:\\path\\to\\script.ps1\". To run a PowerShell command/cmdlet, you MUST use powershell -Command \"...\".",
         f"**PYTHON EXECUTION (MANDATE - BUG-141):** You MUST use the absolute path to the project's Python executable: {PYTHON_EXE_PATH}. Use module-style calls with PYTHONPATH: $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.module_name.",
         "**AUTOMATED ENCODING (BUG-155 / BUG-162):** The exec tool forces UTF-8. You are FORBIDDEN from manually prepending encoding fixes."
@@ -441,6 +508,32 @@ def harden_subagent_command(command: str) -> str:
     # We use regex to catch them even with inconsistent whitespace.
     command = re.sub(r"\s+&&\s+", "; ", command)
     command = re.sub(r"\s+\|\|\s+", "; ", command)
+
+    # BUG-240: Drive-Blindness Override. 
+    # LLMs frequently hallucinate 'C:\canary.txt' or 'C:\test.txt'. 
+    # We automatically translate these to the mandated D: drive workspace.
+    command = command.replace("C:\\canary.txt", "D:\\Nanobot_Storage\\workspace\\canary.txt")
+    command = command.replace("C:\\test.txt", "D:\\Nanobot_Storage\\workspace\\test.txt")
+    command = command.replace("C:\\test_write.txt", "D:\\Nanobot_Storage\\workspace\\test_write.txt")
+
+    # BUG-229: MCP URI Hallucination Override.
+    # Specialists treat MCP server names as network hosts. We catch and fail these early.
+    mcp_hosts = ["google-ai-search", "filesystem-d", "google-surgical", "email-reporter", "knowledge-graph"]
+    for host in mcp_hosts:
+        if f"http://{host}" in command or f"https://{host}" in command or f"ping {host}" in command:
+            return f"echo 'ERROR (BUG-229): Hallucinated URI detected. {host} is a TOOL, not a network host. Call the dedicated MCP tool directly.'"
+
+    # BUG-243: PowerShell Script Hallucination Override.
+    # Specialists frequently assume they can run .ps1 files directly. 
+    # We automatically prepend 'powershell -File' if a .ps1 path is used standalone.
+    if ".ps1" in command.lower() and "powershell" not in command.lower():
+        # Match standalone paths or commands starting with a .ps1 file
+        ps1_pattern = re.compile(r"(?:^|[;&])\s*([a-zA-Z]:\\[^;&|\s]+\.ps1)", re.IGNORECASE)
+        match = ps1_pattern.search(command)
+        if match:
+            path = match.group(1)
+            # Use -ExecutionPolicy Bypass for maximum reliability in spawned processes
+            command = command.replace(path, f"powershell -NoProfile -ExecutionPolicy Bypass -File \"{path}\"")
     
     if "python " in command.lower() or "python.exe" in command.lower():
         # MANDATE: Project root for module resolution.

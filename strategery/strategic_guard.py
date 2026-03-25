@@ -31,35 +31,48 @@ def run_command(command, description, capture=False):
     env["PYTHONPATH"] = "."
     
     try:
+        # Check if the command is ruff to avoid shell=True if possible, 
+        # but for consistency with existing code, we use shell=True.
         result = subprocess.run(
             command, 
             shell=True, 
             env=env, 
-            capture_output=capture, 
+            capture_output=True, # Always capture for ruff to show errors
             text=True
         )
         if result.returncode == 0:
             print(f"[{GREEN}OK{RESET}] {description} passed.")
-            return True, result.stdout if capture else ""
+            return True, result.stdout
         else:
             print(f"[{RED}FAIL{RESET}] {description} failed (Code: {result.returncode}).")
-            if result.stderr:
-                print(f"{RED}{result.stderr}{RESET}")
-            return False, result.stdout if capture else ""
+            if result.stdout: print(result.stdout)
+            if result.stderr: print(f"{RED}{result.stderr}{RESET}")
+            return False, result.stdout
     except Exception as e:
         print(f"[{RED}ERROR{RESET}] Unexpected failure in {description}: {e}")
         return False, ""
 
+def sop_000_speed_analysis():
+    """[SOP-000] High-Speed Linting (Ruff)."""
+    import shutil
+    ruff_bin = shutil.which("ruff")
+    if not ruff_bin:
+        print(f"[{YELLOW}WARN{RESET}] ruff not found. Skipping SOP-000.")
+        return True # Soft fail if not installed
+    
+    cmd = f"{ruff_bin} check . --select E,F,B --ignore E501 --no-cache"
+    return run_command(cmd, "SOP-000: Speed Analysis (ruff)")[0]
+
 def sop_001_testing():
     """[SOP-001] Run all Strategic Unit Tests."""
     cmd = f"{PYTHON_EXE} -m pytest strategery/tests/unit/"
-    return run_command(cmd, "SOP-001: Strategic Unit Tests")
+    return run_command(cmd, "SOP-001: Strategic Unit Tests")[0]
 
-def sop_005_privacy():
-    """[SOP-005] Personal Data Audit (Privacy Guard)."""
+def sop_003_privacy():
+    """[SOP-003] Personal Data Audit (Privacy Guard)."""
     # Patterns that should NOT be in committed code (excluding this script and config)
     restricted = ["C:\\Users\\HayesChiefOfStaff", "token.json", "credentials"]
-    print(f"[*] {BOLD}Executing SOP-005: Privacy Audit...{RESET}")
+    print(f"[*] {BOLD}Executing SOP-003: Privacy Audit...{RESET}")
     
     all_ok = True
     # We audit only the 'strategery/patches' and 'strategery/tools' folders
@@ -77,13 +90,13 @@ def sop_005_privacy():
                 print(f"[{YELLOW}WARN{RESET}] Could not audit {py_file}: {e}")
                 
     if all_ok:
-        print(f"[{GREEN}OK{RESET}] SOP-005: Privacy Audit passed.")
+        print(f"[{GREEN}OK{RESET}] SOP-003: Privacy Audit passed.")
     return all_ok
 
-def sop_006_doctor():
-    """[SOP-006] Strategic Doctor (System Health)."""
+def sop_004_doctor():
+    """[SOP-004] Strategic Doctor (System Health)."""
     cmd = f"{PYTHON_EXE} -m strategery.strategic_doctor"
-    return run_command(cmd, "SOP-006: Strategic Doctor")
+    return run_command(cmd, "SOP-004: Strategic Doctor")[0]
 
 def policy_linter():
     """Enforce 'Zero Core Pollution' and 'Async Standard'."""
@@ -126,13 +139,15 @@ def main():
     print("="*60)
     
     pipeline = [
-        (sop_006_doctor, "Strategic Doctor"),
-        (sop_005_privacy, "Privacy Audit"),
+        (sop_000_speed_analysis, "Speed Analysis"),
+        (sop_004_doctor, "Strategic Doctor"),
+        (sop_003_privacy, "Privacy Audit"),
         (policy_linter, "Policy Linter")
     ]
     
     if not args.skip_tests:
-        pipeline.insert(0, (sop_001_testing, "Unit Tests"))
+        # Move unit tests after the fast checks
+        pipeline.append((sop_001_testing, "Unit Tests"))
         
     failures = 0
     for func, name in pipeline:
