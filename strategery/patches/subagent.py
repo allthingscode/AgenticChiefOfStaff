@@ -258,6 +258,7 @@ class SubagentPatch(BasePatch):
                     VectorStoreFactory.get_store(provider=self.provider)
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
+                    tools._specialist_type = specialist
                     tools._task_id = task_id
 
                     tools.register(ExecTool(working_dir=str(context.workspace_root), timeout=max(self.exec_config.timeout, 300)))

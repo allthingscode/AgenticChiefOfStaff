@@ -70,6 +70,7 @@ Before proposing a commit or finalizing any task, the following steps MUST be ex
 4.  **[SOP-003] Privacy Audit:** Verify no hard-coded personal paths (e.g., `C:\Users\...`) or credentials in committed code.
 5.  **[SOP-004] Strategic Doctor:** Run the diagnostic suite: `$env:PYTHONPATH="."; <PYTHON_EXE> -m strategery.strategic_doctor` to ensure all strategic pillars are healthy.
 6.  **[SOP-005] Live Verification (LEV):** For behavioral changes, provide a "Live Environment Verification" prompt for the user to send to the running instance.
+7.  **[SOP-012] Parity Verification (Go Transition):** When porting logic or tools to Golang, the new implementation MUST pass the identical behavioral test suite used by the original Python version. No component is certified for production until 1:1 behavioral parity is verified.
 
 ---
 *Document Version: 1.0.0 (2026-03-24)*

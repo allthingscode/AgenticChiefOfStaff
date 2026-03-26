@@ -167,6 +167,7 @@ class CheckpointPatch(BasePatch):
 
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True
+                    tools._specialist_type = specialist
                     tools._task_id = task_id
 
                     # Warm up Vector Store

@@ -23,16 +23,21 @@ class StrategicAttachment(BaseModel):
     description: Optional[str] = None
 
 # --- Constants & Patterns ---
-
 # Role-based tool access mapping
 ROLE_BLOCKS = {
     "main_agent": [
         "google", "ai-search", "email-reporter", "strategic_", "web_search",
         "search_memory", "nanobot", "filesystem-d", "read_file", "write_file",
-        "edit_file", "list_dir", "ls ", "dir ", "D:"
+        "edit_file", "list_dir", "ls ", "dir ", "D:", "git_"
     ],
-    "specialist": ["spawn", "nanobot", "strategic_hello", "web_search", "web_fetch"]
+    "researcher": [
+        "spawn", "nanobot", "strategic_hello", "web_search", "web_fetch",
+        "git_add", "git_commit", "git_push", "git_pull", "git_merge", "git_rebase", "git_reset"
+    ],
+    "architect": ["spawn", "nanobot", "strategic_hello", "web_search", "web_fetch"]
 }
+
+# --- Constants & Patterns ---
 
 # Role-based command pattern mapping (unifies bypass and architectural mandates)
 COMMAND_BLOCKS = {
@@ -40,6 +45,7 @@ COMMAND_BLOCKS = {
         r"\bnanobot\s+mcp\b", r"\bnanobot\s+status\b", r"\bhistory\.md\b",
         r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+", r"\bInvoke-WebRequest\b", r"\bInvoke-RestMethod\b",
         r"\bls\b\s+", r"\bdir\b\s+", r"\bmore\b\s+", r"\bhead\b\s+", r"\bping\b\s+", r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
+        r"\bgit\b", # F-040: Block raw git shell commands
         r"^\s*[a-zA-Z]:\s*$" # Drive switch only
     ],
     "specialist": [
@@ -48,6 +54,7 @@ COMMAND_BLOCKS = {
         r"\bdownload\b", r"\bcurl\b\s+", r"\bwget\b\s+",
         r"\bls\b\s+", r"\bdir\b\s+", # Force usage of list_dir for better enforcement
         r"\biex\b\s+", r"\bInvoke-Expression\b\s+",
+        r"\bgit\b", # F-040: Block raw git shell commands
         r"^\s*[a-zA-Z]:\s*$" # Drive switch only
     ]
 }
@@ -89,39 +96,46 @@ LOG_ROOT = get_log_root()
 
 # --- Logic Functions ---
 
-def is_tool_blocked(tool_name: str, is_specialist: bool) -> bool:
-    """Determines if a tool is blocked based on the agent's role."""
-    name_str = tool_name.lower()
-    role = "specialist" if is_specialist else "main_agent"
+def _get_role(registry: Any) -> str:
+    """Determines the strategic role from a tool registry instance."""
+    is_specialist = getattr(registry, "_is_strategic_specialist", False)
+    if not is_specialist:
+        return "main_agent"
+    return getattr(registry, "_specialist_type", "researcher")
 
-    # BUG-222: Use a more precise check for tool blocking.
-    # If the tool name EXACTLY matches or is a logical substring (e.g. 'google' in 'mcp_google_surgical'), block it.
-    blocks = ROLE_BLOCKS[role]
+def is_tool_blocked(tool_name: str, registry: Any) -> bool:
+    """Determines if a tool is blocked based on the agent's granular role."""
+    name_str = tool_name.lower()
+    role = _get_role(registry)
+    
+    blocks = ROLE_BLOCKS.get(role, [])
     for b in blocks:
         b_clean = b.lower().strip()
         if b_clean in name_str:
             return True
     return False
 
-def get_block_message(registry: Any, tool_name: str, is_specialist: bool) -> str:
+def get_block_message(registry: Any, tool_name: str) -> str:
     """Returns a descriptive error message for a blocked tool with circuit breaker support."""
     if not hasattr(registry, "_strategic_blocked_attempts"):
         registry._strategic_blocked_attempts = {}
-
+    
     registry._strategic_blocked_attempts[tool_name] = registry._strategic_blocked_attempts.get(tool_name, 0) + 1
     count = registry._strategic_blocked_attempts[tool_name]
-
-    role_label = "Specialist" if is_specialist else "Main Agent"
+    
+    role = _get_role(registry)
+    role_label = role.replace("_", " ").title()
+    
     if count >= 2:
         return (f"CRITICAL ERROR: Access Denied. Tool '{tool_name}' is HARD-LOCKED for your role ({role_label}). "
                 f"You have attempted to access it {count} times. You MUST STOP trying to call this tool directly.")
-
+    
     return f"ERROR: Access Denied. Tool '{tool_name}' is restricted for your role ({role_label})."
 
-def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bool) -> List[Dict[str, Any]]:
-    """Filters tool definitions based on the agent's role."""
-    role = "specialist" if is_specialist else "main_agent"
-    blocked = ROLE_BLOCKS[role]
+def filter_tool_definitions(definitions: List[Dict[str, Any]], registry: Any) -> List[Dict[str, Any]]:
+    """Filters tool definitions based on the agent's granular role."""
+    role = _get_role(registry)
+    blocked = ROLE_BLOCKS.get(role, [])
     return [d for d in definitions if not any(bp.lower() in d.get("function", {}).get("name", "").lower() for bp in blocked)]
 
 def detect_mandate_bypass(command: str, is_specialist: bool = False) -> bool:
