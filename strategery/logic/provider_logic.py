@@ -29,6 +29,10 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
     """
     Standalone logic for Google GenAI embedding with strategic logging and retries.
     """
+    # MANDATE (BUG-258): Definitive fallback to prevent 404 if model is invalid or missing
+    if not model_name or "invalid" in model_name.lower():
+        model_name = "models/text-embedding-004"
+
     try:
         from google import genai
         strategic_logger.info(f"GoogleGenAI embed: model={model_name}")

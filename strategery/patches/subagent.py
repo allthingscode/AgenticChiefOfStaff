@@ -318,8 +318,7 @@ class SubagentPatch(BasePatch):
                     for t_name in self.tool_names:
                         strategic_logger.info(f"  - Registered: {t_name}")
 
-                is_specialist = getattr(self, "_is_strategic_specialist", False)
-                return subagent_logic.filter_tool_definitions(self._orig_get_definitions_strategic(), is_specialist)
+                return subagent_logic.filter_tool_definitions(self._orig_get_definitions_strategic(), self)
             ToolRegistry.get_definitions = _patched_get_definitions
 
         if not hasattr(ToolRegistry, "_orig_execute_strategic"):
@@ -334,8 +333,8 @@ class SubagentPatch(BasePatch):
                     subagent_logic.log_tool_result_general(self, name, loop_err)
                     return loop_err
 
-                if subagent_logic.is_tool_blocked(name, is_specialist):
-                    res = subagent_logic.get_block_message(self, name, is_specialist)
+                if subagent_logic.is_tool_blocked(name, self):
+                    res = subagent_logic.get_block_message(self, name)
                     subagent_logic.log_tool_result_general(self, name, res)
                     return res
 

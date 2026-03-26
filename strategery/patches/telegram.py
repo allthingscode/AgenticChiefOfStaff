@@ -225,6 +225,7 @@ class TelegramPatch(BasePatch):
     def _patch_telegram_channel(self, TelegramChannel, context: PatchContext):
         from telegram.ext import CommandHandler
 
+        # Use the validated config object from context
         config = context.config
         disable_commands = config.strategic_edition.disable_bot_commands
 

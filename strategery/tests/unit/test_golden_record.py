@@ -18,8 +18,12 @@ def registry_factory(mock_context):
 
     def _create(role="main"):
         reg = ToolRegistry()
-        if role == "specialist":
+        if role == "specialist" or role == "researcher":
             reg._is_strategic_specialist = True
+            reg._specialist_type = "researcher"
+        elif role == "architect":
+            reg._is_strategic_specialist = True
+            reg._specialist_type = "architect"
         return reg
     return _create
 

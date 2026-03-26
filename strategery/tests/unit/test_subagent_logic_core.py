@@ -1,15 +1,27 @@
+from unittest.mock import MagicMock
 from strategery.logic import subagent_logic
 from strategery.logic.config_logic import validate_strategic_config
 
 
 def test_is_tool_blocked_main_agent():
-    assert subagent_logic.is_tool_blocked("google", False) is True
-    assert subagent_logic.is_tool_blocked("read_file", False) is True
-    assert subagent_logic.is_tool_blocked("exec", False) is False
+    # Mock registry for Main Agent
+    reg = MagicMock()
+    reg._is_strategic_specialist = False
+    
+    assert subagent_logic.is_tool_blocked("google", reg) is True
+    assert subagent_logic.is_tool_blocked("read_file", reg) is True
+    assert subagent_logic.is_tool_blocked("exec", reg) is False
 
 def test_is_tool_blocked_specialist():
-    assert subagent_logic.is_tool_blocked("spawn", True) is True
-    assert subagent_logic.is_tool_blocked("read_file", True) is False
+    # Mock registry for specialist
+    reg = MagicMock()
+    reg._is_strategic_specialist = True
+    reg._specialist_type = "researcher"
+    
+    # Specialists should be blocked from 'spawn'
+    assert subagent_logic.is_tool_blocked("spawn", reg) is True
+    # Specialists should be allowed to use 'read_file'
+    assert subagent_logic.is_tool_blocked("read_file", reg) is False
 
 def test_detect_mandate_bypass():
     assert subagent_logic.detect_mandate_bypass("cat history.md") is True

@@ -3,15 +3,27 @@ from strategery.logic import subagent_logic
 
 def test_role_blocks_logic():
     """Verify that role-based tool blocking still works after F-028 consolidation."""
-    # Main Agent should be blocked from google-surgical
-    assert subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=False)
-    # Specialist should be allowed
-    assert not subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", is_specialist=True)
+    from unittest.mock import MagicMock
 
-    # Specialist should be blocked from spawn
-    assert subagent_logic.is_tool_blocked("spawn", is_specialist=True)
+    # 1. Main Agent
+    main_reg = MagicMock()
+    main_reg._is_strategic_specialist = False
+    assert subagent_logic.is_tool_blocked("mcp_google-surgical_list_tasks", main_reg) is True
+
+    # 2. Researcher
+    res_reg = MagicMock()
+    res_reg._is_strategic_specialist = True
+    res_reg._specialist_type = "researcher"
+    assert subagent_logic.is_tool_blocked("git_add", res_reg) is True
+
+    # 3. Architect
+    arc_reg = MagicMock()
+    arc_reg._is_strategic_specialist = True
+    arc_reg._specialist_type = "architect"
+    assert subagent_logic.is_tool_blocked("git_add", arc_reg) is False
+
     # Main Agent should be allowed
-    assert not subagent_logic.is_tool_blocked("spawn", is_specialist=False)
+    assert not subagent_logic.is_tool_blocked("spawn", main_reg)
 
 def test_telemetry_formatter():
     """Verify that the new _format_telemetry helper works correctly."""
