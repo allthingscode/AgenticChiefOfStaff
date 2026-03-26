@@ -203,18 +203,18 @@ class CheckpointPatch(BasePatch):
                     ]
 
                     # BUG-252: Delegate to durable orchestration loop with checkpointing
-                    async def _checkpoint_provider_wrapper(messages, tools, model, temperature, max_tokens, reasoning_effort):
+                    async def _checkpoint_provider_wrapper(messages, tools, model, temperature, max_tokens=None, reasoning_effort=None):
                         # Save snapshot before each chat turn
                         current_it = (len([m for m in messages if m["role"] == "assistant"]) + 1)
                         manager.save_snapshot(thread_id, current_it, messages)
-
+                        
                         resp = await self_sub.provider.chat(
                             messages=messages,
                             tools=tools,
                             model=model,
                             temperature=temperature,
-                            max_tokens=max_tokens,
-                            reasoning_effort=reasoning_effort
+                            max_tokens=max_tokens or self_sub.max_tokens,
+                            reasoning_effort=reasoning_effort or self_sub.reasoning_effort
                         )
                         return resp
 
