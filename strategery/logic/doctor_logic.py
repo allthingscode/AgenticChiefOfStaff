@@ -40,13 +40,14 @@ def check_config_health(config_path: Path) -> Tuple[bool, str, Optional[Any]]:
             raw_bytes = f.read()
             has_bom = raw_bytes.startswith(b'\xef\xbb\xbf')
 
-        if has_bom:
-            return True, "UTF-8 BOM detected", None # Warn level handled by caller
-
         with open(config_path, "r", encoding="utf-8-sig") as f:
             raw_data = json.load(f)
 
         config = validate_strategic_config(raw_data)
+
+        if has_bom:
+            return True, "UTF-8 BOM detected", config
+
         return True, "OK", config
     except Exception as e:
         return False, str(e), None
