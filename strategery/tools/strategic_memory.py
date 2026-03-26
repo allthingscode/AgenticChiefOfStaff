@@ -1,13 +1,15 @@
 from typing import Any
+
 from nanobot.agent.tools.base import Tool
 from strategery.patches.vsa import VectorStoreFactory
+
 
 class SearchMemoryTool(Tool):
     """
     Tool for agents to proactively search their long-term memory.
     Queries the StrategicVectorStore (ChromaDB) for semantically similar historical entries.
     """
-    
+
     @property
     def name(self) -> str:
         return "search_memory"
@@ -55,19 +57,19 @@ class SearchMemoryTool(Tool):
 
         try:
             store = VectorStoreFactory.get_store()
-            
+
             # HybridStore supports 'query' which is already hybrid.
-            # We can expose explicit keyword/semantic if needed, but for now 
+            # We can expose explicit keyword/semantic if needed, but for now
             # let's just use the store's unified query.
             # If search_type is explicit, we could filter but 'hybrid' is usually best.
-            
+
             if search_type == "keyword" and hasattr(store, "_keyword_search"):
                 results = store._keyword_search(query, n_results=n_results)
             elif search_type == "semantic" and hasattr(store, "vector_store"):
                 results = await store.vector_store.query(query, n_results=n_results)
             else:
                 results = await store.query(query, n_results=n_results)
-            
+
             if not results:
                 return f"No relevant memories found for query: '{query}' (type: {search_type})"
 
@@ -77,13 +79,13 @@ class SearchMemoryTool(Tool):
                 metadata = res.get("metadata", {})
                 dist = res.get("distance", 0.0)
                 res_type = res.get("type", "semantic")
-                
+
                 timestamp = metadata.get("timestamp", "unknown")
                 source = metadata.get("source", "unknown")
-                
+
                 # Format relevance based on type
                 relevance = f"Rank: {dist:.2f}" if res_type == "keyword" else f"Relevance: {1.0 - dist:.2f}"
-                
+
                 formatted_output.append(
                     f"[{i}] [{timestamp}] (Source: {source}, {relevance}, Type: {res_type})\n{content}\n"
                 )

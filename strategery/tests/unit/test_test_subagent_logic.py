@@ -1,6 +1,7 @@
 from strategery.logic import subagent_logic
 from strategery.logic.config_logic import validate_strategic_config
 
+
 def test_is_tool_blocked_main_agent():
     assert subagent_logic.is_tool_blocked("google", False) is True
     assert subagent_logic.is_tool_blocked("read_file", False) is True
@@ -14,7 +15,7 @@ def test_detect_mandate_bypass():
     assert subagent_logic.detect_mandate_bypass("cat history.md") is True
     assert subagent_logic.detect_mandate_bypass("ping 8.8.8.8") is True
     # MANDATE: All agents are blocked from using 'ls ' in raw shell to bypass FS tools
-    assert subagent_logic.detect_mandate_bypass("ls -la") is True 
+    assert subagent_logic.detect_mandate_bypass("ls -la") is True
 
 def test_get_specialist_model_researcher():
     config = validate_strategic_config({"agents": {"specialists": {"researcher": {"model": "flash-lite"}}}})

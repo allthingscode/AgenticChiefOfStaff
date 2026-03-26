@@ -4,16 +4,19 @@ Reasoning: The standard 'google-workspace' MCP is unstable. This script provides
 credential-locked access for scheduling and secure cloud backups.
 """
 import json
-import sys
 import os
+import sys
 import zipfile
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+
+from fastmcp import FastMCP
+from google.auth.transport.requests import Request
+
 # MANDATE (F-014): Added Drive scope for sandboxed backup management
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-from fastmcp import FastMCP
+
 
 # Detect config path
 def get_config():
@@ -99,7 +102,7 @@ def get_service(service_name, version='v1', force_reauth=False):
             raise FileNotFoundError(f"Missing client_secrets.json at {client_secrets}")
 
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
-        
+
         # Check if we should use console flow (useful for remote sessions or headless)
         if "--console" in sys.argv:
             creds = flow.run_local_server(port=0, open_browser=False)

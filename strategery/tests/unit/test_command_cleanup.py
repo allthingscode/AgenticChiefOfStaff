@@ -1,5 +1,6 @@
 from strategery.logic import subagent_logic
 
+
 def test_harden_command_strips_chcp():
     """Verify that redundant chcp 65001 is stripped (BUG-168)."""
     # Case 1: With semicolon

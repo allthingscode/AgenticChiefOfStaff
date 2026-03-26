@@ -1,8 +1,10 @@
-import sys
 import asyncio
+import sys
 from pathlib import Path
-from typing import Any, List, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from strategery.strategic_logger import strategic_logger
+
 
 def resolve_strategic_media_path(context_storage_root: Optional[Path], channel_name: Optional[str] = None) -> Path:
     """Resolves the absolute path for strategic media storage on the D: drive."""
@@ -10,18 +12,18 @@ def resolve_strategic_media_path(context_storage_root: Optional[Path], channel_n
     path = storage_root / "workspace" / "media"
     if channel_name:
         path = path / channel_name
-    
+
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 def list_directory_robust(path_str: str, workspace_path: Path, allowed_dir: Optional[Path] = None) -> str:
     """Robustly lists directory contents, skipping restricted Windows items (BUG-179)."""
     try:
-        # We need a helper for path resolution if we want to be truly pure, 
+        # We need a helper for path resolution if we want to be truly pure,
         # but for now, we'll assume the patch provides a resolved path or we use local logic.
         from nanobot.agent.tools.filesystem import _resolve_path
         dir_path = _resolve_path(path_str, workspace_path, allowed_dir)
-        
+
         if not dir_path.exists():
             return f"Error: Directory not found: {path_str}"
         if not dir_path.is_dir():
@@ -50,14 +52,14 @@ def read_log_file_robust(path_str: str, workspace_path: Path, allowed_dir: Optio
     """Reads a log file using Windows-safe encoding (BUG-133)."""
     if not (path_str.lower().endswith(".log") and sys.platform == "win32"):
         return None
-        
+
     try:
         from nanobot.agent.tools.filesystem import _resolve_path
         file_path = _resolve_path(path_str, workspace_path, allowed_dir)
-        
+
         if not file_path.exists():
             return f"Error: File not found: {path_str}"
-        
+
         size = file_path.stat().st_size
         if size > max_chars * 4:
             return f"Error: File too large ({size:,} bytes)."
@@ -65,7 +67,7 @@ def read_log_file_robust(path_str: str, workspace_path: Path, allowed_dir: Optio
         # Strategic encoding bridge (BOM safe + backslashreplace)
         with open(file_path, "r", encoding="utf-8-sig", errors="backslashreplace") as f:
             content = f.read()
-        
+
         if len(content) > max_chars:
             return content[:max_chars] + "\n\n... (truncated)"
         return content
@@ -85,9 +87,10 @@ class McpConnectionManager:
 
     async def ensure_connection(self, name: str, cfg: Any, shutdown_registrar: Any) -> Optional[Tuple[Any, Any, List[Any]]]:
         """Initializes or retrieves a persistent MCP connection."""
-        from mcp import ClientSession
-        from mcp.client.stdio import stdio_client, StdioServerParameters
         from contextlib import AsyncExitStack
+
+        from mcp import ClientSession
+        from mcp.client.stdio import StdioServerParameters, stdio_client
 
         async with self._lock:
             if name in self._connections:
@@ -104,14 +107,14 @@ class McpConnectionManager:
                 session_ctx = ClientSession(read, write)
                 session = await stack.enter_async_context(session_ctx)
                 await session.initialize()
-                
+
                 tools_response = await session.list_tools()
                 conn = (session, stack, tools_response.tools)
                 self._connections[name] = conn
-                
+
                 # Register for cleanup
                 shutdown_registrar(stack.aclose)
-                
+
                 return conn
             except Exception as e:
                 strategic_logger.error(f"[StrategicMCP] Failed to connect to '{name}': {e}")
@@ -120,11 +123,11 @@ class McpConnectionManager:
     async def register_tools(self, mcp_configs: Dict[str, Any], registry: Any, shutdown_registrar: Any):
         """Prepares and registers MCP tools for a subagent."""
         from nanobot.agent.tools.mcp import MCPToolWrapper
-        
+
         # Parallel initialization of connections
         tasks = [self.ensure_connection(name, cfg, shutdown_registrar) for name, cfg in mcp_configs.items()]
         results = await asyncio.gather(*tasks)
-        
+
         for (name, _cfg), conn in zip(mcp_configs.items(), results, strict=False):
             if not conn: continue
             try:

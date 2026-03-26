@@ -1,8 +1,11 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from strategery.logic import memory_logic
 from strategery.patches.memory import strategic_inject_rag_context
+
 
 def test_strategic_prune_context():
     """Verify that context pruning respects TTL and mandatory assistant retention."""
@@ -14,12 +17,12 @@ def test_strategic_prune_context():
         {"role": "assistant", "content": "Old assistant 3", "timestamp": (now - timedelta(hours=7)).isoformat()},
         {"role": "user", "content": "New user", "timestamp": (now - timedelta(hours=1)).isoformat()},
     ]
-    
+
     # Prune with 6h TTL, keep last 2 assistants
     # Expected: "New user" (new), "Old user" (user always kept), "Old assistant 3" (last 1), "Old assistant 2" (last 2)
     # "Old assistant 1" should be dropped.
     pruned = memory_logic.prune_context(messages, ttl_hours=6, keep_last_assistants=2)
-    
+
     contents = [m["content"] for m in pruned]
     assert "Old user" in contents
     assert "New user" in contents
@@ -34,20 +37,20 @@ async def test_strategic_inject_rag_context_success():
     vec_store_factory = MagicMock()
     mock_vec = AsyncMock()
     vec_store_factory.get_store.return_value = mock_vec
-    
+
     # Mock config
     config = MagicMock()
     config.strategic_edition.memory_rag.max_results = 2
     config.strategic_edition.memory_rag.threshold = 0.5
-    
+
     mock_vec.query.return_value = [
         {"content": "Fact 1", "score": 0.9},
         {"content": "Fact 2", "score": 0.8}
     ]
-    
+
     content = "What is the project status?"
     block, count = await strategic_inject_rag_context(content, provider, config, vec_store_factory)
-    
+
     assert count == 2
     assert "### RETRIEVED HISTORICAL CONTEXT" in block
     assert "Fact 1" in block
@@ -58,11 +61,11 @@ async def test_strategic_inject_rag_context_generic_filter():
     """Verify that RAG is NOT triggered for generic or short messages."""
     provider = MagicMock()
     config = MagicMock()
-    
+
     # 1. Short message
     block, count = await strategic_inject_rag_context("Hi", provider, config)
     assert block is None
-    
+
     # 2. Generic message
     block, count = await strategic_inject_rag_context("Yes, please.", provider, config)
     assert block is None
@@ -72,7 +75,7 @@ def test_strategic_write_journal_entry(tmp_path):
     entry = "Test consolidation summary."
     # Wrap tmp_path in Path if needed, but it should work
     success = memory_logic.write_journal_entry(tmp_path, entry)
-    
+
     assert success is True
     today = datetime.now().strftime("%Y-%m-%d")
     journal_path = tmp_path / "workspace" / "journal" / f"{today}.md"
@@ -88,10 +91,10 @@ def test_strategic_get_rolling_journal(tmp_path):
     journal_dir = tmp_path / "workspace" / "journal"
     journal_dir.mkdir(parents=True)
     journal_path = journal_dir / f"{today}.md"
-    
+
     text = "Line 1\nLine 2\nLine 3"
     journal_path.write_text(text, encoding="utf-8-sig")
-    
+
     # Requesting a small amount should return the end of the file
     snippet = memory_logic.get_journal_continuity(tmp_path, max_chars=10)
     assert "Line 3" in snippet

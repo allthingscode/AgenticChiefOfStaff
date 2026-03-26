@@ -1,18 +1,21 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.events import InboundMessage
 from strategery.patches import registry
 from strategery.patches.base import PatchContext
 
+
 @pytest.mark.asyncio
 async def test_process_message_patch_chain():
     """Verify the entire patch chain for _process_message executes without TypeError."""
-    
+
     # 1. Mock Core dependencies
     mock_provider = MagicMock()
     mock_provider.chat = AsyncMock()
-    
+
     # Setup context
     context = PatchContext(
         config=MagicMock(),
@@ -20,10 +23,10 @@ async def test_process_message_patch_chain():
         user_email="test@example.com",
         app_root="C:/test"
     )
-    
+
     # 2. Apply patches
     registry.apply_all(context)
-    
+
     # 3. Create AgentLoop instance
     # We need to mock enough of AgentLoop to avoid __init__ failures
     loop_inst = MagicMock(spec=AgentLoop)
@@ -33,17 +36,17 @@ async def test_process_message_patch_chain():
     loop_inst.context = MagicMock()
     loop_inst.tools = MagicMock()
     loop_inst.bus = MagicMock()
-    
-    # Set the patched methods back onto the instance if needed, 
+
+    # Set the patched methods back onto the instance if needed,
     # but patches usually target the CLASS.
-    
+
     msg = InboundMessage(
         channel="telegram",
         sender_id="user123",
         chat_id="chat123",
         content="Hello"
     )
-    
+
     # We want to call the ACTUAL patched method on the class
     # Since it's an async method, we await it.
     try:

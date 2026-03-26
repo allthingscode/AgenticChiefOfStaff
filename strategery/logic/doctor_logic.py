@@ -6,7 +6,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
@@ -31,7 +31,7 @@ def fix_config_bom(config_path: Path) -> bool:
 def check_config_health(config_path: Path) -> Tuple[bool, str, Optional[Any]]:
     """Logic for validating config file health."""
     from strategery.logic.config_logic import validate_strategic_config
-    
+
     if not config_path.exists():
         return False, f"Missing at {config_path}", None
 
@@ -39,13 +39,13 @@ def check_config_health(config_path: Path) -> Tuple[bool, str, Optional[Any]]:
         with open(config_path, "rb") as f:
             raw_bytes = f.read()
             has_bom = raw_bytes.startswith(b'\xef\xbb\xbf')
-        
+
         if has_bom:
             return True, "UTF-8 BOM detected", None # Warn level handled by caller
 
         with open(config_path, "r", encoding="utf-8-sig") as f:
             raw_data = json.load(f)
-        
+
         config = validate_strategic_config(raw_data)
         return True, "OK", config
     except Exception as e:
@@ -87,7 +87,7 @@ def check_storage_health(config: 'StrategicConfig') -> List[Tuple[str, bool, str
 
     # 2. Write tests (BUG-239: Distinguish between Root and Workspace)
     # Subagents frequently fail if they try to write to root.
-    
+
     # Root Test
     test_root = storage_root / ".doctor_root_test"
     try:
@@ -210,7 +210,7 @@ def check_linter_health(apply: bool = False) -> List[Tuple[str, bool, str]]:
         try:
             # If apply=True, try to auto-fix first
             if apply:
-                subprocess.run([ruff_bin, "check", str(strat_dir), "--fix", "--select", "E,F,B", "--no-cache"], 
+                subprocess.run([ruff_bin, "check", str(strat_dir), "--fix", "--select", "E,F,B", "--no-cache"],
                                capture_output=True, text=True)
                 results.append(("Ruff Fix", True, "Attempted auto-fixes for fixable linting issues."))
 
@@ -218,7 +218,7 @@ def check_linter_health(apply: bool = False) -> List[Tuple[str, bool, str]]:
             # We treat E501 (Line Length) and others as warnings.
             critical_cmd = [ruff_bin, "check", str(strat_dir), "--select", "F,E9,B9", "--no-cache"]
             critical_proc = subprocess.run(critical_cmd, capture_output=True, text=True, encoding="utf-8")
-            
+
             if critical_proc.returncode != 0:
                 results.append(("Ruff Critical", False, f"CRITICAL issues detected (startup blocked):\n{critical_proc.stdout}"))
                 return results # Block startup
@@ -226,13 +226,13 @@ def check_linter_health(apply: bool = False) -> List[Tuple[str, bool, str]]:
             # Secondary pass for non-critical warnings
             warn_cmd = [ruff_bin, "check", str(strat_dir), "--select", "E,B", "--ignore", "E501", "--no-cache"]
             warn_proc = subprocess.run(warn_cmd, capture_output=True, text=True, encoding="utf-8")
-            
+
             if warn_proc.returncode == 0:
                 results.append(("Ruff Audit", True, "All strategic files passed analysis."))
             else:
                 # We return True (Success) but include the warning message
                 results.append(("Ruff Audit", True, f"Non-critical warnings detected:\n{warn_proc.stdout}"))
-            
+
             return results
         except Exception as e:
             results.append(("Ruff", False, f"Ruff execution failed: {e}"))

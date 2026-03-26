@@ -1,6 +1,6 @@
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 
 # --- CONFIGURATION ---
@@ -37,7 +37,7 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     If log_dir is provided or STRATEGIC_LOG_DIR is changed, it re-configures the file logger.
     """
     global LOG_DIR, LOG_FILE
-    
+
     # 1. Determine target log directory
     env_log_dir = os.environ.get("STRATEGIC_LOG_DIR")
     target_dir = Path(log_dir or env_log_dir or "./logs")
@@ -67,7 +67,7 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     if logger.hasHandlers() and not needs_reconfig:
         return logger
 
-    # If we are re-configuring (due to change in log_dir/env), 
+    # If we are re-configuring (due to change in log_dir/env),
     # we MUST remove old file handlers to prevent pollution.
     if needs_reconfig:
         handlers = logger.handlers[:]
@@ -91,7 +91,7 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
     # 2. Console Handler
     # We look for an existing console handler
     console_handler = next((h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)), None)
-    
+
     # If it's already a UnicodeSafeStreamHandler and we don't need re-config, we're good
     if isinstance(console_handler, UnicodeSafeStreamHandler) and not needs_reconfig:
         return logger

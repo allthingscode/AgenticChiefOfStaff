@@ -1,9 +1,11 @@
 import asyncio
-import sys
 import os
 import signal
-from typing import List, Callable, Coroutine
+import sys
+from typing import Callable, Coroutine, List
+
 from strategery.strategic_logger import strategic_logger
+
 
 class LifecycleManager:
     """
@@ -35,9 +37,9 @@ class LifecycleManager:
         if self._is_shutting_down:
             return
         self._is_shutting_down = True
-        
+
         strategic_logger.info(f"Executing {len(self.shutdown_hooks)} strategic shutdown hooks...")
-        
+
         for hook in self.shutdown_hooks:
             try:
                 await hook()
@@ -60,7 +62,7 @@ class LifecycleManager:
 
         def _handler(sig, frame=None):
             strategic_logger.warning(f"Received signal {sig}. Initiating graceful strategic shutdown...")
-            
+
             # Use current loop or find it
             current_loop = self._loop
             if not current_loop:
@@ -70,10 +72,10 @@ class LifecycleManager:
             async def _do_shutdown():
                 # A. Run our custom strategic hooks
                 await self._run_shutdown_hooks()
-                
+
                 # B. Strategic Handoff: Restore original handlers and re-trigger
                 strategic_logger.info("Strategic shutdown hooks complete. Passing control back to core.")
-                
+
                 orig = self._orig_handlers.get(sig)
                 # Restore original
                 try: signal.signal(sig, orig or signal.SIG_DFL)
@@ -87,7 +89,7 @@ class LifecycleManager:
                 elif orig and callable(orig):
                     try: orig(sig, frame)
                     except: pass
-                
+
                 # C. SAFETY: If core still hangs for more than 10 seconds, force exit
                 await asyncio.sleep(10)
                 strategic_logger.warning("Core shutdown timed out. Forcing process exit.")

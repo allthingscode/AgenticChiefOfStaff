@@ -1,8 +1,11 @@
 import asyncio
 from typing import Any, List
-from .base import BasePatch, PatchResult, PatchContext
-from strategery.strategic_logger import strategic_logger
+
 from strategery.logic import provider_logic
+from strategery.strategic_logger import strategic_logger
+
+from .base import BasePatch, PatchContext, PatchResult
+
 
 async def strategic_litellm_embed(self, input_text):
     """Bridge to the strategic embedding logic."""
@@ -11,7 +14,7 @@ async def strategic_litellm_embed(self, input_text):
 
 class ProviderPatch(BasePatch):
     """Thin Bridge for provider-level logging, routing, and error interception."""
-    
+
     @property
     def name(self) -> str:
         return "Provider Logging & Routing"
@@ -38,7 +41,7 @@ class ProviderPatch(BasePatch):
 
             self._patch_azure_openai_provider()
             # Note: Azure might not be installed, so we check affected_symbols inside the helper or just ignore
-            
+
             self._patch_agent_loop_cleaning()
             result.affected_symbols.append("AgentLoop._strip_think")
 
@@ -56,12 +59,12 @@ class ProviderPatch(BasePatch):
         from nanobot.providers.litellm_provider import LiteLLMProvider
         if not hasattr(LiteLLMProvider, "_orig_parse_response_strategic"):
             LiteLLMProvider._orig_parse_response_strategic = LiteLLMProvider._parse_response
-            
+
             def _patched_parse_response(self, response: Any):
                 # Use strategic logic to ensure choices are present
                 safe_response = provider_logic.safe_parse_litellm_response(response)
                 return self._orig_parse_response_strategic(safe_response)
-            
+
             LiteLLMProvider._parse_response = _patched_parse_response
 
     def _patch_azure_openai_provider(self):
@@ -72,14 +75,14 @@ class ProviderPatch(BasePatch):
 
         if not hasattr(AzureOpenAIProvider, "_orig_chat_strategic"):
             AzureOpenAIProvider._orig_chat_strategic = AzureOpenAIProvider.chat
-            
+
             async def _patched_chat(self, *args, **kwargs):
                 model = kwargs.get("model") or (args[2] if len(args) > 2 else self.default_model)
                 strategic_logger.info(provider_logic.format_provider_log("AzureOpenAI", model))
-                
+
                 max_retries = 3
                 retry_delay = 2.0
-                
+
                 for attempt in range(max_retries):
                     try:
                         response = await self._orig_chat_strategic(*args, **kwargs)
@@ -101,12 +104,12 @@ class ProviderPatch(BasePatch):
                             continue
                         from nanobot.providers.base import LLMResponse
                         return LLMResponse(content=provider_logic.format_strategic_error(err_str), finish_reason="error")
-            
+
             AzureOpenAIProvider.chat = _patched_chat
 
     def _patch_base_provider(self):
         from nanobot.providers.base import LLMProvider
-        # Mandate (BUG-165): Patch the base class so all instances (LiteLLM, Azure, etc) 
+        # Mandate (BUG-165): Patch the base class so all instances (LiteLLM, Azure, etc)
         # inherit the strategic embed logic by default.
         if not hasattr(LLMProvider, "embed"):
             LLMProvider.embed = strategic_litellm_embed
@@ -115,21 +118,21 @@ class ProviderPatch(BasePatch):
 
     def _patch_litellm_provider(self):
         from nanobot.providers.litellm_provider import LiteLLMProvider
-        
+
         if not hasattr(LiteLLMProvider, "embed"):
             LiteLLMProvider.embed = strategic_litellm_embed
             LiteLLMProvider.embedding_model = "models/gemini-embedding-001"
 
         if not hasattr(LiteLLMProvider, "_orig_chat_strategic"):
             LiteLLMProvider._orig_chat_strategic = LiteLLMProvider.chat
-            
+
             async def _patched_chat(self, *args, **kwargs):
                 model = kwargs.get("model") or (args[1] if len(args) > 1 else (args[2] if len(args) > 2 else "unknown"))
                 strategic_logger.info(provider_logic.format_provider_log("LiteLLM", model))
-                
+
                 max_retries = 3
                 retry_delay = 2.0
-                
+
                 for attempt in range(max_retries):
                     try:
                         response = await self._orig_chat_strategic(*args, **kwargs)
@@ -151,7 +154,7 @@ class ProviderPatch(BasePatch):
                             continue
                         from nanobot.providers.base import LLMResponse
                         return LLMResponse(content=provider_logic.format_strategic_error(err_str), finish_reason="error")
-            
+
             LiteLLMProvider.chat = _patched_chat
 
     def _patch_agent_loop_cleaning(self):
@@ -159,9 +162,9 @@ class ProviderPatch(BasePatch):
         from nanobot.agent.loop import AgentLoop
         if not hasattr(AgentLoop, "_orig_strip_think_strategic"):
             AgentLoop._orig_strip_think_strategic = AgentLoop._strip_think
-            
+
             @staticmethod
             def _patched_strip_think(text: str | None) -> str | None:
                 return provider_logic.strip_reasoning_artifacts(text)
-            
+
             AgentLoop._strip_think = _patched_strip_think

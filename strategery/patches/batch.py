@@ -5,15 +5,16 @@ Scans the configured workspace cron directory for Markdown files and converts th
 """
 
 import re
-import yaml
-from pathlib import Path
 from datetime import datetime
-from loguru import logger
+from pathlib import Path
 from typing import List
+
+import yaml
+from loguru import logger
 
 # Import nanobot cron types for conversion
 try:
-    from nanobot.cron.types import CronJob, CronSchedule, CronPayload, CronJobState
+    from nanobot.cron.types import CronJob, CronJobState, CronPayload, CronSchedule
 except ImportError:
     # Fallback for static analysis
     CronJob = CronSchedule = CronPayload = CronJobState = None
@@ -22,26 +23,26 @@ def parse_modular_job_file(file_path: Path) -> CronJob | None:
     """Parses a single Markdown file into a CronJob."""
     try:
         content = file_path.read_text(encoding="utf-8-sig")
-        
+
         # Simple front-matter extraction (--- metadata ---)
         match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
         if not match:
             logger.warning(f"Batch: File {file_path.name} missing front-matter metadata. Skipping.")
             return None
-            
+
         metadata_str = match.group(1)
         task_body = match.group(2).strip()
-        
+
         metadata = yaml.safe_load(metadata_str)
         if not metadata or not isinstance(metadata, dict):
             return None
-            
+
         # Required fields
         job_id = str(metadata.get("id", file_path.stem))
         name = metadata.get("name", job_id)
         schedule_str = metadata.get("schedule", "every(24h)")
         specialist = metadata.get("specialist", "researcher")
-        
+
         # Parse schedule: cron(expr) or every(duration) or at(ms)
         schedule = None
         if schedule_str.startswith("cron("):
@@ -59,7 +60,7 @@ def parse_modular_job_file(file_path: Path) -> CronJob | None:
         elif schedule_str.startswith("at("):
             at_ms = int(schedule_str[3:-1])
             schedule = CronSchedule(kind="at", at_ms=at_ms)
-            
+
         if not schedule:
             logger.error(f"Batch: Invalid schedule format in {file_path.name}: {schedule_str}")
             return None
@@ -99,7 +100,7 @@ def parse_modular_job_file(file_path: Path) -> CronJob | None:
             created_at_ms=now_ms,
             updated_at_ms=int(file_path.stat().st_mtime * 1000)
         )
-        
+
     except Exception as e:
         logger.error(f"Batch: Error parsing {file_path.name}: {e}")
         return None
@@ -115,16 +116,16 @@ def strategic_load_modular_jobs(storage_root: Path) -> List[CronJob]:
             readme.write_text("# Modular Batch Jobs\n\nAdd Markdown files here with YAML front-matter to schedule nightly tasks.")
         except: pass
         return []
-        
+
     jobs = []
     for file in items_dir.glob("*.md"):
         if file.name.lower() == "readme.md": continue
         if job := parse_modular_job_file(file):
             jobs.append(job)
-            
+
     if jobs:
         logger.info(f"Batch: Loaded {len(jobs)} modular jobs from {items_dir}")
-        
+
     return jobs
 
 def strategic_resolve_job_channel(storage_root: Path) -> tuple[str, str]:
@@ -139,20 +140,20 @@ def strategic_resolve_job_channel(storage_root: Path) -> tuple[str, str]:
         session_manager = SessionManager(storage_root / "workspace")
         # Get list of sessions sorted by mtime (newest first)
         sessions = session_manager.list_sessions()
-        
+
         for item in sessions:
             key = item.get("key") or ""
             if ":" not in key: continue
-            
+
             channel, chat_id = key.split(":", 1)
             # Skip internal channels
             if channel in {"cli", "system", "cron", "heartbeat"}:
                 continue
-                
+
             # If we found a real channel session, use it
             if channel and chat_id:
                 return channel, chat_id
     except Exception as e:
         logger.warning(f"Batch: Error resolving job channel: {e}")
-        
+
     return "cli", "direct"

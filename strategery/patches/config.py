@@ -1,10 +1,11 @@
+import builtins
 import json
 import os
-import builtins
-from pathlib import Path
 from functools import wraps
+from pathlib import Path
 from typing import TYPE_CHECKING
-from .base import BasePatch, PatchResult, PatchContext
+
+from .base import BasePatch, PatchContext, PatchResult
 
 if TYPE_CHECKING:
     pass
@@ -19,15 +20,15 @@ def strategic_migrate_config(data, config_data_capture=None):
     if data and isinstance(data, dict) and config_data_capture is not None:
         config_data_capture.clear()
         config_data_capture.update(json.loads(json.dumps(data)))
-    
+
     # Surgical strip of custom keys
     def _strip_recursively(obj):
         if not isinstance(obj, dict): return
         # Mandate: Remove all strategic-specific keys to prevent Pydantic validation errors
         # This list must be comprehensive based on everything injected in config.json
         keys_to_strip = [
-            "strategic_edition", "memory", "keywords", "compaction", 
-            "contextPruning", "memorySearch", "user_email", "storage_path", 
+            "strategic_edition", "memory", "keywords", "compaction",
+            "contextPruning", "memorySearch", "user_email", "storage_path",
             "storage_root", "storage_root_backup", "app_root"
         ]
         for key in keys_to_strip:
@@ -43,7 +44,7 @@ def strategic_migrate_config(data, config_data_capture=None):
                         if isinstance(item, dict): _strip_recursively(item)
                 else:
                     _strip_recursively(v)
-    
+
     _strip_recursively(data)
     return data
 
@@ -58,7 +59,7 @@ class ConfigPatch(BasePatch):
         result = PatchResult(patch_name=self.name, success=True)
         try:
             import nanobot.config.loader
-            from nanobot.config.schema import Config, Base
+            from nanobot.config.schema import Base, Config
 
             # 1. Force the Config schema to ignore extra fields at runtime
             if isinstance(Config.model_config, dict):
@@ -89,7 +90,7 @@ class ConfigPatch(BasePatch):
                         if workspace:
                             return Path(workspace).expanduser()
                         return context.workspace_root
-                    
+
                     nanobot.config.paths.get_workspace_path = _get_strategic_workspace_path
                     result.affected_symbols.append("nanobot.config.paths.get_workspace_path")
 
@@ -104,7 +105,7 @@ class ConfigPatch(BasePatch):
             # 3. Global BOM-Safe 'open' wrapper for JSON files
             if not hasattr(builtins, "_orig_open_strategic"):
                 builtins._orig_open_strategic = builtins.open
-                
+
                 @wraps(builtins._orig_open_strategic)
                 def _strategic_open(file, mode='r', buffering=-1, encoding=None, errors=None, newline=None, closefd=True, opener=None):
                     if 'r' in mode and 'b' not in mode and (encoding is None or encoding == 'utf-8'):
@@ -112,14 +113,14 @@ class ConfigPatch(BasePatch):
                         if f_str.endswith('.json') or f_str.endswith('.jsonl'):
                             encoding = 'utf-8-sig'
                     return builtins._orig_open_strategic(file, mode, buffering, encoding, errors, newline, closefd, opener)
-                
+
                 builtins.open = _strategic_open
                 result.affected_symbols.append("builtins.open (BOM-safe)")
 
             # 4. Patch _migrate_config
             if not hasattr(nanobot.config.loader, "_orig_migrate_strategic"):
                 nanobot.config.loader._orig_migrate_strategic = nanobot.config.loader._migrate_config
-                
+
                 def _patched_migrate(data):
                     data = nanobot.config.loader._orig_migrate_strategic(data)
                     # For legacy compatibility, we dump the StrategicConfig back to a dict for the stripper
@@ -128,7 +129,7 @@ class ConfigPatch(BasePatch):
                     else:
                         config_dict = context.config
                     return strategic_migrate_config(data, config_dict)
-                
+
                 nanobot.config.loader._migrate_config = _patched_migrate
                 result.affected_symbols.append("nanobot.config.loader._migrate_config")
 
@@ -136,7 +137,7 @@ class ConfigPatch(BasePatch):
             import nanobot.agent.context
             if not hasattr(nanobot.agent.context.ContextBuilder, "_orig_build_system_prompt_strategic"):
                 nanobot.agent.context.ContextBuilder._orig_build_system_prompt_strategic = nanobot.agent.context.ContextBuilder.build_system_prompt
-                
+
                 def _hardened_build_system_prompt(self, skill_names=None):
                     base_prompt = self._orig_build_system_prompt_strategic(skill_names)
                     storage_root = context.storage_root
@@ -151,10 +152,10 @@ class ConfigPatch(BasePatch):
                         "- **COMPLIANCE**: If you need to search, verify facts, or perform system operations, spawn a specialist subagent immediately and wait for the result via the message bus."
                     )
                     return base_prompt + hardening_rules
-                
+
                 nanobot.agent.context.ContextBuilder.build_system_prompt = _hardened_build_system_prompt
                 result.affected_symbols.append("ContextBuilder.build_system_prompt")
-                
+
             return result
         except Exception as e:
             import traceback
@@ -167,27 +168,28 @@ class ConfigPatch(BasePatch):
     def verify(self, config_data: dict) -> bool:
         """Verifies that the global 'open', ContextBuilder, and Path patches are active."""
         import builtins
+
         import nanobot.agent.context
         import nanobot.config.paths
-        
+
         # 1. Check builtins.open
         if not hasattr(builtins, "_orig_open_strategic"):
             return False
-            
+
         # 2. Check ContextBuilder.build_system_prompt
         if not hasattr(nanobot.agent.context.ContextBuilder, "_orig_build_system_prompt_strategic"):
             return False
-            
+
         # 3. Check nanobot.config.paths.get_data_dir
         if not hasattr(nanobot.config.paths, "_orig_get_data_dir_strategic"):
             return False
-            
+
         return True
 
 def load_strategic_context():
     """Utility to load core strategic context (email, storage root)."""
     user_email = "admin@example.com"
-    
+
     # MANDATE (BUG-248): Definitive fallback to D: drive to prevent drift to C: drive
     # We prioritize Environment Variable -> config.json -> Strategic Mandate (D:)
     storage_root = Path(os.environ.get("STRATEGIC_STORAGE_ROOT", "D:/Nanobot_Storage"))
@@ -202,12 +204,12 @@ def load_strategic_context():
                 raw_config = _raw
                 _strat = _raw.get("strategic_edition", {})
                 user_email = _strat.get("user_email", user_email)
-                
+
                 # Prioritize explicit top-level storage_root (if any) then strategic_edition
                 _s_root = _raw.get("storage_root") or _strat.get("storage_root")
                 if _s_root:
                     storage_root = Path(_s_root)
     except:
         pass
-        
+
     return raw_config, user_email, storage_root

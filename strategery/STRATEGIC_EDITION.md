@@ -33,6 +33,7 @@ A hardened pipeline for processing visual and structured data:
 - **Concurrent Session Management:** Replaces global locking with high-performance, per-session isolation, enabling fluid multi-tasking and concurrent user processing.
 - **High-Readability Reporting:** Includes a dedicated HTML reporting engine with dynamic CSS injection for delivering polished, high-contrast briefings via email and messaging platforms.
 - **Pre-Flight Diagnostics (Auto-Heal):** A comprehensive diagnostic engine (Strategic Doctor) validates the entire system state—from storage roots to API connectivity—before launch. Includes an `--apply` mode to automatically repair configuration BOMs, indentation, and missing storage structures.
+- **Rubric-Driven Reflection (F-031):** Implements a Generator-Critic-Refiner loop for specialists. Subagents now generate formal JSON success rubrics for every task and are audited by a high-reasoning 'Critic' turn, forcing self-correction of hallucinations and logic errors before completion.
 
 ---
 

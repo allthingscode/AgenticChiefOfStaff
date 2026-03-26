@@ -1,9 +1,11 @@
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from nanobot.agent.loop import AgentLoop
 from nanobot.providers.base import LLMProvider, ToolCallRequest
-from strategery.patches.subagent import SubagentPatch
 from strategery.patches.loop import AgentLoopPatch
+from strategery.patches.subagent import SubagentPatch
+
 
 class BehavioralMockProvider(LLMProvider):
     """
@@ -17,7 +19,7 @@ class BehavioralMockProvider(LLMProvider):
 
     async def chat(self, messages, tools=None, model=None, **kwargs):
         self._last_model = model
-        
+
         if self.current_turn >= len(self.turns):
             # Fallback for unexpected extra turns
             mock_response = MagicMock()
@@ -62,16 +64,16 @@ class StrategicSimulator:
         self.config = config_data
         self.captured_spawns = []
         self.captured_tools = []
-        
+
     def _mock_spawn(self, task, label=None, **kwargs):
         self.captured_spawns.append({
-            "task": task, 
-            "label": label, 
+            "task": task,
+            "label": label,
             "specialist": kwargs.get("specialist")
         })
         return f"mock-subagent-{len(self.captured_spawns)}"
 
-    async def run_prompt(self, prompt, mock_tool_calls=None, role="main", specialist_type="researcher", 
+    async def run_prompt(self, prompt, mock_tool_calls=None, role="main", specialist_type="researcher",
                          mock_content="Mock response", mock_tool_results=None, turns=None):
         """
         Runs the agent loop with a mock provider and captures behavior.
@@ -88,11 +90,11 @@ class StrategicSimulator:
             # Single-turn (compat mode)
             provider = BehavioralMockProvider(content=mock_content, tool_calls=mock_tool_calls)
             mock_results = mock_tool_results or {}
-        
+
         # 1. Apply Strategic Patches
         from strategery.patches.base import PatchContext
-        from strategery.patches.config import load_strategic_context, ConfigPatch
-        
+        from strategery.patches.config import ConfigPatch, load_strategic_context
+
         raw_config, email, storage = load_strategic_context()
         project_root = Path(__file__).parent.parent.parent.parent.absolute()
         context = PatchContext(
@@ -105,7 +107,7 @@ class StrategicSimulator:
         SubagentPatch().apply(context)
         AgentLoopPatch().apply(context)
         ConfigPatch().apply(context)
-        
+
         # 2. Setup AgentLoop with mocks
         with patch("strategery.patches.config.load_strategic_context", return_value=(None, "test@example.com", Path("/tmp/storage"))):
             loop = AgentLoop(
@@ -114,12 +116,12 @@ class StrategicSimulator:
                 workspace=Path("/tmp/workspace"),
                 session_manager=MagicMock()
             )
-        
+
         # 3. Setup Tool Registry based on Role
         if role == "specialist":
             loop.tools._is_strategic_specialist = True
             loop.subagents._strategic_specialist_type = specialist_type
-        
+
         # Register dummy tools
         from nanobot.agent.tools.base import Tool
         class MockSurgicalTool(Tool):
@@ -130,18 +132,18 @@ class StrategicSimulator:
             @property
             def parameters(self): return {"type": "object", "properties": {}}
             async def execute(self, **kwargs): return "Mock result"
-        
+
         loop.tools.register(MockSurgicalTool())
-        
+
+        from nanobot.agent.tools.filesystem import ListDirTool, ReadFileTool
         from nanobot.agent.tools.shell import ExecTool
-        from nanobot.agent.tools.filesystem import ReadFileTool, ListDirTool
         loop.tools.register(ExecTool())
         loop.tools.register(ReadFileTool())
         loop.tools.register(ListDirTool())
-        
+
         # 4. Patch behaviors
         loop.subagents.spawn = AsyncMock(side_effect=self._mock_spawn)
-        
+
         captured_progress = []
         async def mock_on_progress(content, **kwargs):
             captured_progress.append({"content": content, **kwargs})
@@ -152,20 +154,20 @@ class StrategicSimulator:
             if name in mock_results:
                 return mock_results[name]
             return await orig_execute(name, arguments, **kwargs)
-        
+
         loop.tools.execute = patched_execute
-        
+
         # 5. Build context
         from nanobot.bus.events import InboundMessage
         msg = InboundMessage(channel="test", chat_id="user1", content=prompt, sender_id="user1")
-        
+
         context = loop.context.build_messages(
             history=[],
             current_message=msg.content,
             channel=msg.channel,
             chat_id=msg.chat_id
         )
-        
+
         if role == "specialist":
             for m in context:
                 if m["role"] == "system":
@@ -176,7 +178,7 @@ class StrategicSimulator:
         final_content, tools_used, all_msgs = await loop._run_agent_loop(
             context, on_progress=mock_on_progress
         )
-        
+
         system_prompt = next((m["content"] for m in context if m["role"] == "system"), "")
         tool_results = [m["content"] for m in all_msgs if m.get("role") == "tool"]
 

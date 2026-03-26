@@ -7,9 +7,10 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Annotated, Literal, Union, List, Optional, Dict, Any
-from pydantic import BaseModel, Field, TypeAdapter
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
 from loguru import logger
+from pydantic import BaseModel, Field, TypeAdapter
 
 # --- 1. SCHEMAS (Pydantic v2) ---
 
@@ -69,7 +70,7 @@ class CheckpointManager:
     def __init__(self, storage_root: str):
         if self._initialized:
             return
-            
+
         self.db_path = Path(storage_root) / "workspace" / "checkpoints.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -122,7 +123,7 @@ class CheckpointManager:
             adapter = TypeAdapter(List[StrategicMessage])
             validated = adapter.validate_python(messages)
             state_json = adapter.dump_json(validated).decode('utf-8')
-            
+
             # 2. Persist
             with self._get_connection() as conn:
                 conn.execute(
@@ -146,12 +147,12 @@ class CheckpointManager:
                 "SELECT * FROM checkpoints WHERE thread_id = ? ORDER BY iteration DESC, checkpoint_id DESC LIMIT 1",
                 (thread_id,)
             ).fetchone()
-            
+
             if not row:
                 return None
-            
+
             thread_row = conn.execute("SELECT * FROM threads WHERE thread_id = ?", (thread_id,)).fetchone()
-            
+
             return {
                 "iteration": row["iteration"],
                 "messages": json.loads(row["state"]),

@@ -1,18 +1,21 @@
-import pytest
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from telegram.error import NetworkError
+
+from strategery.logic.config_logic import validate_strategic_config
 from strategery.patches.telegram import TelegramPatch
 from strategery.strategic_logger import strategic_logger
-from strategery.logic.config_logic import validate_strategic_config
+
 
 # Define a real class for the patcher to work on
 class MockTelegramChannel:
     async def start(self):
         # We simulate the start_polling call that the real start() would make
         await self._app.updater.start_polling()
-        
+
     async def _on_message(self, update, context):
         pass
     async def _on_error(self, update, context):
@@ -30,11 +33,11 @@ async def test_telegram_polling_resilience():
     mock_app = MagicMock()
     mock_app.updater = MagicMock()
     mock_app.updater.running = False
-    
+
     # Track calls to start_polling
     start_polling_mock = AsyncMock()
     mock_app.updater.start_polling = start_polling_mock
-    
+
     # Instance of our mock class
     channel = MockTelegramChannel()
     channel._app = mock_app
@@ -42,7 +45,7 @@ async def test_telegram_polling_resilience():
     channel.config = MagicMock()
     channel.config.token = "fake_token"
     channel._handle_message = AsyncMock()
-    
+
     # Create valid PatchContext
     from strategery.patches.base import PatchContext
     context = PatchContext(
@@ -51,26 +54,26 @@ async def test_telegram_polling_resilience():
         user_email="test@example.com",
         app_root=Path(".")
     )
-    
+
     # Apply the patch logic
     patcher = TelegramPatch()
     patcher._patch_telegram_channel(MockTelegramChannel, context)
-    
+
     # Setup the failure scenario
     call_count = 0
     async def side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         strategic_logger.info(f"TEST: start_polling call {call_count}")
-        
+
         if call_count == 1:
             mock_app.updater.running = True
             return
-            
+
         if call_count == 2:
             mock_app.updater.running = False
             raise NetworkError("Transient network failure")
-            
+
         mock_app.updater.running = True
 
     start_polling_mock.side_effect = side_effect
@@ -78,28 +81,28 @@ async def test_telegram_polling_resilience():
     # We DON'T mock sleep here, we let it run so the loop actually works
     # But we'll use a very small retry_delay in the patch if we could.
     # Since we can't easily change the delay in the patch, we'll just wait.
-    
+
     start_task = asyncio.create_task(channel.start())
-    
+
     # Monitor and force state changes
     try:
         # Wait for first call
         for _ in range(50):
             if start_polling_mock.call_count >= 1: break
             await asyncio.sleep(0.01)
-        
+
         # Trigger second call by flipping running
         mock_app.updater.running = False
-        
+
         # Wait for second call (the one that fails) and third call (the retry)
         for _ in range(200):
             if start_polling_mock.call_count >= 3: break
-            # Ensure updater.running stays false to keep triggering restart 
+            # Ensure updater.running stays false to keep triggering restart
             # until call 3 sets it back to true
             if start_polling_mock.call_count == 2:
                 mock_app.updater.running = False
             await asyncio.sleep(0.05)
-            
+
     finally:
         # Stop the channel
         channel._running = False
@@ -116,7 +119,7 @@ async def test_telegram_error_suppression():
     """Verify that BUG-060 correctly suppresses NetworkError noise."""
     channel = MockTelegramChannel()
     patcher = TelegramPatch()
-    
+
     from strategery.patches.base import PatchContext
     context = PatchContext(
         config=validate_strategic_config({}),
@@ -125,11 +128,11 @@ async def test_telegram_error_suppression():
         app_root=Path(".")
     )
     patcher._patch_telegram_channel(MockTelegramChannel, context)
-    
+
     # 1. Test NetworkError Suppression
     mock_context = MagicMock()
     mock_context.error = NetworkError("Disconnected")
-    
+
     with patch.object(MockTelegramChannel, "_orig_on_error_strategic", new_callable=AsyncMock) as mock_orig:
         await channel._on_error(MagicMock(), mock_context)
         mock_orig.assert_not_called()

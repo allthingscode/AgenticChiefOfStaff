@@ -1,9 +1,11 @@
 from typing import Any
+
 from nanobot.agent.tools.base import Tool
+
 
 class StrategicHelloTool(Tool):
     """A simple tool to verify the strategic tool registry."""
-    
+
     @property
     def name(self) -> str:
         return "strategic_hello"

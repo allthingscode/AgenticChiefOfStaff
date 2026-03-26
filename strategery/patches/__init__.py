@@ -7,26 +7,30 @@ without modifying the core Nanobot codebase.
 import sys
 from pathlib import Path
 from typing import List
-from .base import BasePatch as BasePatch, PatchResult, PatchContext
-from .infra import InfraPatch
-from .config import ConfigPatch, load_strategic_context
-from .provider import ProviderPatch
-from .memory import MemoryPatch
-from .subagent import SubagentPatch
-from .telegram import TelegramPatch
-from .cron import CronPatch
-from .loop import AgentLoopPatch
-from .session import SessionPatch
+
+from strategery.logic.config_logic import validate_strategic_config
+from strategery.strategic_logger import setup_strategic_logger, strategic_logger
+
 from .awareness import AwarenessPatch
-from .email import EmailPatch
+from .base import BasePatch as BasePatch
+from .base import PatchContext, PatchResult
 from .checkpoint import CheckpointPatch
 from .cli import CLIPatch
-from strategery.strategic_logger import strategic_logger, setup_strategic_logger
-from strategery.logic.config_logic import validate_strategic_config
+from .config import ConfigPatch, load_strategic_context
+from .cron import CronPatch
+from .email import EmailPatch
+from .infra import InfraPatch
+from .loop import AgentLoopPatch
+from .memory import MemoryPatch
+from .provider import ProviderPatch
+from .session import SessionPatch
+from .subagent import SubagentPatch
+from .telegram import TelegramPatch
+
 
 class PatchRegistry:
     """Registry for managing and applying strategic patches."""
-    
+
     def __init__(self):
         self._patches = [
             InfraPatch(),
@@ -49,19 +53,19 @@ class PatchRegistry:
         # Check if already initialized in this process
         if getattr(sys, "_STRATEGIC_INITIALIZED", False):
             return []
-            
+
         # 1. Resolve Global Context
         storage_root = kwargs.get("storage_root")
         user_email = kwargs.get("user_email", "admin@example.com")
-        
+
         # Fallback resolution if not provided by launcher
         if not storage_root:
             _, _email, _root = load_strategic_context()
             storage_root = _root
             user_email = _email
-            
+
         app_root = Path(__file__).parent.parent.parent
-        
+
         # 2. Validate Config Schema (F-016)
         try:
             strategic_config = validate_strategic_config(config_data)
@@ -70,7 +74,7 @@ class PatchRegistry:
             if halt_on_error:
                 return [PatchResult(patch_name="Registry", success=False, error_msg=f"Config Validation Failed: {e}")]
             # Fallback to loose config if not halting, but this is dangerous
-            strategic_config = config_data 
+            strategic_config = config_data
 
         # 3. Initialize Patch Context (F-018)
         context = PatchContext(
@@ -79,11 +83,11 @@ class PatchRegistry:
             user_email=user_email,
             app_root=app_root
         )
-            
+
         # Ensure logger is correctly configured for the current environment/storage root
         setup_strategic_logger(log_dir=storage_root / "logs" if storage_root else None)
         strategic_logger.info("Applying Nanobot Strategic Edition patches...")
-        
+
         results = []
         for patch in self._patches:
             try:
@@ -103,13 +107,13 @@ class PatchRegistry:
 
                 # 2. Apply Patch with formal Context (F-018)
                 res = patch.apply(context)
-                
+
                 # Handle legacy boolean returns for backward compatibility
                 if isinstance(res, bool):
                     res = PatchResult(patch_name=patch.name, success=res)
-                
+
                 results.append(res)
-                
+
                 if res.success:
                     strategic_logger.debug(f"Patch applied: {patch.name}")
                 else:
@@ -130,7 +134,7 @@ class PatchRegistry:
                 strategic_logger.error(f"Patch execution crash: {patch.name} - {e}")
                 if halt_on_error:
                     break
-        
+
         # Set global flag on sys module to survive reloads within the same process
         sys._STRATEGIC_INITIALIZED = True
         strategic_logger.info("Strategic Edition initialization complete.")
@@ -139,5 +143,5 @@ class PatchRegistry:
 # Initialize global registry
 registry = PatchRegistry()
 
-# MANDATE: Auto-application removed in F-019. 
+# MANDATE: Auto-application removed in F-019.
 # Strategic components MUST explicitly call registry.apply_all() to modify the environment.

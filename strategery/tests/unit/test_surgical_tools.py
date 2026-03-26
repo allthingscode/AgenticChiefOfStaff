@@ -1,7 +1,10 @@
-import pytest
 import json
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 import strategery.strategic_google_surgical as google_tool
+
 
 @pytest.fixture(autouse=True)
 def clear_cache():
@@ -21,7 +24,7 @@ def test_strategic_merge_calendar_events():
     ]
 
     merged = google_tool.strategic_merge_calendar_events(all_results, max_results=5)
-    
+
     assert len(merged) == 4
     assert merged[0]["summary"] == "Gym"       # 08:00
     assert merged[1]["summary"] == "Work Meet" # 10:00
@@ -55,11 +58,11 @@ def test_google_surgical_credential_fallback(tmp_path):
 
     # Minimal credential structure that looks valid to the Credentials constructor
     creds_data = {
-        "token": "t", 
+        "token": "t",
         "refresh_token": "rt",
-        "token_uri": "u", 
-        "client_id": "c", 
-        "client_secret": "s", 
+        "token_uri": "u",
+        "client_id": "c",
+        "client_secret": "s",
         "scopes": google_tool.SCOPES
     }
     default_json.write_text(json.dumps(creds_data))

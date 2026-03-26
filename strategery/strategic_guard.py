@@ -3,10 +3,10 @@ STRATEGIC GUARD: Certification & Stability Engine
 Goal: Automate Mandatory Pre-Commit Protocols (SOPs) to ensure 100% stability.
 Mandate: Certify every change against Strategic Pillars before it reaches Git.
 """
-import os
-import sys
-import subprocess
 import argparse
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 # ANSI Colors for Terminal Clarity
@@ -29,14 +29,14 @@ def run_command(command, description, capture=False):
     print(f"[*] {BOLD}Executing {description}...{RESET}")
     env = os.environ.copy()
     env["PYTHONPATH"] = "."
-    
+
     try:
-        # Check if the command is ruff to avoid shell=True if possible, 
+        # Check if the command is ruff to avoid shell=True if possible,
         # but for consistency with existing code, we use shell=True.
         result = subprocess.run(
-            command, 
-            shell=True, 
-            env=env, 
+            command,
+            shell=True,
+            env=env,
             capture_output=True, # Always capture for ruff to show errors
             text=True
         )
@@ -59,7 +59,7 @@ def sop_000_speed_analysis():
     if not ruff_bin:
         print(f"[{YELLOW}WARN{RESET}] ruff not found. Skipping SOP-000.")
         return True # Soft fail if not installed
-    
+
     cmd = f"{ruff_bin} check . --select E,F,B --ignore E501 --no-cache"
     return run_command(cmd, "SOP-000: Speed Analysis (ruff)")[0]
 
@@ -73,11 +73,11 @@ def sop_003_privacy():
     # Patterns that should NOT be in committed code (excluding this script and config)
     restricted = ["C:\\Users\\HayesChiefOfStaff", "token.json", "credentials"]
     print(f"[*] {BOLD}Executing SOP-003: Privacy Audit...{RESET}")
-    
+
     all_ok = True
     # We audit only the 'strategery/patches' and 'strategery/tools' folders
     targets = [Path("strategery/patches"), Path("strategery/tools")]
-    
+
     for target in targets:
         for py_file in target.glob("*.py"):
             try:
@@ -88,7 +88,7 @@ def sop_003_privacy():
                         all_ok = False
             except Exception as e:
                 print(f"[{YELLOW}WARN{RESET}] Could not audit {py_file}: {e}")
-                
+
     if all_ok:
         print(f"[{GREEN}OK{RESET}] SOP-003: Privacy Audit passed.")
     return all_ok
@@ -102,12 +102,12 @@ def policy_linter():
     """Enforce 'Zero Core Pollution' and 'Async Standard'."""
     print(f"[*] {BOLD}Executing Policy Linter...{RESET}")
     all_ok = True
-    
+
     # 1. Async Check: Avoid get_event_loop() (SOP: Use get_running_loop())
     # We use a regex-style check to avoid false positives from strings/comments
     # Note: On Windows 'grep' is grep_search tool, but for shell we use findstr.
     # Let's use a Python-based check for portability and precision.
-    
+
     targets = [Path("strategery/patches"), Path("strategery/tools")]
     for target in targets:
         for py_file in target.glob("*.py"):
@@ -120,7 +120,7 @@ def policy_linter():
                         print(f"[{RED}FAIL{RESET}] Found 'asyncio.get_event_loop()' in: {py_file}")
                         all_ok = False
             except Exception: pass
-        
+
     # 2. Path Check: No relative D: drive paths
     # This is complex because we USE D:\ in strings, so we audit for literal relative path usage
     # For now, we rely on the Doctor for storage pathing.
@@ -137,18 +137,18 @@ def main():
 
     print(f"\n{BOLD}🛡️ Strategic Guard: Certification Run{RESET}")
     print("="*60)
-    
+
     pipeline = [
         (sop_000_speed_analysis, "Speed Analysis"),
         (sop_004_doctor, "Strategic Doctor"),
         (sop_003_privacy, "Privacy Audit"),
         (policy_linter, "Policy Linter")
     ]
-    
+
     if not args.skip_tests:
         # Move unit tests after the fast checks
         pipeline.append((sop_001_testing, "Unit Tests"))
-        
+
     failures = 0
     for func, name in pipeline:
         if not func():
@@ -156,7 +156,7 @@ def main():
             if args.commit_check:
                 print(f"\n{RED}{BOLD}CERTIFICATION FAILED: {name} must pass before commit.{RESET}\n")
                 sys.exit(1)
-                
+
     print("="*60)
     if failures == 0:
         print(f"{GREEN}{BOLD}PASSED: All Strategic Pillars are certified.{RESET}\n")

@@ -4,8 +4,10 @@ Goal: Ensure 100% deterministic tool visibility across roles.
 Mandate: Prevent 'High-Power Leakage' to the Main Agent.
 """
 import pytest
+
 from nanobot.agent.tools.registry import ToolRegistry
 from strategery.patches.subagent import SubagentPatch
+
 
 @pytest.fixture
 def registry_factory(mock_context):
@@ -31,7 +33,7 @@ def registry_factory(mock_context):
     ("read_file", "main", False),
     ("write_file", "main", False),
     ("spawn", "main", True), # Main agent MUST see spawn
-    
+
     # Specialist Access
     ("google", "specialist", True),
     ("ai-search", "specialist", True),
@@ -43,7 +45,7 @@ def registry_factory(mock_context):
 def test_tool_visibility_golden_record(registry_factory, tool_name, role, expected_visible):
     """Verifies that tool stripping correctly enforces the Specialist Economy."""
     reg = registry_factory(role)
-    
+
     # Mock a tool object
     class MockTool:
         def __init__(self, name):
@@ -53,28 +55,28 @@ def test_tool_visibility_golden_record(registry_factory, tool_name, role, expect
 
     # Register the tool
     reg.register(MockTool(tool_name))
-    
+
     # Check visibility in definitions
     defs = reg.get_definitions()
     visible_names = [d.get("function", {}).get("name", "").lower() for d in defs]
-    
+
     is_visible = any(tool_name.lower() in name for name in visible_names)
-    
+
     assert is_visible == expected_visible, f"Tool '{tool_name}' visibility mismatch for role '{role}'. Expected: {expected_visible}, Got: {is_visible}"
 
 def test_main_agent_blocked_path_patterns(registry_factory):
     """Verifies that path manipulation patterns are blocked for the Main Agent."""
     reg = registry_factory("main")
-    
+
     blocked_patterns = ["ls ", "dir ", "D:", "filesystem-d"]
-    
+
     for pattern in blocked_patterns:
         class MockTool:
             def __init__(self, name): self.name = name
             def to_schema(self): return {"type": "function", "function": {"name": self.name}}
-            
+
         reg.register(MockTool(pattern))
         defs = reg.get_definitions()
         visible_names = [d.get("function", {}).get("name", "").lower() for d in defs]
-        
+
         assert not any(pattern.lower() in name for name in visible_names), f"Pattern '{pattern}' leaked to Main Agent visibility!"

@@ -1,11 +1,15 @@
 import asyncio
 import weakref
 from typing import List
-from .base import BasePatch, PatchResult, PatchContext
+
+from loguru import logger
+
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.events import OutboundMessage
 from strategery.strategic_logger import strategic_logger
-from loguru import logger
+
+from .base import BasePatch, PatchContext, PatchResult
+
 
 class AgentLoopPatch(BasePatch):
     """
@@ -33,7 +37,7 @@ class AgentLoopPatch(BasePatch):
             # 1. Patch __init__ to initialize our strategic lock dictionary
             if not hasattr(AgentLoop, "_orig_init_strategic"):
                 AgentLoop._orig_init_strategic = AgentLoop.__init__
-                
+
                 def _patched_init(self, *args, **kwargs):
                     self._orig_init_strategic(*args, **kwargs)
                     # Initialize per-session lock dictionary and subagent registry
@@ -67,7 +71,7 @@ class AgentLoopPatch(BasePatch):
             # 2. Patch _dispatch to use the per-session lock
             if not hasattr(AgentLoop, "_orig_dispatch_strategic"):
                 AgentLoop._orig_dispatch_strategic = AgentLoop._dispatch
-                
+
                 async def _patched_dispatch(self, msg):
                     """Process a message under a per-session lock instead of global lock."""
                     # ARCH-022 Ironclad Media Tagging (BUG-202)
@@ -98,10 +102,10 @@ class AgentLoopPatch(BasePatch):
                     if lock is None:
                         lock = asyncio.Lock()
                         self._strategic_session_locks[session_key] = lock
-                    
+
                     async with lock:
                         # We still want to call the internal _process_message but WITHOUT the global lock
-                        # The original _dispatch used the global lock. 
+                        # The original _dispatch used the global lock.
                         # We call the CURRENT _process_message (which might be patched by others)
                         try:
                             response = await self._process_message(msg)
@@ -122,20 +126,21 @@ class AgentLoopPatch(BasePatch):
                                 channel=msg.channel, chat_id=msg.chat_id,
                                 content="Sorry, I encountered an error. Strategic traceback logged.",
                             ))
-                
+
                 AgentLoop._dispatch = _patched_dispatch
                 logger.debug("Patched AgentLoop._dispatch for per-session locking")
                 result.affected_symbols.append("AgentLoop._dispatch")
-                
+
             # 3. Patch _run_agent_loop to implement "Silent Spawn" (BUG-111)
             if not hasattr(AgentLoop, "_orig_run_agent_loop_strategic"):
                 AgentLoop._orig_run_agent_loop_strategic = AgentLoop._run_agent_loop
-                
+
                 async def _patched_run_agent_loop(self, initial_messages, on_progress=None, **kwargs):
                     """Strategic override of _run_agent_loop to prevent ID hallucination."""
                     import json
+
                     from loguru import logger
-                    
+
                     # ARCH-022: Capture history for subagent handover (BUG-199)
                     if hasattr(self, "tools"):
                         self.tools._strategic_last_messages = initial_messages
@@ -160,7 +165,7 @@ class AgentLoopPatch(BasePatch):
                         if response.has_tool_calls:
                             # STRATEGIC: Detect 'spawn' call (BUG-110/111)
                             is_spawn = any(tc.name == "spawn" for tc in response.tool_calls)
-                            
+
                             if on_progress:
                                 # If it's a spawn, we SUPPRESS the thought/hint entirely.
                                 # The user will only see the final acknowledgement after the tool returns.
@@ -192,7 +197,7 @@ class AgentLoopPatch(BasePatch):
                                 reasoning_content=response.reasoning_content,
                                 thinking_blocks=response.thinking_blocks,
                             )
-                            
+
                             # ARCH-022: Update stored history for tool access (BUG-199)
                             if hasattr(self, "tools"):
                                 self.tools._strategic_last_messages = messages
@@ -252,5 +257,5 @@ class AgentLoopPatch(BasePatch):
             return False
         if not hasattr(AgentLoop, "_orig_run_agent_loop_strategic"):
             return False
-        
+
         return True

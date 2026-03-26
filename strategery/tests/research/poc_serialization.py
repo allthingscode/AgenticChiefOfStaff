@@ -1,5 +1,7 @@
-from typing import Annotated, Literal, Union, List, Optional, Dict, Any
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field, TypeAdapter
+
 
 # 1. Define Discriminated Content Types for Multimodal/Thinking
 class TextContent(BaseModel):
@@ -63,11 +65,11 @@ def test_serialization():
         {"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "type": "function", "function": {"name": "read_file", "arguments": '{"path": "test.txt"}'}}]},
         {"role": "tool", "name": "read_file", "tool_call_id": "call_123", "content": "File content here"}
     ]
-    
+
     # 1. Validate & Serialize
     adapter = TypeAdapter(List[StrategicMessage])
     validated_messages = adapter.validate_python(messages)
-    
+
     checkpoint = StateCheckpoint(
         session_id="test-123",
         model="gemini-3-flash",
@@ -75,16 +77,16 @@ def test_serialization():
         iteration=5,
         messages=validated_messages
     )
-    
+
     json_data = checkpoint.model_dump_json(indent=2)
     print("--- Serialized Checkpoint ---")
     print(json_data)
-    
+
     # 2. Re-load & Restore
     restored_checkpoint = StateCheckpoint.model_validate_json(json_data)
     print("\n--- Restored Metadata ---")
     print(f"Session: {restored_checkpoint.session_id}, Messages: {len(restored_checkpoint.messages)}")
-    
+
     # Verify a specific message (the tool call)
     tool_call_msg = restored_checkpoint.messages[3]
     assert tool_call_msg.tool_calls[0]["function"]["name"] == "read_file"

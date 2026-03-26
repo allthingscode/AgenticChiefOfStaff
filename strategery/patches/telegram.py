@@ -1,18 +1,20 @@
 import asyncio
 from pathlib import Path
+
 from strategery.strategic_logger import strategic_logger
+
 
 def strategic_get_media_path(base_workspace, original_path):
     """Calculates the strategic redirection path for Telegram media."""
     if not original_path:
         return original_path
-        
+
     p_str = str(original_path)
     # Ironclad regex for .nanobot/media or .nanobot\media
     import re
     if not re.search(r"\.nanobot[\\/]media", p_str, re.IGNORECASE):
         return original_path
-        
+
     workspace = Path(base_workspace or Path.home() / ".nanobot" / "workspace")
     filename = Path(original_path).name
     return str(workspace / "media" / filename)
@@ -35,18 +37,18 @@ def strategic_prepare_telegram_media(media_path, bot):
     from nanobot.channels.telegram import TelegramChannel
     mtype = TelegramChannel._get_media_type(media_path)
     sender = {
-        "photo": bot.send_photo, 
-        "voice": bot.send_voice, 
+        "photo": bot.send_photo,
+        "voice": bot.send_voice,
         "audio": bot.send_audio
     }.get(mtype, bot.send_document)
-    
+
     param = "photo" if mtype == "photo" else mtype if mtype in ("voice", "audio") else "document"
     return sender, param, mtype
 
 async def strategic_telegram_polling_loop(channel):
     """Resilience Loop for Telegram start_polling."""
-    from telegram.error import NetworkError
     import httpx
+    from telegram.error import NetworkError
     retry_delay = 5
     while channel._running:
         try:
@@ -57,9 +59,9 @@ async def strategic_telegram_polling_loop(channel):
                     drop_pending_updates=True
                 )
                 retry_delay = 5 # Reset on success
-            
+
             await asyncio.sleep(1)
-        except (NetworkError, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, 
+        except (NetworkError, httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError,
                 httpx.WriteError, httpx.PoolTimeout, asyncio.TimeoutError) as e:
             strategic_logger.warning(f"Telegram: Transient network error during polling: {e}. Retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
@@ -77,7 +79,7 @@ async def strategic_telegram_polling_loop(channel):
 async def strategic_telegram_on_message(channel, update, context, orig_on_message):
     """Patched message handler with Media Redirection and Topic support."""
     strategic_logger.debug(f"Telegram: Received update {update.update_id}")
-    
+
     if update.message:
         # STRATEGIC EDITION: Handle Telegram Topics (threads)
         thread_meta = strategic_detect_thread_metadata(update.message, update.message.chat_id if update.message else None)
@@ -88,7 +90,7 @@ async def strategic_telegram_on_message(channel, update, context, orig_on_messag
                 metadata = dict(metadata or {})
                 metadata.update(thread_meta)
                 return await orig_hm(msg, chat_id, text=text, session_key=thread_meta["session_key_override"], metadata=metadata)
-            
+
             channel._handle_message = temp_hm
             try:
                 return await orig_on_message(update, context)
@@ -105,10 +107,11 @@ async def strategic_telegram_on_message(channel, update, context, orig_on_messag
 
 async def strategic_telegram_send(channel, msg):
     """Thread-aware message and media sender."""
-    from nanobot.channels.telegram import _markdown_to_telegram_html, TELEGRAM_MAX_MESSAGE_LEN
-    from nanobot.utils.helpers import split_message
     from telegram import ReplyParameters
-    
+
+    from nanobot.channels.telegram import TELEGRAM_MAX_MESSAGE_LEN, _markdown_to_telegram_html
+    from nanobot.utils.helpers import split_message
+
     if not channel._app: return
     channel._stop_typing(msg.chat_id)
     try: chat_id = int(msg.chat_id)
@@ -145,14 +148,15 @@ async def strategic_telegram_send(channel, msg):
                 await channel._app.bot.send_message(**kwargs)
 
 from typing import TYPE_CHECKING
-from .base import BasePatch, PatchResult, PatchContext
+
+from .base import BasePatch, PatchContext, PatchResult
 
 if TYPE_CHECKING:
     pass
 
 class TelegramPatch(BasePatch):
     """Handles Telegram Topic support, Media Redirection, and thread-aware message sending."""
-    
+
     def __init__(self):
         super().__init__()
         self._workspace_path = None
@@ -164,14 +168,14 @@ class TelegramPatch(BasePatch):
     def apply(self, context: PatchContext) -> PatchResult:
         result = PatchResult(patch_name=self.name, success=True)
         try:
-            from telegram.ext import ExtBot
             from telegram import File
-            
+            from telegram.ext import ExtBot
+
             # Capture workspace for redirection closures (BUG-207)
             storage_root = context.storage_root or Path("D:/Nanobot_Storage")
             self._workspace_path = storage_root / "workspace"
             wp = self._workspace_path
-            
+
             async def _strategic_download(file_self, custom_path=None, *args, **kwargs):
                 # Apply redirection using the local closure variable (wp)
                 new_path = custom_path
@@ -199,7 +203,7 @@ class TelegramPatch(BasePatch):
             if not hasattr(ExtBot, "_orig_get_file_strategic"):
                 ExtBot._orig_get_file_strategic = ExtBot.get_file
                 ExtBot.get_file = _strategic_get_file
-                
+
             if not hasattr(File, "_orig_download_strategic"):
                 File._orig_download_strategic = File.download_to_drive
                 File.download_to_drive = _strategic_download
@@ -207,7 +211,7 @@ class TelegramPatch(BasePatch):
             # --- PATCH CORE CHANNEL ---
             from nanobot.channels.telegram import TelegramChannel
             self._patch_telegram_channel(TelegramChannel, context)
-            
+
             result.affected_symbols.extend(["ExtBot.get_file", "File.download_to_drive", "TelegramChannel.start"])
             return result
         except Exception as e:
@@ -220,16 +224,16 @@ class TelegramPatch(BasePatch):
 
     def _patch_telegram_channel(self, TelegramChannel, context: PatchContext):
         from telegram.ext import CommandHandler
-        
+
         config = context.config
         disable_commands = config.strategic_edition.disable_bot_commands
-        
+
         if not hasattr(TelegramChannel, "_orig_start_strategic"):
             TelegramChannel._orig_start_strategic = TelegramChannel.start
-            
+
             async def _strategic_start(self_ch):
                 strategic_logger.info(f"Telegram: Starting strategic channel (disable_commands={disable_commands})...")
-                
+
                 # BUG-207: Final Hardening - Force instance patching on start
                 if hasattr(self_ch, "_app") and self_ch._app and self_ch._app.bot:
                     # Re-verify that the instance is using our class-level patch
@@ -244,7 +248,7 @@ class TelegramPatch(BasePatch):
                         if command in ["start", "new", "help"]:
                             return _orig_init(handler_self, "disabled_cmd_" + command, lambda u, c: None, *args, **kwargs)
                         return _orig_init(handler_self, command, callback, *args, **kwargs)
-                    
+
                     CommandHandler.__init__ = _patched_init
                     try:
                         await self_ch._orig_start_strategic()
@@ -259,10 +263,10 @@ class TelegramPatch(BasePatch):
 
         if not hasattr(TelegramChannel, "_orig_on_message_strategic"):
             TelegramChannel._orig_on_message_strategic = TelegramChannel._on_message
-            
+
             async def _strategic_on_message(self, update, context):
                 return await strategic_telegram_on_message(self, update, context, self._orig_on_message_strategic)
-            
+
             TelegramChannel._on_message = _strategic_on_message
 
         async def _thread_aware_send_wrapper(self, msg):
@@ -272,16 +276,16 @@ class TelegramPatch(BasePatch):
 
         if not hasattr(TelegramChannel, "_orig_on_error_strategic"):
             TelegramChannel._orig_on_error_strategic = TelegramChannel._on_error
-            
+
             async def _strategic_on_error(self, update, context):
                 from telegram.error import NetworkError, TimedOut
                 err_str = str(context.error)
-                
+
                 # SUPPRESS NOISY TRANSIENT NETWORK ERRORS
                 suppress_patterns = ["ReadError", "RemoteProtocolError", "Timed out", "ConnectError", "Connection reset by peer"]
                 if isinstance(context.error, (NetworkError, TimedOut)) or any(p in err_str for p in suppress_patterns):
                     strategic_logger.warning(f"Telegram: Transient network noise suppressed: {err_str}")
                     return
                 return await self._orig_on_error_strategic(update, context)
-                
+
             TelegramChannel._on_error = _strategic_on_error

@@ -1,5 +1,7 @@
-from .base import BasePatch, PatchResult, PatchContext
 from strategery.strategic_logger import strategic_logger
+
+from .base import BasePatch, PatchContext, PatchResult
+
 
 class AwarenessPatch(BasePatch):
     """
@@ -7,7 +9,7 @@ class AwarenessPatch(BasePatch):
     - Generates AWARENESS.md at startup.
     - Injects STRATEGIC_MANDATES.md and AWARENESS.md into core bootstrap.
     """
-    
+
     @property
     def name(self) -> str:
         return "Identity & Awareness"
@@ -18,10 +20,10 @@ class AwarenessPatch(BasePatch):
             awareness_path = context.storage_root / "workspace" / "AWARENESS.md"
             self._generate_awareness_file(context.storage_root)
             result.affected_symbols.append(str(awareness_path))
-            
+
             self._patch_context_builder()
             result.affected_symbols.append("ContextBuilder.BOOTSTRAP_FILES")
-            
+
             return result
         except Exception as e:
             import traceback
@@ -35,7 +37,7 @@ class AwarenessPatch(BasePatch):
         """Generates a dynamic AWARENESS.md file with current environment details."""
         awareness_path = storage_root / "workspace" / "AWARENESS.md"
         awareness_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         content = f"""# 🦅 STRATEGIC AWARENESS & MANDATES
 - **Workspace Root:** {storage_root}
 - **System Role:** Strategic Orchestrator (Orchestrate & Delegate)
@@ -69,11 +71,11 @@ class AwarenessPatch(BasePatch):
     def _patch_context_builder(self):
         """Injects strategic files into the core ContextBuilder bootstrap list."""
         from nanobot.agent.context import ContextBuilder
-        
+
         # Add our strategic files to the bootstrap list if not present
         if "STRATEGIC_MANDATES.md" not in ContextBuilder.BOOTSTRAP_FILES:
             ContextBuilder.BOOTSTRAP_FILES.insert(0, "STRATEGIC_MANDATES.md")
         if "AWARENESS.md" not in ContextBuilder.BOOTSTRAP_FILES:
             ContextBuilder.BOOTSTRAP_FILES.append("AWARENESS.md")
-        
+
         strategic_logger.debug(f"Awareness: ContextBuilder.BOOTSTRAP_FILES -> {ContextBuilder.BOOTSTRAP_FILES}")

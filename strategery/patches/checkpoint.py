@@ -3,15 +3,16 @@ STRATEGIC CHECKPOINT PATCH: Durable Execution Bridge (ARCH-024)
 Goal: Inject CheckpointManager into AgentLoop and SubagentManager.
 Mandate: Zero Core Pollution.
 """
-import json
 import functools
+import json
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, List
+
 from loguru import logger
 
-from strategery.patches.base import BasePatch, PatchContext
-from strategery.logic.checkpoint_logic import get_checkpoint_manager
 from strategery.logic import subagent_logic
+from strategery.logic.checkpoint_logic import get_checkpoint_manager
+from strategery.patches.base import BasePatch, PatchContext
 
 if TYPE_CHECKING:
     pass
@@ -28,16 +29,16 @@ class CheckpointPatch(BasePatch):
     def apply(self, context: PatchContext):
         try:
             manager = get_checkpoint_manager(context.storage_root)
-            
+
             # 1. Patch AgentLoop._run_agent_loop
             self._patch_agent_loop(manager, context)
-            
+
             # 2. Patch SubagentManager._run_subagent
             self._patch_subagent_manager(manager, context)
-            
+
             # 3. Patch AgentLoop._process_message to handle Thread ID
             self._patch_process_message(manager, context)
-            
+
             from strategery.patches.base import PatchResult
             return PatchResult(patch_name=self.name, success=True)
         except Exception as e:
@@ -54,7 +55,7 @@ class CheckpointPatch(BasePatch):
         async def patched_run_loop(self_loop, initial_messages, on_progress=None):
             # Capture Thread ID from metadata if set
             thread_id = getattr(self_loop, "_current_thread_id", None)
-            
+
             async def _checkpoint_step(msgs, it):
                 if thread_id:
                     manager.save_snapshot(thread_id, it, msgs)
@@ -67,7 +68,7 @@ class CheckpointPatch(BasePatch):
 
             while iteration < self_loop.max_iterations:
                 iteration += 1
-                
+
                 # CHECKPOINT: Start of iteration
                 await _checkpoint_step(messages, iteration)
 
@@ -90,7 +91,7 @@ class CheckpointPatch(BasePatch):
                         {
                             "id": tc.id, "type": "function",
                             "function": {
-                                "name": tc.name, 
+                                "name": tc.name,
                                 "arguments": json.dumps(tc.arguments, ensure_ascii=False)
                             }
                         } for tc in response.tool_calls
@@ -132,7 +133,7 @@ class CheckpointPatch(BasePatch):
 
     def _patch_subagent_manager(self, manager, context: PatchContext):
         from nanobot.agent.subagent import SubagentManager
-        
+
         async def patched_run_subagent(self_sub, task_id, task, label, origin, *args, **kwargs):
             try:
                 # Resolve specialist, host_tools, attachments from args/kwargs if present
@@ -149,13 +150,19 @@ class CheckpointPatch(BasePatch):
 
                 logger.info("Subagent [{}] starting DURABLE task: {} using model {}", task_id, label, final_model)
 
-                # BUG-253: Logic Isolation & Resource Leak. 
+                # BUG-253: Logic Isolation & Resource Leak.
                 # We must ensure MCP tools are bridged efficiently.
                 async with AsyncExitStack() as stack:
+                    from nanobot.agent.tools.filesystem import (
+                        EditFileTool,
+                        ListDirTool,
+                        ReadFileTool,
+                        WriteFileTool,
+                    )
                     from nanobot.agent.tools.registry import ToolRegistry
-                    from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
                     from nanobot.agent.tools.shell import ExecTool
-                    from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
+                    from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+
                     from .vsa import VectorStoreFactory
 
                     tools = ToolRegistry()
@@ -177,7 +184,7 @@ class CheckpointPatch(BasePatch):
                     ))
                     tools.register(WebSearchTool(api_key=self_sub.brave_api_key, proxy=self_sub.web_proxy))
                     tools.register(WebFetchTool(proxy=self_sub.web_proxy))
-                    
+
                     # BUG-235: Bridge host tools and MCP servers
                     await subagent_logic.bridge_subagent_tools(tools, host_tools, context.config, stack.enter_async_context)
 
@@ -188,7 +195,7 @@ class CheckpointPatch(BasePatch):
 
                     # Use Strategic Instructions (BUG-223)
                     system_prompt = subagent_logic.build_specialist_instructions(self_sub._build_subagent_prompt(), specialist, attachments)
-                    
+
                     messages: list[dict[str, Any]] = [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": task},
@@ -199,7 +206,7 @@ class CheckpointPatch(BasePatch):
                         # Save snapshot before each chat turn
                         current_it = (len([m for m in messages if m["role"] == "assistant"]) + 1)
                         manager.save_snapshot(thread_id, current_it, messages)
-                        
+
                         resp = await self_sub.provider.chat(
                             messages=messages,
                             tools=tools,
@@ -261,7 +268,7 @@ class CheckpointPatch(BasePatch):
             thread_id = f"session:{msg.session_key}"
             self_loop._current_thread_id = thread_id
             manager.create_thread(thread_id, self_loop.model, {"channel": msg.channel, "chat_id": msg.chat_id})
-            
+
             result = await original_process(self_loop, msg, **kwargs)
             # If successfully finished, we could mark as complete, but chat sessions are persistent.
             return result

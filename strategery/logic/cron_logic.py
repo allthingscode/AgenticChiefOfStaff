@@ -1,5 +1,7 @@
-from typing import Any, List, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from strategery.strategic_logger import strategic_logger
+
 
 def should_reload_jobs(current_mtime: float, last_mtime: float, current_size: int, last_size: int) -> bool:
     """Determines if jobs.json needs to be reloaded based on mtime or size change."""
@@ -15,14 +17,14 @@ def detect_modular_change(items_dir: Any, last_items_mtime: float) -> Tuple[bool
     """Detects if any modular .md job files have changed in the items directory."""
     if not items_dir.exists():
         return False, 0.0
-    
+
     try:
         current_items_state = sum(f.stat().st_mtime for f in items_dir.glob("*.md"))
         if current_items_state != last_items_mtime:
             return True, current_items_state
     except Exception as ce:
         strategic_logger.debug(f"Cron: Change detection failed: {ce}")
-    
+
     return False, last_items_mtime
 
 def merge_modular_jobs(store_jobs: List[Any], modular_jobs: List[Any], state_cache: Dict[str, Any]) -> List[Any]:
@@ -31,7 +33,7 @@ def merge_modular_jobs(store_jobs: List[Any], modular_jobs: List[Any], state_cac
         # Restore state from cache if available
         if mj.id in state_cache:
             mj.state = state_cache[mj.id]
-        
+
         found = False
         for i, existing in enumerate(store_jobs):
             if existing.id == mj.id:
@@ -41,10 +43,10 @@ def merge_modular_jobs(store_jobs: List[Any], modular_jobs: List[Any], state_cac
                 store_jobs[i].name = mj.name
                 found = True
                 break
-        
+
         if not found:
             store_jobs.append(mj)
-            
+
     return store_jobs
 
 def cache_modular_state(store_jobs: List[Any]) -> Dict[str, Any]:

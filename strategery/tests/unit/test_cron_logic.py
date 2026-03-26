@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
+
 from strategery.logic import cron_logic
+
 
 def test_should_reload_jobs_mtime():
     assert cron_logic.should_reload_jobs(200.0, 100.0, 50, 50) is True
@@ -29,7 +31,7 @@ def test_merge_modular_jobs_update():
 
     old_job = JobMock("batch_job1", "Old")
     new_job = JobMock("batch_job1", "New", "0 3 * * *", {"msg": "hello"})
-    
+
     merged = cron_logic.merge_modular_jobs([old_job], [new_job], {})
     assert len(merged) == 1
     assert merged[0].name == "New"

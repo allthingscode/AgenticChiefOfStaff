@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
-from strategery.logic.config_logic import validate_strategic_config, StrategicConfig
+
+from strategery.logic.config_logic import StrategicConfig, validate_strategic_config
+
 
 def test_valid_strategic_config():
     """Verify that a complete strategic configuration validates correctly."""
@@ -33,7 +35,7 @@ def test_valid_strategic_config():
             "memory_rag": {"enabled": False}
         }
     }
-    
+
     config = validate_strategic_config(raw_data)
     assert isinstance(config, StrategicConfig)
     assert config.strategic_edition.user_email == "test@example.com"

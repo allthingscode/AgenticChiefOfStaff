@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
+
 from strategery.logic import memory_logic
+
 
 def test_format_consolidation_messages():
     msgs = [
@@ -42,16 +44,16 @@ def test_prune_context_retention():
     # Subtract 10 hours safely
     old_ts = (now - timedelta(hours=10)).isoformat()
     new_ts = now.isoformat()
-    
+
     msgs = [
         {"role": "user", "content": "Old user", "timestamp": old_ts},
         {"role": "assistant", "content": "Old assistant", "timestamp": old_ts},
         {"role": "user", "content": "New user", "timestamp": new_ts}
     ]
-    
+
     # Prune with 6h TTL, keep last 1 assistant
     pruned = memory_logic.prune_context(msgs, 6, 1)
-    
+
     # User messages are always kept in this logic (Pass 1: if role == "user": keep = True)
     # The old assistant should be pruned because it's > 6h and assistant_count > keep_last (if we process newest first)
     roles = [m["role"] for m in pruned]

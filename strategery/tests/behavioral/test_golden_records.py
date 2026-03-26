@@ -1,7 +1,10 @@
-import pytest
 import json
 from pathlib import Path
+
+import pytest
+
 from strategery.tests.behavioral.simulator import StrategicSimulator
+
 
 def load_golden_records():
     records_dir = Path(__file__).parent / "records"

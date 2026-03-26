@@ -1,7 +1,7 @@
-import os
-import json
-from pathlib import Path
 import builtins
+import json
+import os
+from pathlib import Path
 
 # SET UP TEST ENVIRONMENT VARIABLES BEFORE ANY IMPORTS
 try:
@@ -13,17 +13,20 @@ try:
             strat = raw.get("strategic_edition", {})
             if s_root := strat.get("storage_root"):
                 storage_root = Path(s_root)
-    
+
     TEST_WORKSPACE = storage_root.parent / "Test_Workspace"
     os.environ["STRATEGIC_LOG_DIR"] = str(TEST_WORKSPACE / "logs")
 except Exception:
     os.environ["STRATEGIC_LOG_DIR"] = "D:/Test_Workspace/logs"
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
+from strategery.logic.config_logic import validate_strategic_config
 from strategery.patches.base import PatchContext
 from strategery.tests.mocks.mock_config import get_mock_config_json
-from strategery.logic.config_logic import validate_strategic_config
+
 
 @pytest.fixture
 def mock_context(tmp_path):
@@ -31,11 +34,11 @@ def mock_context(tmp_path):
     storage_root = tmp_path / "storage"
     storage_root.mkdir()
     (storage_root / "workspace").mkdir()
-    
+
     # Validate the mock JSON against the Strategic Schema
     raw_config = json.loads(get_mock_config_json())
     config = validate_strategic_config(raw_config)
-    
+
     return PatchContext(
         config=config,
         storage_root=storage_root,
@@ -50,7 +53,7 @@ def global_config_patch():
     Allows other files (like test temp files) to be read normally.
     """
     orig_open = builtins.open
-    
+
     def side_effect(file, *args, **kwargs):
         f_str = str(file).lower()
         mode = args[0] if args else kwargs.get("mode", "r")

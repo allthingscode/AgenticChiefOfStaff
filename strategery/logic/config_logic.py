@@ -1,6 +1,9 @@
-from typing import Dict, Any, Optional
-from pydantic import Field, ConfigDict
-from nanobot.config.schema import Config, Base, AgentsConfig, AgentDefaults
+from typing import Any, Dict, Optional
+
+from pydantic import ConfigDict, Field
+
+from nanobot.config.schema import AgentDefaults, AgentsConfig, Base, Config
+
 
 # 1. Strategic Sub-models
 class ContextPruningConfig(Base):
@@ -50,11 +53,11 @@ class StrategicConfig(Config):
     """
     # Override 'agents' with our strategic extension
     agents: StrategicAgentsConfig = Field(default_factory=StrategicAgentsConfig)
-    
+
     # Add root strategic_edition key
     strategic_edition: StrategicEditionConfig = Field(default_factory=StrategicEditionConfig)
 
-    # Allow extra fields for now to maintain core compatibility, 
+    # Allow extra fields for now to maintain core compatibility,
     # but populate known strategic fields explicitly.
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 

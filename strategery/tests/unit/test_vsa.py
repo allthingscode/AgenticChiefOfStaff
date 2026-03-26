@@ -1,6 +1,9 @@
+from typing import Any, Dict, List, Optional
+
 import pytest
-from typing import List, Dict, Any, Optional
-from strategery.patches.vsa import VectorStoreInterface, VectorStoreFactory
+
+from strategery.patches.vsa import VectorStoreFactory, VectorStoreInterface
+
 
 class MockVectorStore(VectorStoreInterface):
     def __init__(self):
@@ -22,14 +25,14 @@ async def test_vsa_factory_injection():
     """Verify that we can inject a mock store into the factory."""
     mock_store = MockVectorStore()
     VectorStoreFactory.set_store(mock_store)
-    
+
     retrieved_store = VectorStoreFactory.get_store()
     assert retrieved_store is mock_store
-    
+
     success = await retrieved_store.add_entry("test text")
     assert success is True
     assert len(mock_store.entries) == 1
-    
+
     results = await retrieved_store.query("search")
     assert len(results) == 1
     assert results[0]["content"] == "mock result"

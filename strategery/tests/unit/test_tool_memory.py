@@ -1,12 +1,15 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from strategery.tools.strategic_memory import SearchMemoryTool
+
 
 @pytest.mark.asyncio
 async def test_search_memory_tool_execution():
     """Verify that SearchMemoryTool correctly queries the VectorStoreFactory."""
     tool = SearchMemoryTool()
-    
+
     # Mock data
     mock_results = [
         {

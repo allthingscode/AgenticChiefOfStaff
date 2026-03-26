@@ -1,12 +1,14 @@
+import asyncio
+import base64
+import json
 import os
 import re
-import json
 import sys
-import base64
-import asyncio
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
 from pydantic import BaseModel
+
 from strategery.strategic_logger import strategic_logger
 
 if TYPE_CHECKING:
@@ -71,7 +73,7 @@ def get_log_root() -> str:
     env_log = os.environ.get("STRATEGIC_LOG_DIR")
     if env_log:
         return str(Path(env_log).absolute()) + "\\"
-    
+
     try:
         config_path = Path.home() / ".nanobot" / "config.json"
         if config_path.exists():
@@ -91,8 +93,8 @@ def is_tool_blocked(tool_name: str, is_specialist: bool) -> bool:
     """Determines if a tool is blocked based on the agent's role."""
     name_str = tool_name.lower()
     role = "specialist" if is_specialist else "main_agent"
-    
-    # BUG-222: Use a more precise check for tool blocking. 
+
+    # BUG-222: Use a more precise check for tool blocking.
     # If the tool name EXACTLY matches or is a logical substring (e.g. 'google' in 'mcp_google_surgical'), block it.
     blocks = ROLE_BLOCKS[role]
     for b in blocks:
@@ -105,15 +107,15 @@ def get_block_message(registry: Any, tool_name: str, is_specialist: bool) -> str
     """Returns a descriptive error message for a blocked tool with circuit breaker support."""
     if not hasattr(registry, "_strategic_blocked_attempts"):
         registry._strategic_blocked_attempts = {}
-    
+
     registry._strategic_blocked_attempts[tool_name] = registry._strategic_blocked_attempts.get(tool_name, 0) + 1
     count = registry._strategic_blocked_attempts[tool_name]
-    
+
     role_label = "Specialist" if is_specialist else "Main Agent"
     if count >= 2:
         return (f"CRITICAL ERROR: Access Denied. Tool '{tool_name}' is HARD-LOCKED for your role ({role_label}). "
                 f"You have attempted to access it {count} times. You MUST STOP trying to call this tool directly.")
-    
+
     return f"ERROR: Access Denied. Tool '{tool_name}' is restricted for your role ({role_label})."
 
 def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bool) -> List[Dict[str, Any]]:
@@ -125,7 +127,7 @@ def filter_tool_definitions(definitions: List[Dict[str, Any]], is_specialist: bo
 def detect_mandate_bypass(command: str, is_specialist: bool = False) -> bool:
     """Detects attempts to bypass strategic mandates via shell commands."""
     role = "specialist" if is_specialist else "main_agent"
-    
+
     # 1. Tool name hallucination (Always blocked)
     for tool_name in ["read_file", "write_file", "edit_file", "list_dir", "spawn"]:
         if re.search(r"\b" + tool_name + r"\b", command):
@@ -165,12 +167,12 @@ class ToolCircuitBreaker:
         arg_str = json.dumps(args, sort_keys=True, ensure_ascii=False) if isinstance(args, dict) else str(args)
         call = (name, arg_str)
         self.history.append(call)
-        
+
         consecutive = 0
         for h in reversed(self.history):
             if h == call: consecutive += 1
             else: break
-        
+
         if consecutive >= self.limit:
             return (
                 f"CRITICAL: Tool Loop Detected! You have attempted to call '{name}' with the EXACT same arguments "
@@ -252,7 +254,7 @@ def strip_clixml(text: str) -> str:
     """Strips PowerShell CLIXML markers and attempts to extract the plain error message (BUG-247)."""
     if "#< CLIXML" not in text:
         return text
-    
+
     # Simple extraction: find the first <S S="Error"> block and extract its content
     # This is a heuristic to avoid full XML parsing for performance
     error_match = re.search(r'<S S="Error">(.*?)<\/S>', text, re.DOTALL)
@@ -261,7 +263,7 @@ def strip_clixml(text: str) -> str:
         msg = error_match.group(1)
         msg = msg.replace("_x000D__x000A_", "\n").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
         return f"POWERSHELL ERROR: {msg.strip()}"
-    
+
     # Fallback: Strip the CLIXML header and common XML tags if regex fails
     clean = re.sub(r'#< CLIXML', '', text)
     clean = re.sub(r'<[^>]+>', '', clean)
@@ -271,27 +273,27 @@ async def execute_powershell_command(command: str, cwd: str, app_root: str, time
     """Executes a PowerShell command with UTF-8 encoding and BOM stripping (BUG-184/155)."""
     try:
         encoding_fix = '$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; '
-        
+
         ps_command = f"{encoding_fix}{command}"
         encoded_cmd = base64.b64encode(ps_command.encode("utf-16le")).decode("utf-8")
-        
+
         env = os.environ.copy()
         env["PYTHONPATH"] = str(app_root)
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
-        
+
         proc = await asyncio.create_subprocess_exec(
             "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_cmd,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             cwd=cwd, env=env
         )
-        
+
         await asyncio.sleep(0.1)
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        
+
         out_str = stdout.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
         err_str = stderr.decode("utf-8", errors="replace").strip().lstrip('\ufeff')
-        
+
         if proc.returncode != 0:
             # BUG-247: Strip CLIXML from stderr
             err_clean = strip_clixml(err_str)
@@ -313,13 +315,13 @@ async def bridge_subagent_tools(tools: Any, host_tools: Any, config: 'StrategicC
             # and respect role-based blocking
             if name not in tools._tools and not is_tool_blocked(name, True):
                 tools.register(tool)
-    
+
     # 2. Re-register MCP servers from config (Logic Isolation BUG-212)
     try:
-        from strategery.patches.config import strategic_migrate_config
         from nanobot.config.schema import Config
         from strategery.logic.infra_logic import strategic_mcp_logic
-        
+        from strategery.patches.config import strategic_migrate_config
+
         pydantic_cfg = strategic_migrate_config(config.model_dump(by_alias=True))
         validated_config = Config.model_validate(pydantic_cfg)
         if validated_config.tools.mcp_servers:
@@ -328,34 +330,85 @@ async def bridge_subagent_tools(tools: Any, host_tools: Any, config: 'StrategicC
         strategic_logger.error(f"MCP Bridging failed: {e}")
 
 async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[str, Any]], provider: Any, model: str, tools: Any, temperature: float, max_tokens: int, reasoning_effort: str) -> str:
-    """Executes the core multi-turn subagent loop (F-029)."""
+    """Executes the core multi-turn subagent loop with Rubric-Driven Reflection (F-031)."""
+    from strategery.logic import reflection_logic
+
     max_iterations = 20
     iteration = 0
     final_result = "Error: Timeout or Max Iterations reached."
-    
+    validation_rubric = None
+
+    # TURN 0: Generate Validation Rubric (F-031)
+    try:
+        strategic_logger.info(f"Subagent [{task_id}]: Generating Validation Rubric...")
+        rubric_prompt = reflection_logic.generate_rubric_prompt(task)
+        # Use high-reasoning model for rubric generation
+        rubric_resp = await provider.chat(
+            messages=[{"role": "system", "content": rubric_prompt}],
+            tools=[], # No tools for rubric gen
+            model=model, # Use current specialist model
+            temperature=0.0 # Strict JSON
+        )
+        validation_rubric = reflection_logic.parse_json_response(rubric_resp.content)
+        if validation_rubric:
+            strategic_logger.info(f"Subagent [{task_id}]: Rubric generated: {validation_rubric.get('task_goal', 'No goal defined')}")
+            # Inject rubric into the system instructions for the specialist
+            messages[0]["content"] += f"\n\n### 🛡️ YOUR SUCCESS CRITERIA (VALUATION RUBRIC):\n{json.dumps(validation_rubric, indent=2)}"
+    except Exception as re:
+        strategic_logger.warning(f"Subagent [{task_id}]: Rubric generation failed: {re}")
+
+    # EXECUTION PHASE
     while iteration < max_iterations:
         iteration += 1
         response = await provider.chat(messages=messages, tools=tools.get_definitions(), model=model, temperature=temperature, max_tokens=max_tokens, reasoning_effort=reasoning_effort)
         log_subagent_turn(task_id, iteration, response.content)
-        
+
         if response.has_tool_calls and response.tool_calls:
             tool_call_dicts = [{"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)}} for tc in response.tool_calls]
             messages.append({"role": "assistant", "content": response.content or "", "tool_calls": tool_call_dicts})
-            
+
             for tool_call in response.tool_calls:
                 result = await tools.execute(tool_call.name, tool_call.arguments)
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "name": tool_call.name, "content": result})
         else:
             final_result = response.content or "Error: Empty response."
-            
-            # BUG-252: Harden against premature exit. 
-            # If the model didn't call tools but didn't provide a final answer (e.g. just a plan),
-            # we MUST nudge it to actually execute the tools.
+
+            # BUG-252: Harden against premature exit.
             if iteration == 1 and not response.has_tool_calls:
                 strategic_logger.warning(f"Subagent [{task_id}]: Premature exit detected on turn 1. Nudging for execution.")
                 messages.append({"role": "assistant", "content": final_result})
                 messages.append({"role": "user", "content": "### 🛡️ STRATEGIC MANDATE: STOP Turn Violation\nYour previous turn provided a plan but did NOT call any tools. You are STRICTLY FORBIDDEN from ending your turn with a plan or a promise. You MUST execute the required tools NOW to fulfill the task. Do NOT ask for permission."})
                 continue
+
+            # CRITIC TURN (F-031)
+            if validation_rubric and iteration < max_iterations:
+                try:
+                    strategic_logger.info(f"Subagent [{task_id}]: Executing Critic Audit...")
+                    critic_prompt = reflection_logic.generate_critic_prompt(task, validation_rubric, final_result)
+
+                    # Use highest-reasoning model for Critic turn (gemini-3-pro-preview if available)
+                    critic_model = "gemini-3.1-pro-preview" if "pro" in model else model
+                    critic_resp = await provider.chat(
+                        messages=[{"role": "system", "content": critic_prompt}],
+                        tools=[],
+                        model=critic_model,
+                        temperature=0.0
+                    )
+
+                    report = reflection_logic.parse_json_response(critic_resp.content)
+                    if report:
+                        score = reflection_logic.calculate_total_score(report, validation_rubric)
+                        strategic_logger.info(f"Subagent [{task_id}]: Critic Score: {score}")
+
+                        if score < validation_rubric.get("success_threshold", 0.9):
+                            strategic_logger.warning(f"Subagent [{task_id}]: Logic Quality Failure ({score}). Triggering Refinement...")
+                            corrections = "\n".join([f"- {c}" for c in report.get("required_corrections", [])])
+                            messages.append({"role": "assistant", "content": final_result})
+                            messages.append({"role": "user", "content": f"### 🛡️ CRITIC AUDIT FAILED (Score: {score})\n{report.get('feedback')}\n\n**REQUIRED CORRECTIONS:**\n{corrections}\n\nPerform the necessary tool calls to fix these issues or provide a more complete final response."})
+                            validation_rubric = None # Only one refinement turn to prevent loops
+                            continue
+                except Exception as ce:
+                    strategic_logger.error(f"Subagent [{task_id}]: Critic turn failed: {ce}")
 
             if should_escalate_model(final_result):
                 escalation_model = get_escalation_model(model)
@@ -363,7 +416,7 @@ async def run_orchestration_loop(task_id: str, task: str, messages: List[Dict[st
                 messages.append({"role": "system", "content": "### CRITICAL: FINAL SUMMARY TURN\nThe previous turn failed. You must now provide a FINAL summary. This is your last turn."})
                 escalation_response = await provider.chat(messages=messages, tools=tools.get_definitions(), model=escalation_model, temperature=0.5, max_tokens=max_tokens, reasoning_effort="medium")
                 final_result = escalation_response.content or "[STRATEGIC] Escalation failed to produce content."
-            
+
             log_subagent_completion(task_id, final_result)
             break
     return final_result
@@ -414,7 +467,7 @@ def inject_delegation_mandate(system_content: str) -> str:
 
 def build_specialist_instructions(base_prompt: str, specialist_type: str, attachments: Optional[List[Dict[str, Any]]] = None) -> str:
     header = f"\n## {specialist_type.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."
-    
+
     # Base Manifest
     manifest = (
         "\n\n### 🗺️ STRATEGIC DISCOVERY MANIFEST\n"
@@ -429,14 +482,14 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         "   - **Custom Skills (BUG-230):** All strategic skills live in D:\\Nanobot_Storage\\workspace\\skills\\. Do NOT search core 'nanobot/skills/'.\n"
         "   - **Storage (BUG-238):** You MUST use D:\\Nanobot_Storage\\workspace\\ for all temporary file creation and testing. Do NOT write to drive roots (C:\\, D:\\).\n"
     )
-    
+
     # Role-Specific Manifest Additions
     if specialist_type == "architect":
         manifest += (
             f"   - **SOP-001 (Unit Tests):** Run $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m pytest strategery/tests/unit/.\n"
             f"   - **SOP-006 (Strategic Doctor):** Run $env:PYTHONPATH=\".\"; {PYTHON_EXE_PATH} -m strategery.strategic_doctor.\n"
         )
-    
+
     if specialist_type == "researcher":
         manifest += (
             "3. **WEEKLY BACKUP PROTOCOL (BUG-192):**\n"
@@ -501,7 +554,7 @@ def build_specialist_instructions(base_prompt: str, specialist_type: str, attach
         active_rules.extend(architect_rules)
     elif specialist_type == "researcher":
         active_rules.extend(researcher_rules)
-        
+
     strategic_instr = "\n\n## 🛡️ STRATEGIC SPECIALIST INSTRUCTIONS\n"
     for i, rule in enumerate(active_rules, 1):
         strategic_instr += f"{i}. {rule}\n"
@@ -520,8 +573,8 @@ def harden_subagent_command(command: str) -> str:
     command = re.sub(r"\s+&&\s+", "; ", command)
     command = re.sub(r"\s+\|\|\s+", "; ", command)
 
-    # BUG-240: Drive-Blindness Override. 
-    # LLMs frequently hallucinate 'C:\canary.txt' or 'C:\test.txt'. 
+    # BUG-240: Drive-Blindness Override.
+    # LLMs frequently hallucinate 'C:\canary.txt' or 'C:\test.txt'.
     # We automatically translate these to the mandated D: drive workspace.
     command = command.replace("C:\\canary.txt", "D:\\Nanobot_Storage\\workspace\\canary.txt")
     command = command.replace("C:\\test.txt", "D:\\Nanobot_Storage\\workspace\\test.txt")
@@ -535,7 +588,7 @@ def harden_subagent_command(command: str) -> str:
             return f"echo 'ERROR (BUG-229): Hallucinated URI detected. {host} is a TOOL, not a network host. Call the dedicated MCP tool directly.'"
 
     # BUG-243: PowerShell Script Hallucination Override.
-    # Specialists frequently assume they can run .ps1 files directly. 
+    # Specialists frequently assume they can run .ps1 files directly.
     # We automatically prepend 'powershell -File' if a .ps1 path is used standalone.
     if ".ps1" in command.lower() and "powershell" not in command.lower():
         # Match standalone paths or commands starting with a .ps1 file
@@ -545,17 +598,17 @@ def harden_subagent_command(command: str) -> str:
             path = match.group(1)
             # Use -ExecutionPolicy Bypass for maximum reliability in spawned processes
             command = command.replace(path, f"powershell -NoProfile -ExecutionPolicy Bypass -File \"{path}\"")
-    
+
     if "python " in command.lower() or "python.exe" in command.lower():
         # MANDATE: Project root for module resolution.
         root_path = str(PROJECT_ROOT)
-        
+
         # BUG-221/225: Convert POSIX-style 'PYTHONPATH=... python' to PowerShell compatible assignment.
         # This prevents ParserError and TerminatorExpectedAtEndOfString in EncodedCommand.
         # We use a non-capturing group for the env assignment to keep the command intact.
         posix_env_pattern = re.compile(r"^\s*PYTHONPATH=([^\s]+)\s+(.*)$", re.IGNORECASE)
         match = posix_env_pattern.match(command)
-        
+
         if match:
             path_val = match.group(1).strip("'\"")
             rest_of_cmd = match.group(2)
@@ -575,7 +628,7 @@ def harden_subagent_command(command: str) -> str:
         if f'& "{PYTHON_EXE_PATH}"' not in command:
             def _python_replacer(m):
                 return f'& "{PYTHON_EXE_PATH}"'
-            
+
             command = re.sub(r"\bpython(\.exe)?\b", _python_replacer, command, flags=re.IGNORECASE)
 
     return command

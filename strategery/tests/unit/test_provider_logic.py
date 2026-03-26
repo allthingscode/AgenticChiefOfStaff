@@ -1,5 +1,7 @@
 import pytest
+
 from strategery.logic import provider_logic
+
 
 def test_format_provider_log():
     res = provider_logic.format_provider_log("TestProvider", "test-model")

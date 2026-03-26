@@ -1,10 +1,12 @@
 import asyncio
 from typing import TYPE_CHECKING
-from .base import BasePatch, PatchResult, PatchContext
+
+from strategery.logic import memory_logic
+from strategery.strategic_logger import strategic_logger
+
+from .base import BasePatch, PatchContext, PatchResult
 from .config import load_strategic_context
 from .vsa import VectorStoreFactory
-from strategery.strategic_logger import strategic_logger
-from strategery.logic import memory_logic
 
 if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
@@ -17,10 +19,10 @@ async def strategic_inject_rag_context(content, provider, config: 'StrategicConf
     try:
         rag_cfg = config.strategic_edition.memory_rag
         vec_store = vec_store_factory.get_store(provider=provider)
-        
+
         # Use max_results from config
         results = await vec_store.query(content, n_results=rag_cfg.max_results)
-        
+
         if results:
             # Pass threshold to the filtering logic
             valid = memory_logic.filter_rag_results(results, threshold=rag_cfg.threshold)
@@ -31,7 +33,7 @@ async def strategic_inject_rag_context(content, provider, config: 'StrategicConf
 
 class MemoryPatch(BasePatch):
     """Thin Bridge for memory consolidation and context management."""
-    
+
     @property
     def name(self) -> str:
         return "Memory & Context Management"
@@ -53,8 +55,8 @@ class MemoryPatch(BasePatch):
             return result
 
     def _patch_memory_consolidation(self, config: 'StrategicConfig'):
-        from nanobot.agent.memory import MemoryStore, _SAVE_MEMORY_TOOL
-        
+        from nanobot.agent.memory import _SAVE_MEMORY_TOOL, MemoryStore
+
         if not hasattr(MemoryStore, "_orig_consolidate_strategic"):
             MemoryStore._orig_consolidate_strategic = MemoryStore.consolidate
 
@@ -63,7 +65,7 @@ class MemoryPatch(BasePatch):
                 if config.agents.consolidator:
                     config_model = config.agents.consolidator.get("model")
                 model = config_model or model
-                
+
                 archive_all = kwargs.get("archive_all", False)
                 memory_window = kwargs.get("memory_window", 50)
 
@@ -104,11 +106,11 @@ class MemoryPatch(BasePatch):
                         vec_store = VectorStoreFactory.get_store(provider=provider)
                         entry = args.get("history_entry", "No summary available.")
                         update = args.get("memory_update", current_memory)
-                        
+
                         asyncio.create_task(vec_store.add_entry(str(entry), {"type": "history_summary"}))
                         _, _, storage_root = load_strategic_context()
                         memory_logic.write_journal_entry(storage_root, entry)
-                        
+
                         if update and update != current_memory:
                             self.write_long_term(str(update))
                             asyncio.create_task(vec_store.add_entry(f"UPDATED CORE MEMORY:\n{update}", {"type": "memory_fact_sheet"}))
@@ -125,7 +127,7 @@ class MemoryPatch(BasePatch):
 
     def _patch_context_pruning(self, config: 'StrategicConfig'):
         from nanobot.agent.loop import AgentLoop
-        
+
         if not hasattr(AgentLoop, "_orig_process_message_strategic"):
             AgentLoop._orig_process_message_strategic = AgentLoop._process_message
 

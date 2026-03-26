@@ -1,8 +1,10 @@
 import os
 import re
 from typing import Type
-from pydantic import BaseModel, Field
+
 from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
+
 
 class LocalFileReadToolInput(BaseModel):
     """Input for LocalFileReadTool."""
@@ -18,7 +20,7 @@ class LocalFileReadTool(BaseTool):
             # Resolve home directory dynamically
             home_dir = os.path.expanduser("~")
             project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-            
+
             # MANDATE: Resolve storage root dynamically from config if possible
             # Default to D: for this machine but support portability
             storage_root = r"D:\Nanobot_Storage"
@@ -38,7 +40,7 @@ class LocalFileReadTool(BaseTool):
             abs_path = os.path.abspath(file_path)
             if not any(abs_path.startswith(root) for root in allowed_roots):
                 return f"Error: Access denied to path {file_path}. Stay within project roots."
-            
+
             with open(abs_path, 'r', encoding='utf-8-sig') as f:
                 return f.read()
         except Exception as e:
@@ -58,7 +60,7 @@ class FeatureBacklogTool(BaseTool):
         "and 'write_feature' to save a new specification."
     )
     args_schema: Type[BaseModel] = FeatureBacklogToolInput
-    
+
     # Dynamically resolve paths relative to the project root
     @property
     def project_root(self) -> str:
@@ -96,7 +98,7 @@ class FeatureBacklogTool(BaseTool):
         elif action == "write_feature":
             if not feature_name or not content:
                 return "Error: feature_name and content are required for 'write_feature'."
-            
+
             try:
                 # Find the next ID again to be safe
                 next_id_str = self._run("get_next_id")
@@ -104,11 +106,11 @@ class FeatureBacklogTool(BaseTool):
                 safe_name = re.sub(r'[^\w\s-]', '', feature_name).strip().replace(' ', '_')
                 filename = f"{next_id_str}_{safe_name}.md"
                 file_path = os.path.join(self.backlog_dir, filename)
-                
+
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
                 return f"Successfully wrote feature specification to {file_path}"
             except Exception as e:
                 return f"Error writing feature: {str(e)}"
-        
+
         return f"Unknown action: {action}"

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from strategery.strategic_logger import strategic_logger
+
 
 class VectorStoreInterface(ABC):
     """
@@ -46,8 +48,8 @@ class VectorStoreFactory:
                 strategic_logger.error(f"VectorStoreFactory: Failed to late-patch provider: {e}")
 
         if cls._instance is None:
-            from .hybrid_store import StrategicHybridStore
             from .config import load_strategic_context
+            from .hybrid_store import StrategicHybridStore
 
             # Use provided root or derive it from strategic context
             if storage_root is None:

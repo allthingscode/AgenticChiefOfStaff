@@ -1,15 +1,18 @@
-import os
 import argparse
 import json
+import os
 from pathlib import Path
+
+from crewai import Agent, Crew, Process, Task
 from dotenv import load_dotenv
-from crewai import Agent, Task, Crew, Process
 
 # Load environment variables from .env file
 load_dotenv()
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from strategery.tools.crew_tools import LocalFileReadTool, FeatureBacklogTool
+
+from strategery.tools.crew_tools import FeatureBacklogTool, LocalFileReadTool
+
 
 def get_gemini_api_key():
     """Attempts to find the Gemini API key from environment or Nanobot config."""
@@ -35,7 +38,7 @@ def get_llm(model_name: str):
     api_key = get_gemini_api_key()
     if not api_key:
         raise ValueError("Gemini API key not found in environment or config.json")
-    
+
     # Ensure environment variables are set for CrewAI's internal manager
     os.environ["GOOGLE_API_KEY"] = api_key
     os.environ["GEMINI_API_KEY"] = api_key
@@ -51,10 +54,10 @@ def run_strategic_crew(target_path: str):
     # Flagship Upgrade: Use 3.1 Pro for the deepest reasoning and lowest hallucination rate
     pro_model = os.getenv("CREWAI_PRO_MODEL", "gemini-3.1-pro-preview")
     flash_model = os.getenv("CREWAI_FLASH_MODEL", "gemini-2.5-flash")
-    
+
     llm_pro = get_llm(pro_model)
     llm_flash = get_llm(flash_model)
-    
+
     # Tools
     file_tool = LocalFileReadTool()
     backlog_tool = FeatureBacklogTool()
@@ -152,5 +155,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the CrewAI Strategic Reviewer.")
     parser.add_argument("--target", required=True, help="The file or directory to analyze.")
     args = parser.parse_args()
-    
+
     run_strategic_crew(args.target)

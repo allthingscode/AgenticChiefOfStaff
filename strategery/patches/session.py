@@ -1,8 +1,12 @@
 import asyncio
 import json
-from .base import BasePatch, PatchResult, PatchContext
-from nanobot.session.manager import SessionManager, Session
+
 from loguru import logger
+
+from nanobot.session.manager import Session, SessionManager
+
+from .base import BasePatch, PatchContext, PatchResult
+
 
 class SessionPatch(BasePatch):
     """
@@ -21,7 +25,7 @@ class SessionPatch(BasePatch):
             # 1. Patch SessionManager.save
             if not hasattr(SessionManager, "_orig_save_strategic"):
                 SessionManager._orig_save_strategic = SessionManager.save
-                
+
                 def _sync_save(manager, session):
                     path = manager._get_session_path(session.key)
                     try:
@@ -55,14 +59,14 @@ class SessionPatch(BasePatch):
             # 2. Patch SessionManager.save to be "Dual-Mode"
             if hasattr(SessionManager, "save") and not hasattr(SessionManager, "_is_dual_mode_strategic"):
                 orig_patched_save = SessionManager.save
-                
+
                 def _dual_mode_save(self, session: Session):
                     coro = orig_patched_save(self, session)
                     # Return the coroutine for those who AWAIT it (like our future patches)
                     # But also ensure it runs if NOT awaited.
                     asyncio.create_task(coro)
                     return coro
-                
+
                 SessionManager.save = _dual_mode_save
                 SessionManager._is_dual_mode_strategic = True
                 logger.debug("Patched SessionManager.save to be dual-mode (sync/async safe).")

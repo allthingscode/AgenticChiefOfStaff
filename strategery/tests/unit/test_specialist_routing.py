@@ -1,9 +1,12 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.registry import ToolRegistry
-from strategery.patches.subagent import SubagentPatch
 from strategery.logic.config_logic import validate_strategic_config
+from strategery.patches.subagent import SubagentPatch
+
 
 @pytest.fixture
 def mock_specialist_config():
@@ -66,7 +69,7 @@ async def test_subagent_manager_integrated_routing(mock_context):
     mock_mgr.temperature = 0.7
     mock_mgr.max_tokens = 4096
     mock_mgr.reasoning_effort = None
-    
+
     # Mock the chat method to avoid real LLM calls
     mock_mgr.provider.chat = AsyncMock()
     mock_mgr.provider.chat.return_value = MagicMock(has_tool_calls=False, content="Done")
@@ -84,7 +87,7 @@ async def test_architect_routing_uses_pro_model(mock_context):
     """Verify that the Architect specialist correctly uses the 'pro' model from config (BUG-056)."""
     from nanobot.agent.subagent import SubagentManager
     from nanobot.agent.tools.registry import ToolRegistry
-    
+
     mock_context.config = validate_strategic_config({
         "agents": {
             "specialists": {
@@ -110,13 +113,13 @@ async def test_architect_routing_uses_pro_model(mock_context):
     mock_mgr.temperature = 0.7
     mock_mgr.max_tokens = 4096
     mock_mgr.reasoning_effort = None
-    
+
     # Execute Architect Task (specialist="architect")
     with patch.object(ToolRegistry, "register"):
         SubagentPatch().apply(mock_context)
-        
+
         await SubagentManager._run_subagent(
-            mock_mgr, "task-2", "design system", "Architect", {"channel": "test", "chat_id": "123"}, 
+            mock_mgr, "task-2", "design system", "Architect", {"channel": "test", "chat_id": "123"},
             specialist="architect"
         )
 
@@ -142,16 +145,16 @@ async def test_subagent_registry_tool_access(mock_context):
     # Should be registered (for bridging) but hidden from definitions
     main_reg.register(mock_tool)
     assert "mcp_google-surgical_search" in main_reg.tool_names
-    
+
     defs = main_reg.get_definitions()
     assert "mcp_google-surgical_search" not in [d.get("function", {}).get("name") for d in defs]
 
     # 2. Specialist Registry (Tagged)
     spec_reg = ToolRegistry()
     spec_reg._is_strategic_specialist = True
-    
+
     spec_reg.register(mock_tool)
     assert "mcp_google-surgical_search" in spec_reg.tool_names
-    
+
     spec_defs = spec_reg.get_definitions()
     assert "mcp_google-surgical_search" in [d.get("function", {}).get("name") for d in spec_defs]

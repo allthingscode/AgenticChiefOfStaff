@@ -5,18 +5,18 @@ this script is a dedicated MCP wrapper for automated, high-reliability delivery
 to the configured user email for briefings.
 """
 import base64
-from email.message import EmailMessage
 import json
+import logging
 import os
 import sys
-import logging
-from pathlib import Path
 from datetime import datetime
+from email.message import EmailMessage
+from pathlib import Path
 
+from fastmcp import FastMCP
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-from fastmcp import FastMCP
 
 # --- Logging Setup ---
 # Use the D: drive log directory if available, otherwise local

@@ -3,9 +3,10 @@ STRATEGIC DOCTOR: Pre-Flight Diagnostic Engine
 Goal: Ensure 100% stability of Nanobot Strategic Edition before launch.
 Mandate: Fail fast, fail loud, and provide actionable fixes.
 """
-import sys
 import argparse
+import sys
 from pathlib import Path
+
 from strategery.logic import doctor_logic
 
 # ANSI Colors for Terminal Clarity
@@ -32,7 +33,7 @@ def check_config(apply=False):
     """Validates and optionally repairs the main config.json integrity."""
     config_path = Path.home() / ".nanobot" / "config.json"
     ok, msg, config = doctor_logic.check_config_health(config_path)
-    
+
     if ok:
         if msg == "UTF-8 BOM detected":
             if apply:
@@ -99,7 +100,7 @@ def check_storage(config, apply=False):
             else:
                 # BUG-242: Demote token.json to WARN if missing (expected during re-auth cycles)
                 lvl = "WARN" if (name in initializers or name == "token.json") else "FAIL"
-                
+
                 # BUG-236: Auto-repair for revoked Google OAuth token
                 if name == "token.json" and apply:
                     if doctor_logic.repair_oauth_token(config):

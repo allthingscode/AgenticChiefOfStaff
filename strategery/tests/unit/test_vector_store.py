@@ -1,17 +1,19 @@
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-from pathlib import Path
-import sys
 import os
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Add project root to sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from strategery.patches.vector_store import StrategicVectorStore
 from strategery.patches.provider import strategic_litellm_embed
+from strategery.patches.vector_store import StrategicVectorStore
+
 
 @pytest.fixture
 def mock_provider():
@@ -40,16 +42,16 @@ async def test_vector_store_initialization(vector_store):
 async def test_vector_store_add_entry(vector_store, mock_provider):
     """Verify adding an entry to the vector store."""
     mock_collection = MagicMock()
-    
+
     # Mock chromadb in sys.modules to avoid import on Python 3.14 (Pydantic v1 issue)
     mock_chroma = MagicMock()
     mock_config = MagicMock()
     with patch.dict("sys.modules", {"chromadb": mock_chroma, "chromadb.config": mock_config}):
         mock_client = mock_chroma.PersistentClient.return_value
         mock_client.get_or_create_collection.return_value = mock_collection
-        
+
         success = await vector_store.add_entry("Test text", metadata={"source": "test"})
-        
+
         assert success is True
         mock_provider.embed.assert_called_once_with("Test text")
         mock_collection.add.assert_called_once()
@@ -67,16 +69,16 @@ async def test_vector_store_query(vector_store, mock_provider):
         "metadatas": [[{"s": 1}, {"s": 2}]],
         "distances": [[0.1, 0.2]]
     }
-    
+
     # Mock chromadb in sys.modules to avoid import on Python 3.14
     mock_chroma = MagicMock()
     mock_config = MagicMock()
     with patch.dict("sys.modules", {"chromadb": mock_chroma, "chromadb.config": mock_config}):
         mock_client = mock_chroma.PersistentClient.return_value
         mock_client.get_or_create_collection.return_value = mock_collection
-        
+
         results = await vector_store.query("Search text", n_results=2)
-        
+
         assert len(results) == 2
         assert results[0]["content"] == "Result 1"
         assert results[1]["content"] == "Result 2"
@@ -88,7 +90,7 @@ async def test_strategic_litellm_embed_success():
     mock_self = MagicMock()
     mock_self.api_key = "test-key"
     mock_self.embedding_model = "models/gemini-embedding-001"
-    
+
     mock_client = MagicMock()
     mock_result = MagicMock()
     # Mock return from client.aio.models.embed_content
@@ -97,10 +99,10 @@ async def test_strategic_litellm_embed_success():
     mock_item.values = [0.1, 0.2, 0.3]
     mock_result.embeddings = [mock_item]
     mock_client.aio.models.embed_content = AsyncMock(return_value=mock_result)
-    
+
     with patch("google.genai.Client", return_value=mock_client):
         embeddings = await strategic_litellm_embed(mock_self, "hello world")
-        
+
         assert len(embeddings) == 1
         assert embeddings[0] == [0.1, 0.2, 0.3]
         mock_client.aio.models.embed_content.assert_called_once_with(
@@ -114,7 +116,7 @@ async def test_strategic_litellm_embed_failure():
     mock_self = MagicMock()
     mock_self.api_key = "test-key"
     mock_self.embedding_model = "models/gemini-embedding-001"
-    
+
     with patch("google.genai.Client", side_effect=Exception("API Error")):
         embeddings = await strategic_litellm_embed(mock_self, "hello world")
         assert embeddings == []

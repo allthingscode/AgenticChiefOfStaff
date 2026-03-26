@@ -1,6 +1,8 @@
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from strategery.strategic_logger import get_logger
+
 from .vsa import VectorStoreInterface
 
 strategic_logger = get_logger()
@@ -24,7 +26,7 @@ class StrategicVectorStore(VectorStoreInterface):
             if provider:
                 self.provider = provider
             return
-            
+
         # BUG-FIX (BUG-248): Resolve root via strategic context to prevent drift to home
         if storage_root is None:
             from .config import load_strategic_context
@@ -34,13 +36,13 @@ class StrategicVectorStore(VectorStoreInterface):
         self.storage_path = root / "workspace" / "memory" / "chroma"
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self.storage_path.mkdir(parents=True, exist_ok=True)
-        
+
         self.provider = provider
         self.collection_name = "strategic_history"
         self._client = None
         self._collection = None
         self._initialized = True
-        
+
         strategic_logger.info(f"Vector Store initialized at {self.storage_path}")
 
     async def _get_collection(self):
@@ -48,7 +50,7 @@ class StrategicVectorStore(VectorStoreInterface):
             try:
                 import chromadb
                 from chromadb.config import Settings
-                
+
                 self._client = chromadb.PersistentClient(
                     path=str(self.storage_path),
                     settings=Settings(anonymized_telemetry=False)
@@ -70,10 +72,10 @@ class StrategicVectorStore(VectorStoreInterface):
         try:
             collection = await self._get_collection()
             embeddings = await self.provider.embed(text)
-            
+
             import uuid
             doc_id = str(uuid.uuid4())
-            
+
             collection.add(
                 ids=[doc_id],
                 embeddings=embeddings,
@@ -94,12 +96,12 @@ class StrategicVectorStore(VectorStoreInterface):
         try:
             collection = await self._get_collection()
             embeddings = await self.provider.embed(text)
-            
+
             results = collection.query(
                 query_embeddings=embeddings,
                 n_results=n_results
             )
-            
+
             # Format results into list of dicts
             formatted = []
             if results and results['documents'] and len(results['documents']) > 0:
@@ -117,7 +119,7 @@ class StrategicVectorStore(VectorStoreInterface):
     async def close(self) -> None:
         """Gracefully closes any database connections."""
         if self._client:
-            # ChromaDB's PersistentClient doesn't have an explicit close(), 
+            # ChromaDB's PersistentClient doesn't have an explicit close(),
             # but we can clear our references to ensure GC can happen if needed.
             # Some versions use a heartbeat/telemetry that might need to be stopped.
             strategic_logger.info("Closing Vector Store connection...")

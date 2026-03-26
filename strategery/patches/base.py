@@ -1,8 +1,8 @@
+import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from pathlib import Path
-import importlib
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
@@ -28,14 +28,14 @@ class PatchContext:
     storage_root: Path
     user_email: str
     app_root: Path
-    
+
     @property
     def workspace_root(self) -> Path:
         return self.storage_root / "workspace"
 
 class BasePatch(ABC):
     """Base class for all strategic patches."""
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -76,10 +76,10 @@ class BasePatch(ABC):
             # We assume at least 'module.attribute'
             if len(parts) < 2:
                 continue
-                
+
             module_name = ""
             target = None
-            
+
             # Try to find the break point between module and attribute
             # We iterate backwards to find the longest valid module path
             found_module = False
@@ -92,15 +92,15 @@ class BasePatch(ABC):
                     break
                 except ImportError:
                     continue
-            
+
             if not found_module:
                 return f"Module for symbol '{sym}' could not be imported."
-            
+
             # Now walk the attributes
             current = target
             for attr in remaining:
                 if not hasattr(current, attr):
                     return f"Symbol '{attr}' missing from '{module_name}' (Target: {sym})"
                 current = getattr(current, attr)
-                
+
         return None

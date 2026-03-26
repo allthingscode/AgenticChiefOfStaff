@@ -1,8 +1,9 @@
-import re
 import json
+import re
 from datetime import datetime, timedelta
-from typing import Any, Optional, Tuple, List
 from pathlib import Path
+from typing import Any, List, Optional, Tuple
+
 from strategery.strategic_logger import strategic_logger
 
 # F-030: Generic skip patterns optimized with frozenset for O(1) lookups
@@ -13,8 +14,8 @@ GENERIC_SKIP_PATTERNS = frozenset([
 
 # F-030: RAG noise patterns
 RAG_NOISE_PATTERNS = [
-    "spawned subagent", 
-    "i have spawned", 
+    "spawned subagent",
+    "i have spawned",
     "specialist has been assigned id",
     "your turn is now over",
     "provide a single brief acknowledgement"
@@ -39,22 +40,22 @@ def prune_context(messages: List[dict], ttl_hours: int, keep_last_assistants: in
     Returns: A new list of pruned messages.
     """
     cutoff = datetime.now() - timedelta(hours=ttl_hours)
-    
+
     new_msgs = []
     assistant_count = 0
     needed_tool_ids = set()
-    
+
     # Pass 1: Identification (Reverse to find newest first)
     for m in reversed(messages):
         role = m.get("role")
-        
+
         # Ensure timestamp is parsed
         if "_parsed_ts" not in m and m.get("timestamp"):
             try: m["_parsed_ts"] = datetime.fromisoformat(m["timestamp"])
             except: m["_parsed_ts"] = None
-        
+
         is_old = m.get("_parsed_ts") and m["_parsed_ts"] < cutoff
-        
+
         keep = False
         if role == "user":
             keep = True
@@ -64,10 +65,10 @@ def prune_context(messages: List[dict], ttl_hours: int, keep_last_assistants: in
                 keep = True
                 for tc in (m.get("tool_calls") or []):
                     if tid := tc.get("id"): needed_tool_ids.add(tid)
-        
+
         if keep:
             new_msgs.append(m)
-            
+
     # Pass 2: Tool Resolution (Forward to preserve order)
     final_msgs = []
     for m in messages:
@@ -76,11 +77,11 @@ def prune_context(messages: List[dict], ttl_hours: int, keep_last_assistants: in
             final_msgs.append(m)
         elif role == "tool" and m.get("tool_call_id") in needed_tool_ids:
             final_msgs.append(m)
-            
+
     # Cleanup temporary metadata
     for m in final_msgs:
         m.pop("_parsed_ts", None)
-        
+
     return final_msgs
 
 def format_consolidation_messages(messages: List[dict]) -> str:
@@ -139,16 +140,16 @@ def get_journal_continuity(storage_root: Any, max_chars: int = 1000) -> str:
 
         with open(journal_path, "r", encoding="utf-8-sig") as f:
             content = f.read()
-            
+
         if not content:
             return ""
-            
+
         snippet = content[-max_chars:]
         if len(content) > max_chars:
             nl_pos = snippet.find("\n")
             if nl_pos != -1:
                 snippet = snippet[nl_pos+1:]
-                
+
         return f"\n### RECENT CONTINUITY (FROM DAILY JOURNAL):\n...{snippet}\n"
     except Exception as e:
         strategic_logger.error(f"Error reading rolling journal: {e}")
@@ -159,7 +160,7 @@ def write_journal_entry(storage_root: Any, entry: str) -> bool:
     try:
         journal_path = _get_daily_journal_path(storage_root)
         journal_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(journal_path, "a", encoding="utf-8-sig") as f:
             f.write(f"\n### CONSOLIDATION [{_get_timestamp()}]\n{entry}\n")
         return True
@@ -170,21 +171,21 @@ def write_journal_entry(storage_root: Any, entry: str) -> bool:
 def filter_rag_results(results: List[dict], threshold: float = 0.7) -> List[dict]:
     """Filters out noise and low-relevance matches from RAG results."""
     valid_results = []
-    
+
     for r in results:
         content = r.get('content', '')
         if not content or "No summary available" in content:
             continue
-        
+
         # Check semantic distance/score if available from the vector store
-        score = r.get('score', 1.0) 
+        score = r.get('score', 1.0)
         if score < threshold:
             continue
 
         lower_content = content.lower()
         if any(pattern in lower_content for pattern in RAG_NOISE_PATTERNS):
             continue
-            
+
         valid_results.append(r)
     return valid_results
 
@@ -198,10 +199,10 @@ def format_rag_block(valid_results: List[dict]) -> Tuple[Optional[str], int]:
     """Formats the valid RAG results into a prompt block."""
     if not valid_results:
         return None, 0
-    
+
     # F-030: Optimized string assembly with list comprehension
     context_lines = [f"- {r['content']}" for r in valid_results]
-    
+
     warning = "[STRATEGIC MEMORY - MAY BE STALE OR OUTDATED. USE RESEARCH TOOLS TO VERIFY.]\n"
     mem_block = f"### RETRIEVED HISTORICAL CONTEXT:\n{warning}\n" + "\n".join(context_lines)
     return mem_block, len(valid_results)

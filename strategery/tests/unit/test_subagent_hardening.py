@@ -1,6 +1,9 @@
 from pathlib import Path
+
 import pytest
+
 from strategery.logic import subagent_logic
+
 
 def test_harden_subagent_command_python_path():
     # BUG-141: Relative python should be replaced with absolute venv path
@@ -8,7 +11,7 @@ def test_harden_subagent_command_python_path():
     # We use dynamic resolution to match the logic in subagent_logic.py
     project_root = Path(__file__).parent.parent.parent.parent.absolute()
     python_abs = str(project_root / "nanoClaw" / "Scripts" / "python.exe")
-    
+
     cmd = "python -m strategery.strategic_doctor"
     hardened = subagent_logic.harden_subagent_command(cmd)
     assert "$env:PYTHONPATH = '$env:PYTHONPATH;" in hardened
@@ -58,7 +61,7 @@ def test_harden_subagent_command_separators():
     cmd = "echo test && del file.txt"
     hardened = subagent_logic.harden_subagent_command(cmd)
     assert hardened == "echo test; del file.txt"
-    
+
     # Test inconsistent whitespace
     cmd = "mkdir tmp   &&   cd tmp"
     hardened = subagent_logic.harden_subagent_command(cmd)

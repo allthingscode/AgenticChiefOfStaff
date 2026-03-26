@@ -1,12 +1,15 @@
-import sys
-import os
-import io
 import asyncio
-from typing import Any, List
+import io
+import os
+import sys
 from functools import wraps
-from .base import BasePatch, PatchResult, PatchContext
-from .lifecycle import lifecycle_manager
+from typing import Any, List
+
 from strategery.strategic_logger import strategic_logger
+
+from .base import BasePatch, PatchContext, PatchResult
+from .lifecycle import lifecycle_manager
+
 
 def strategic_bridge_mcp_sessions(mcp_configs, registry, stack, core_connect_func):
     """
@@ -17,7 +20,7 @@ def strategic_bridge_mcp_sessions(mcp_configs, registry, stack, core_connect_fun
         from strategery.logic.infra_logic import strategic_mcp_logic
         # 1. Call original core connection logic
         results = await core_connect_func(configs, reg, st)
-        
+
         # 2. Bridging: Since core doesn't return the (session, stack, tools) directly,
         # we scan the registry for the newly created MCP tools.
         for name in configs.keys():
@@ -28,7 +31,7 @@ def strategic_bridge_mcp_sessions(mcp_configs, registry, stack, core_connect_fun
                         if session:
                             from dataclasses import make_dataclass
                             ToolDef = make_dataclass("ToolDef", [("name", str), ("description", str), ("inputSchema", dict)])
-                            
+
                             server_tools_defs = []
                             for t in reg._tools.values():
                                 if hasattr(t, "name") and t.name.startswith(f"mcp_{name}_"):
@@ -87,8 +90,8 @@ class InfraPatch(BasePatch):
                             if hasattr(handler.stream, 'encoding') and handler.stream:
                                 try:
                                     handler.stream = io.TextIOWrapper(
-                                        handler.stream.buffer, 
-                                        encoding=handler.stream.encoding, 
+                                        handler.stream.buffer,
+                                        encoding=handler.stream.encoding,
                                         errors='backslashreplace',
                                         line_buffering=True
                                     )
@@ -125,16 +128,16 @@ class InfraPatch(BasePatch):
             lifecycle_manager.setup_signal_handlers()
             self._patch_mcp_bridging()
             result.affected_symbols.append("nanobot.agent.tools.mcp.connect_mcp_servers")
-            
+
             self._patch_filesystem_tools()
             result.affected_symbols.append("nanobot.agent.tools.filesystem.ReadFileTool.execute")
-            
+
             self._patch_listdir_tool()
             result.affected_symbols.append("nanobot.agent.tools.filesystem.ListDirTool.execute")
-            
+
             self._patch_media_redirection(context)
             result.affected_symbols.append("nanobot.config.paths.get_media_dir")
-            
+
             return result
         except Exception as e:
             import traceback
@@ -146,14 +149,15 @@ class InfraPatch(BasePatch):
 
     def _patch_media_redirection(self, context: PatchContext):
         """Globally redirects all media downloads to the D: drive (BUG-201, BUG-203)."""
-        import nanobot.config.paths as core_paths
-        from pathlib import Path
         import sys
+        from pathlib import Path
+
+        import nanobot.config.paths as core_paths
         from strategery.logic.infra_logic import resolve_strategic_media_path
-        
+
         # Logic Isolation (BUG-212): Use pure logic for path resolution
         strategic_media_root = resolve_strategic_media_path(context.storage_root)
-        
+
         def _strategic_get_media_dir(channel_name: str | None = None) -> Path:
             return resolve_strategic_media_path(context.storage_root, channel_name)
 
@@ -177,10 +181,10 @@ class InfraPatch(BasePatch):
         """Patches ListDirTool to handle Windows-specific junction points and restricted items (BUG-179)."""
         from nanobot.agent.tools.filesystem import ListDirTool
         from strategery.logic.infra_logic import list_directory_robust
-        
+
         if not hasattr(ListDirTool, "_orig_execute_strategic"):
             ListDirTool._orig_execute_strategic = ListDirTool.execute
-            
+
             async def _patched_execute(self, path: str, **kwargs: Any) -> str:
                 # Logic Isolation (BUG-212): Robust listing moved to logic
                 return list_directory_robust(path, self._workspace, self._allowed_dir)
@@ -192,16 +196,16 @@ class InfraPatch(BasePatch):
         """Patches ReadFileTool to handle Windows-specific log encoding (BUG-133)."""
         from nanobot.agent.tools.filesystem import ReadFileTool
         from strategery.logic.infra_logic import read_log_file_robust
-        
+
         if not hasattr(ReadFileTool, "_orig_execute_strategic"):
             ReadFileTool._orig_execute_strategic = ReadFileTool.execute
-            
+
             async def _patched_execute(self, path: str, **kwargs: Any) -> str:
                 # Logic Isolation (BUG-212): Log reading logic moved to logic
                 res = read_log_file_robust(path, self._workspace, self._allowed_dir, self._MAX_CHARS)
                 if res is not None:
                     return res
-                
+
                 return await self._orig_execute_strategic(path, **kwargs)
 
             ReadFileTool.execute = _patched_execute

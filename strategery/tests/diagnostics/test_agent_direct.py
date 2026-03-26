@@ -8,10 +8,11 @@ sys.path.insert(0, str(project_root))
 
 # CRITICAL: Import the strategic launcher's patching logic first
 
-from nanobot.config.loader import load_config
+from loguru import logger
+
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.queue import MessageBus
-from loguru import logger
+from nanobot.config.loader import load_config
 
 # Ensure logs are written for verification, but disable console output to keep the test clean
 logger.remove()
@@ -75,10 +76,10 @@ async def main():
         # 2. Wait for subagents to finish and report back
         max_wait = 300 # 5 minutes max for complex architect tasks
         start_time = asyncio.get_event_loop().time()
-        
+
         while True:
             running_count = agent_loop.subagents.get_running_count()
-            
+
             # Check if we have any pending messages on the bus (subagent results)
             try:
                 # Poll the bus for 1 second
@@ -93,7 +94,7 @@ async def main():
                 # No new messages, check if we're done
                 if running_count == 0:
                     break
-            
+
             if asyncio.get_event_loop().time() - start_time > max_wait:
                 print("Error: Timeout waiting for subagent results.", file=sys.stderr)
                 sys.exit(1)

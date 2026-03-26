@@ -4,9 +4,9 @@ This script initializes the environment and applies modular patches before
 starting the Nanobot gateway.
 """
 
-import sys
-import runpy
 import os
+import runpy
+import sys
 from pathlib import Path
 
 # Add project root to the path immediately
@@ -28,7 +28,7 @@ def pre_start_cleanup(config=None, storage_root=None):
     try:
         # 1. Determine workspace path
         workspace_path = Path(config.get("agents", {}).get("defaults", {}).get("workspace", str(storage_root / "workspace")))
-        
+
         # 2. Workspace cleanup (Google Workspace MCP temp files)
         mcp_dir = Path.home() / ".google_workspace_mcp"
         if mcp_dir.exists():
@@ -83,16 +83,16 @@ def main():
 
     # 2. Perform cleanup and warmup
     pre_start_cleanup()
-    
+
     # 3. Apply Strategic Patches
     # MANDATE: This is the ONLY place patches should be applied for the main bot.
     registry.apply_all(RAW_CONFIG, halt_on_error=True, storage_root=STORAGE_ROOT, user_email=USER_EMAIL)
-    
+
     warmup_vector_store()
-    
+
     sys.argv = transform_args(sys.argv)
     print(f"[Launcher] Running: {' '.join(sys.argv)}")
-    
+
     try:
         runpy.run_module("nanobot", run_name="__main__", alter_sys=True)
     except KeyboardInterrupt:
