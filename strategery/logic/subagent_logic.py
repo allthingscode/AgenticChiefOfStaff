@@ -587,12 +587,19 @@ def harden_subagent_command(command: str) -> str:
     command = re.sub(r"\s+&&\s+", "; ", command)
     command = re.sub(r"\s+\|\|\s+", "; ", command)
 
-    # BUG-240: Drive-Blindness Override.
-    # LLMs frequently hallucinate 'C:\canary.txt' or 'C:\test.txt'.
+    # BUG-228/240: Drive-Blindness Override.
+    # LLMs frequently hallucinate 'C:\canary.txt' or other paths on the C: drive.
     # We automatically translate these to the mandated D: drive workspace.
-    command = command.replace("C:\\canary.txt", "D:\\Nanobot_Storage\\workspace\\canary.txt")
-    command = command.replace("C:\\test.txt", "D:\\Nanobot_Storage\\workspace\\test.txt")
-    command = command.replace("C:\\test_write.txt", "D:\\Nanobot_Storage\\workspace\\test_write.txt")
+    # MANDATE: We match C:\ paths that are NOT part of the core project workspace.
+    # We use a negative lookahead to ignore the known Documents\nanobot structure.
+    def _redirect_c_drive(match):
+        path_str = match.group(0)
+        # If it's already a strategic path or part of our core project root, don't touch it.
+        if "Documents\\nanobot" in path_str or "D:\\" in path_str:
+            return path_str
+        return str(Path("D:/Nanobot_Storage/workspace") / Path(path_str).name)
+
+    command = re.sub(r"(?i)C:\\[^;\"'\s]+", _redirect_c_drive, command)
 
     # BUG-229: MCP URI Hallucination Override.
     # Specialists treat MCP server names as network hosts. We catch and fail these early.
