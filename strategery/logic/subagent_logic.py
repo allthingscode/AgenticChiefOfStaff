@@ -595,16 +595,26 @@ def harden_subagent_command(command: str) -> str:
     # BUG-228/240: Drive-Blindness Override.
     # LLMs frequently hallucinate 'C:\canary.txt' or other paths on the C: drive.
     # We automatically translate these to the mandated D: drive workspace.
-    # MANDATE: We match C:\ paths that are NOT part of the core project workspace.
-    # We use a negative lookahead to ignore the known Documents\nanobot structure.
+    # Three passes: double-quoted (spaces ok), single-quoted, and unquoted paths.
     def _redirect_c_drive(match):
         path_str = match.group(0)
-        # If it's already a strategic path or part of our core project root, don't touch it.
-        if "Documents\\nanobot" in path_str or "D:\\" in path_str:
+        # Detect and strip surrounding quote chars — handles quoted paths containing spaces.
+        if len(path_str) >= 2 and path_str[0] in ('"', "'") and path_str[-1] == path_str[0]:
+            quote, inner = path_str[0], path_str[1:-1]
+        else:
+            quote, inner = None, path_str
+        # If it's the core project root or already on D:, leave it untouched.
+        if "Documents\\nanobot" in inner or "D:\\" in inner:
             return path_str
-        return str(Path("D:/Nanobot_Storage/workspace") / Path(path_str).name)
+        redirected = str(Path("D:/Nanobot_Storage/workspace") / Path(inner).name)
+        return f"{quote}{redirected}{quote}" if quote else redirected
 
-    command = re.sub(r"(?i)C:\\[^;\"'\s]+", _redirect_c_drive, command)
+    # Pass 1: "C:\path with spaces\file.txt" (double-quoted, may contain spaces)
+    command = re.sub(r'"C:\\[^"]*"', _redirect_c_drive, command, flags=re.IGNORECASE)
+    # Pass 2: 'C:\path\file.txt' (single-quoted)
+    command = re.sub(r"'C:\\[^']*'", _redirect_c_drive, command, flags=re.IGNORECASE)
+    # Pass 3: C:\unquoted\path (stops at whitespace and shell metacharacters)
+    command = re.sub(r"C:\\[^;\"'\s]+", _redirect_c_drive, command, flags=re.IGNORECASE)
 
     # BUG-229: MCP URI Hallucination Override.
     # Specialists treat MCP server names as network hosts. We catch and fail these early.

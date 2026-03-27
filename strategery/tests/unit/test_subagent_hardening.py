@@ -72,6 +72,33 @@ def test_harden_subagent_command_separators():
     hardened = subagent_logic.harden_subagent_command(cmd)
     assert hardened == "ls file.txt; echo missing"
 
+def test_harden_subagent_command_c_drive_unquoted():
+    """BUG-228: Unquoted C: paths are redirected to workspace."""
+    cmd = "New-Item C:\\canary.txt"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert "C:\\canary.txt" not in hardened
+    assert "D:\\Nanobot_Storage\\workspace\\canary.txt" in hardened
+
+def test_harden_subagent_command_c_drive_double_quoted():
+    """BUG-228: Double-quoted C: paths with spaces are fully redirected."""
+    cmd = 'Set-Content "C:\\My Documents\\report.txt" "data"'
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert "C:\\" not in hardened
+    assert "D:\\Nanobot_Storage\\workspace\\report.txt" in hardened
+
+def test_harden_subagent_command_c_drive_single_quoted():
+    """BUG-228: Single-quoted C: paths are redirected."""
+    cmd = "Set-Content 'C:\\temp\\output.txt' 'data'"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert "C:\\" not in hardened
+    assert "D:\\Nanobot_Storage\\workspace\\output.txt" in hardened
+
+def test_harden_subagent_command_c_drive_project_root_preserved():
+    """BUG-228: Paths inside the nanobot project root are NOT redirected."""
+    cmd = "python C:\\Users\\HayesChiefOfStaff\\Documents\\nanobot\\run.py"
+    hardened = subagent_logic.harden_subagent_command(cmd)
+    assert "Documents\\nanobot" in hardened
+
 @pytest.mark.asyncio
 async def test_exectool_project_root_enforcement():
     # BUG-156: Verify project root is used as default cwd
