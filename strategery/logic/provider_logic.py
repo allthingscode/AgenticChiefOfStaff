@@ -32,6 +32,14 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
     # STRATEGIC DEFAULT (MANDATE)
     STRATEGIC_FALLBACK_MODEL = "models/gemini-embedding-001"
 
+    if not api_key:
+        strategic_logger.error("Strategic Embedding: No API key provided.")
+        return []
+
+    if not input_text or not input_text.strip():
+        strategic_logger.warning("Strategic Embedding: No input text provided.")
+        return []
+
     # MANDATE (BUG-261 / BUG-264): Pre-emptive fallback for known-bad or invalid models
     bad_patterns = ["invalid", "text-embedding-004", "embedding-001", "gecko-001"]
     if not model_name or any(p in model_name.lower() for p in bad_patterns):
@@ -51,9 +59,10 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
                 client = genai.Client(api_key=api_key)
 
                 # USE ASYNC CLIENT: client.aio.models.embed_content
+                # BUG-264: Input text MUST be a list (contents=[...])
                 result = await client.aio.models.embed_content(
                     model=model_name,
-                    contents=input_text
+                    contents=[input_text]
                 )
                 return [item.values for item in result.embeddings]
             except Exception as api_err:
@@ -67,8 +76,12 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
                         # We don't sleep here, just retry immediately with the new model
                         continue
 
-                # DO NOT retry on other 400/401/403 errors (Permanent)
-                if any(x in err_str for x in ["400", "401", "403", "INVALID_ARGUMENT", "PERMISSION_DENIED", "API_KEY_INVALID"]):
+                # DO NOT retry on other 400/401/403 or Validation errors (Permanent)
+                permanent_errors = [
+                    "400", "401", "403", "INVALID_ARGUMENT", "PERMISSION_DENIED", 
+                    "API_KEY_INVALID", "ValidationError", "ValueError"
+                ]
+                if any(x in err_str for x in permanent_errors):
                     strategic_logger.error(f"Permanent Embedding API Error: {api_err}")
                     raise api_err
 

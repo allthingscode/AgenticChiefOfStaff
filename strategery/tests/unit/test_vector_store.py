@@ -107,9 +107,8 @@ async def test_strategic_litellm_embed_success():
         assert embeddings[0] == [0.1, 0.2, 0.3]
         mock_client.aio.models.embed_content.assert_called_once_with(
             model="models/gemini-embedding-001",
-            contents="hello world"
+            contents=["hello world"]
         )
-
 @pytest.mark.asyncio
 async def test_strategic_litellm_embed_failure():
     """Verify graceful degradation on embedding failure."""

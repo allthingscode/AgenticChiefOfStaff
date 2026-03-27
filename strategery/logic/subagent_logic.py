@@ -28,7 +28,8 @@ ROLE_BLOCKS = {
     "main_agent": [
         "google", "ai-search", "email-reporter", "strategic_", "web_search",
         "search_memory", "nanobot", "filesystem-d", "read_file", "write_file",
-        "edit_file", "list_dir", "ls ", "dir ", "D:", "git_", "calendar", "tasks", "drive"
+        "edit_file", "list_dir", "ls ", "dir ", "D:", "git_", "calendar", "tasks", "drive",
+        "mcp_google-surgical", "mcp_google-ai-search", "mcp_email-reporter", "mcp_filesystem-d"
     ],
     "researcher": [
         "spawn", "nanobot", "strategic_hello", "web_search", "web_fetch",
@@ -472,14 +473,15 @@ def format_spawn_termination_directive(result: str, task_id: str) -> str:
 
 def inject_delegation_mandate(system_content: str) -> str:
     mandate = (
-        "## ⚖️ STRATEGIC DELEGATION & SPECIALIST ECONOMY (MANDATORY)\n"
+        "## ⚖️ STRATEGIC DELEGATION & SPECIALIST ECONOMY (CRITICAL)\n"
         "1. **DELEGATE BY DEFAULT:** You are strictly FORBIDDEN from attempting to use surgical tools (Google Search, Email, Calendar, Tasks, Drive) directly. You MUST use the 'spawn' tool for these tasks.\n"
-        "2. **CHOOSE YOUR SPECIALIST:** ('researcher' for data/weather/news, 'architect' for code/system changes).\n"
+        "2. **CHOOSE YOUR SPECIALIST:** ('researcher' for data/weather/news/research, 'architect' for code/system changes).\n"
         "3. **STOP TURN ON SPAWN:** When you call 'spawn', your turn is OVER. Do NOT predict or hallucinate an ID. Acknowledge the spawn and END your response.\n"
         "4. **ZERO SHELL BYPASS:** You are strictly FORBIDDEN from using the 'exec' tool to bypass restricted tools (e.g., using 'curl' instead of search_ai). Any attempt to bypass mandates via shell will be BLOCKED.\n"
         "5. **MANDATE VIOLATION = TURN TERMINATION:** If a tool call returns 'Access Denied', you MUST STOP and use 'spawn'. Continued violations will result in hard turn termination.\n"
-        f"6. **DEFINITIVE LOG ROOT (BUG-170):** All logs reside EXCLUSIVELY in `{LOG_ROOT}`. Use this absolute path for all log audits.\n"
-        "7. **MULTIMODAL HANDOVER:** If the message contains `[image: <path>]`, you MUST pass that path to the specialist via the `attachments` parameter.\n\n"
+        "6. **NO DIRECT SEARCH:** You are strictly FORBIDDEN from calling 'web_search' or any 'mcp_google-ai-search' tool directly. You MUST spawn a 'researcher' for ALL external research.\n"
+        f"7. **DEFINITIVE LOG ROOT (BUG-170):** All logs reside EXCLUSIVELY in `{LOG_ROOT}`. Use this absolute path for all log audits.\n"
+        "8. **MULTIMODAL HANDOVER:** If the message contains `[image: <path>]`, you MUST pass that path to the specialist via the `attachments` parameter.\n\n"
     )
     # MANDATE (BUG-262): PREPEND the mandate for maximum priority.
     return mandate + system_content
