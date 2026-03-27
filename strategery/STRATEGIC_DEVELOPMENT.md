@@ -71,6 +71,44 @@ These innovations represent the "Surgical DNA" of the Strategic Edition. Porting
 - **Value:** Ensures that strategic upgrades stick even if objects were instantiated before the strategic launcher started.
 - **Reference:** `strategery/patches/telegram.py`
 
+### 7. Memory Consolidation (F-015: The Soul Engine)
+- **Concept:** Periodically compresses conversation history into a permanent "Fact Sheet" (SOUL) and a chronological "History Entry" (Journal).
+- **Value:** Prevents context window exhaustion while ensuring that critical facts (project IDs, user preferences) are never forgotten.
+- **Reference:** `strategery/patches/memory.py`
+
+### 8. Journal-Based Continuity (F-022: Daily Awareness)
+- **Concept:** Automatically injects a "State of Play" snippet from the Daily Journal into every turn.
+- **Value:** Provides the agent with seamless awareness of events that occurred earlier in the day, even if the current session history has been pruned or cleared.
+- **Reference:** `strategery/logic/memory_logic.py` (`get_journal_continuity`)
+
+---
+
+## 🛠️ The Mechanical DNA: Implementation Specifics for Go
+
+These "hidden" behaviors are critical to the stability and precision of the Strategic Edition. Failure to port these mechanical nuances will result in regressions (e.g., shell failures, model hallucinations, or data corruption).
+
+### 1. Shell Hardening & Translation (BUG-225/227/228)
+- **POSIX-to-PowerShell:** LLMs frequently output `&&` or `||` for command chaining. PowerShell 5.1 (standard on Windows) does not support these. The system MUST translate them to `;` for sequential execution.
+- **Stateless Shell Mandate (BUG-246):** The `exec` tool is entirely stateless. `cd` commands are effectively ignored across turns. The system enforces **Absolute Paths** for all operations.
+- **Drive-Blindness Override (BUG-228/240):** Models often hallucinate paths on `C:\`. The hardening logic automatically redirects these to the mandated `D:\Nanobot_Storage\workspace` root.
+- **Script Auto-Execution (BUG-243):** Standalone calls to `.ps1` files are automatically wrapped in `powershell -NoProfile -ExecutionPolicy Bypass -File "..."` to ensure they execute correctly.
+- **CLI-XML Stripping (BUG-247):** PowerShell's `stderr` is often wrapped in verbose CLIXML. The system implements a dedicated `strip_clixml` parser to extract the raw, human-readable error message.
+
+### 2. High-Fidelity Content Scrubbing
+- **Reasoning Artifact Stripping:** To prevent context "echoing" and model confusion, all internal reasoning tags (`<thought>`, `<think>`, etc.) and markdown-style "Thinking" headers are aggressively stripped from logs and subagent handovers.
+- **Idle Loop Prevention:** If a model returns *only* reasoning without tool calls or final content, the system injects a "Mandate Nudge" to force execution instead of allowing an infinite thought loop.
+
+### 3. Precision Memory Mechanics (FTS5)
+- **Identifier Quoting:** In SQLite FTS5, hyphens (e.g., `BUG-042`) are treated as `NOT` operators. All memory queries MUST be double-quoted (`"BUG-042"`) to ensure precise technical retrieval.
+- **BM25 Ranking:** Uses the FTS5 BM25 ranking algorithm, prioritizing keyword matches over semantic vector results to ensure "Exact Match" identifiers take precedence.
+
+### 4. Windows-Specific I/O
+- **BOM Management (utf-8-sig):** All `config.json` and `.jsonl` files MUST be handled with `utf-8-sig` (Byte Order Mark). Without the BOM, Pydantic and other Windows-based parsers may fail on certain characters or file starts.
+- **Lifecycle Resilience:** To prevent `closed loop` or `access denied` errors on Windows, all cleanup tasks (closing DBs, flushing logs) must be registered via a central `lifecycle_manager` and executed during a clean shutdown hook.
+
+### 5. Multimodal Handover (ARCH-022)
+- **Atomic Manifest Injection:** Specialists do not "search" for images. Instead, the Orchestrator injects an **Atomic Manifest** containing the ID, Absolute Path, and Description of any attachments directly into the Specialist's system prompt.
+
 ---
 
 ## 🗺️ System Map & Pathing
