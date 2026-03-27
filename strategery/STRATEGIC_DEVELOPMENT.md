@@ -1,5 +1,9 @@
 # Nanobot Strategic Edition: Development & Maintenance Guide
 
+> **📢 Project Status: Maintenance Mode (Reference Only)**
+> 
+> This Python-based implementation of Nanobot Strategic Edition is now in **maintenance mode**. It serves as a high-fidelity "Golden Reference" for the next-generation **compiled Golang architecture**. Active development has shifted to the Go repository; this codebase remains as the authoritative reference for architectural boundaries, security mandates, and SOPs during the transition.
+
 This document serves as the primary technical "Source of Truth" for AI agents and developers maintaining the Nanobot Strategic Edition. It outlines the architectural boundaries, security mandates, and standard operating procedures (SOPs) required to ensure system integrity.
 
 ## 🛡️ Architectural Mandates (Hard Mandates)

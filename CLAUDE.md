@@ -1,5 +1,9 @@
 # Nanobot Strategic Edition — Claude Code Context
 
+> **📢 Project Status: Maintenance Mode (Reference Only)**
+> 
+> The Python Nanobot Strategic Edition is in **stabilization mode**. It serves as a high-fidelity "Golden Reference" for the next-generation **compiled Golang architecture**. Focus on reliability and documentation accuracy.
+
 ## Project Overview
 
 **nanobot** is an ultra-lightweight personal AI agent framework. This repo contains the upstream nanobot core plus the **Strategic Edition** overlay — a set of runtime monkey-patches that live entirely in `strategery/` with zero modification to core nanobot files.

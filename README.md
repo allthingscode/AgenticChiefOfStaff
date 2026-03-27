@@ -1,7 +1,11 @@
+# nanobot: Ultra-Lightweight Personal AI Assistant
+
+> **📢 Project Status: Maintenance Mode (Reference Only)**
+> 
+> This Python-based implementation of Nanobot Strategic Edition is now in **maintenance mode**. It serves as a high-fidelity "Golden Reference" for the next-generation **compiled Golang architecture**. Active development has shifted to the Go repository; this codebase remains as the authoritative reference for architectural patterns and strategic mandates. See [Strategic Edition Docs](./strategery/STRATEGIC_EDITION.md) for details.
+
 <div align="center">
   <img src="nanobot_logo.png" alt="nanobot" width="500">
-  <h1>nanobot: Ultra-Lightweight Personal AI Assistant</h1>
-  <p><b>🦅 Strategic Edition Active:</b> Enhanced with semantic memory, specialist subagents, and Zero Core Pollution. See <a href="./strategery/STRATEGIC_EDITION.md">Strategic Edition Docs</a>.</p>
   <p>
     <a href="https://pypi.org/project/nanobot-ai/"><img src="https://img.shields.io/pypi/v/nanobot-ai" alt="PyPI"></a>
     <a href="https://pepy.tech/project/nanobot-ai"><img src="https://static.pepy.tech/badge/nanobot-ai" alt="Downloads"></a>
