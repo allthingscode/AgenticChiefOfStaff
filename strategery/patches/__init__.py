@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from strategery.logic.config_logic import validate_strategic_config
+from strategery.logic.config_logic import StrategicConfig, validate_strategic_config
 from strategery.strategic_logger import setup_strategic_logger, strategic_logger
 
 from .awareness import AwarenessPatch
@@ -73,8 +73,8 @@ class PatchRegistry:
             strategic_logger.critical(f"CONFIG VALIDATION FAILED: {e}")
             if halt_on_error:
                 return [PatchResult(patch_name="Registry", success=False, error_msg=f"Config Validation Failed: {e}")]
-            # Fallback to loose config if not halting, but this is dangerous
-            strategic_config = config_data
+            # Fallback to a default StrategicConfig so patches don't crash on attribute access (BUG-257)
+            strategic_config = StrategicConfig()
 
         # 3. Initialize Patch Context (F-018)
         context = PatchContext(
