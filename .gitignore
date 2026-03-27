@@ -28,6 +28,7 @@ botpy.log
 strategery/private/
 
 # --- Development & Local ---
+.claude/
 .gemini/
 .aiexclude.txt
 .geminiignore.txt

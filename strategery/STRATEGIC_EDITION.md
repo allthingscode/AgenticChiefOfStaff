@@ -1,5 +1,9 @@
 # Nanobot Strategic Edition
 
+> **📢 Project Status: Maintenance Mode (Reference Only)**
+> 
+> This Python-based implementation of Nanobot Strategic Edition is now in **maintenance mode**. It serves as a high-fidelity "Golden Reference" for the next-generation **compiled Golang architecture**. Active development has shifted to the Go repository; this codebase remains as the authoritative reference for architectural patterns, multimodal handover, and the specialist economy.
+
 Nanobot Strategic Edition is a high-performance, modular extension of the core Nanobot AI project. It is engineered for senior-level productivity, providing advanced architectural features, superior reliability on Windows environments, and a sophisticated delegation economy that surpasses the capabilities of the standard distribution.
 
 ## **Key Differentiators & Improvements**
