@@ -109,6 +109,21 @@ class AgentLoopPatch(BasePatch):
                         # We call the CURRENT _process_message (which might be patched by others)
                         try:
                             response = await self._process_message(msg)
+                            
+                            # BUG-260: Redirect 'cli' to routable channel to avoid 'Unknown channel' warnings
+                            if response and response.channel == "cli":
+                                from strategery.logic import cron_logic
+                                from .config import load_strategic_context
+                                _, _, storage_root = load_strategic_context()
+                                
+                                new_chan, new_to = cron_logic.resolve_routable_channel(response, storage_root)
+                                if new_chan:
+                                    response.channel = new_chan
+                                    if new_to: response.chat_id = new_to
+                                else:
+                                    # SILENT: Don't publish if resolve returned None
+                                    response = None
+
                             if response is not None:
                                 await self.bus.publish_outbound(response)
                             elif msg.channel == "cli":

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from strategery.logic.config_logic import StrategicConfig
 from strategery.logic import subagent_logic
 from strategery.strategic_logger import strategic_logger
+from strategery.patches.vsa import VectorStoreFactory
 
 
 class SubagentPatch(BasePatch):
@@ -219,8 +220,6 @@ class SubagentPatch(BasePatch):
         from nanobot.agent.tools.shell import ExecTool
         from nanobot.agent.tools.web import WebFetchTool
 
-        from .vsa import VectorStoreFactory
-
         if not hasattr(SubagentManager, "_orig_build_subagent_prompt_strategic"):
             SubagentManager._orig_build_subagent_prompt_strategic = SubagentManager._build_subagent_prompt
             @wraps(SubagentManager._orig_build_subagent_prompt_strategic)
@@ -382,9 +381,13 @@ class SubagentPatch(BasePatch):
             @wraps(ContextBuilder._orig_build_messages_strategic)
             def _patched_build_messages(self_cb, history, current_message, **kwargs):
                 messages = self_cb._orig_build_messages_strategic(history, current_message, **kwargs)
+                # BUG-262: Prepend mandate for maximum priority. 
+                # Only inject once into the first system message.
+                mandate_injected = False
                 for msg in messages:
-                    if msg.get("role") == "system":
+                    if msg.get("role") == "system" and not mandate_injected:
                         msg["content"] = subagent_logic.inject_delegation_mandate(msg["content"])
+                        mandate_injected = True
                 return messages
 
             ContextBuilder.build_messages = _patched_build_messages

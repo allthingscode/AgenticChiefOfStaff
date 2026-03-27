@@ -29,19 +29,24 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
     """
     Standalone logic for Google GenAI embedding with strategic logging and retries.
     """
-    # MANDATE (BUG-258): Definitive fallback to prevent 404 if model is invalid or missing
-    if not model_name or "invalid" in model_name.lower():
-        model_name = "models/text-embedding-004"
+    # STRATEGIC DEFAULT (MANDATE)
+    STRATEGIC_FALLBACK_MODEL = "models/gemini-embedding-001"
+
+    # MANDATE (BUG-261 / BUG-264): Pre-emptive fallback for known-bad or invalid models
+    bad_patterns = ["invalid", "text-embedding-004", "embedding-001", "gecko-001"]
+    if not model_name or any(p in model_name.lower() for p in bad_patterns):
+        if model_name != STRATEGIC_FALLBACK_MODEL:
+            strategic_logger.warning(f"Pre-emptive Fallback: Model '{model_name}' blacklisted. Using {STRATEGIC_FALLBACK_MODEL}.")
+        model_name = STRATEGIC_FALLBACK_MODEL
 
     try:
         from google import genai
-        strategic_logger.info(f"GoogleGenAI embed: model={model_name}")
-
         max_retries = 5
         retry_delay = 2.0
 
         for attempt in range(max_retries):
             try:
+                strategic_logger.info(f"GoogleGenAI embed: model={model_name}")
                 # MANDATE: Constructor moved inside retry loop to handle transient initialization failures
                 client = genai.Client(api_key=api_key)
 
@@ -53,7 +58,16 @@ async def run_strategic_embedding(api_key: str, model_name: str, input_text: str
                 return [item.values for item in result.embeddings]
             except Exception as api_err:
                 err_str = str(api_err)
-                # DO NOT retry on 400/401/403 errors (Permanent)
+                
+                # REACTIVE FALLBACK (BUG-264): If 404 occurs, switch to fallback model mid-retry
+                if any(x in err_str for x in ["404", "NOT_FOUND", "not found"]):
+                    if model_name != STRATEGIC_FALLBACK_MODEL:
+                        strategic_logger.warning(f"Reactive Fallback: Detected 404 for '{model_name}'. Switching to {STRATEGIC_FALLBACK_MODEL}.")
+                        model_name = STRATEGIC_FALLBACK_MODEL
+                        # We don't sleep here, just retry immediately with the new model
+                        continue
+
+                # DO NOT retry on other 400/401/403 errors (Permanent)
                 if any(x in err_str for x in ["400", "401", "403", "INVALID_ARGUMENT", "PERMISSION_DENIED", "API_KEY_INVALID"]):
                     strategic_logger.error(f"Permanent Embedding API Error: {api_err}")
                     raise api_err

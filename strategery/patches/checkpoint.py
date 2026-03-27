@@ -6,16 +6,15 @@ Mandate: Zero Core Pollution.
 import functools
 import json
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Any, List
+from typing import Any, List
 
 from loguru import logger
 
 from strategery.logic import subagent_logic
 from strategery.logic.checkpoint_logic import get_checkpoint_manager
 from strategery.patches.base import BasePatch, PatchContext
+from strategery.patches.vsa import VectorStoreFactory
 
-if TYPE_CHECKING:
-    pass
 
 class CheckpointPatch(BasePatch):
     """Patches AgentLoop and SubagentManager for State Checkpointing."""
@@ -162,8 +161,6 @@ class CheckpointPatch(BasePatch):
                     from nanobot.agent.tools.registry import ToolRegistry
                     from nanobot.agent.tools.shell import ExecTool
                     from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
-
-                    from .vsa import VectorStoreFactory
 
                     tools = ToolRegistry()
                     tools._is_strategic_specialist = True

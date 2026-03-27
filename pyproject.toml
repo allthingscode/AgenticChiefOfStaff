@@ -103,6 +103,12 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# strategery uses compact one-liner style and legitimate sys.path manipulation — pre-existing patterns
+"strategery/**/*.py" = ["E701", "E702", "E722", "E402", "B026"]
+# nanobot core — pre-existing violations in upstream files not under strategic control
+"nanobot/**/*.py" = ["E701", "E702", "E722", "E741", "B904", "B023", "B905", "B026", "F401", "F841", "F821"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

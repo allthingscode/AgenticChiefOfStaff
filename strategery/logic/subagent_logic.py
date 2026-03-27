@@ -28,7 +28,7 @@ ROLE_BLOCKS = {
     "main_agent": [
         "google", "ai-search", "email-reporter", "strategic_", "web_search",
         "search_memory", "nanobot", "filesystem-d", "read_file", "write_file",
-        "edit_file", "list_dir", "ls ", "dir ", "D:", "git_"
+        "edit_file", "list_dir", "ls ", "dir ", "D:", "git_", "calendar", "tasks", "drive"
     ],
     "researcher": [
         "spawn", "nanobot", "strategic_hello", "web_search", "web_fetch",
@@ -128,9 +128,13 @@ def get_block_message(registry: Any, tool_name: str) -> str:
     
     if count >= 2:
         return (f"CRITICAL ERROR: Access Denied. Tool '{tool_name}' is HARD-LOCKED for your role ({role_label}). "
-                f"You have attempted to access it {count} times. You MUST STOP trying to call this tool directly.")
+                f"You have attempted to access it {count} times. You MUST STOP trying to call this tool directly. "
+                "### ⚖️ STRATEGIC MANDATE: DELEGATE NOW\n"
+                "You are forbidden from using this tool. You MUST call the 'spawn' tool to delegate this task to a specialist.")
     
-    return f"ERROR: Access Denied. Tool '{tool_name}' is restricted for your role ({role_label})."
+    return (f"ERROR: Access Denied. Tool '{tool_name}' is restricted for your role ({role_label}). "
+            "### 🛠️ STRATEGIC HINT\n"
+            "You MUST use the 'spawn' tool to delegate surgical tasks (Search, Email, Calendar, etc.) to a specialist (e.g., 'researcher').")
 
 def filter_tool_definitions(definitions: List[Dict[str, Any]], registry: Any) -> List[Dict[str, Any]]:
     """Filters tool definitions based on the agent's granular role."""
@@ -468,16 +472,17 @@ def format_spawn_termination_directive(result: str, task_id: str) -> str:
 
 def inject_delegation_mandate(system_content: str) -> str:
     mandate = (
-        "\n\n## ⚖️ STRATEGIC DELEGATION & SPECIALIST ECONOMY (MANDATORY)\n"
-        "1. **DELEGATE BY DEFAULT:** You are strictly FORBIDDEN from attempting to use surgical tools (Google Search, Email, Calendar, Tasks) directly. You MUST use the 'spawn' tool for these tasks.\n"
+        "## ⚖️ STRATEGIC DELEGATION & SPECIALIST ECONOMY (MANDATORY)\n"
+        "1. **DELEGATE BY DEFAULT:** You are strictly FORBIDDEN from attempting to use surgical tools (Google Search, Email, Calendar, Tasks, Drive) directly. You MUST use the 'spawn' tool for these tasks.\n"
         "2. **CHOOSE YOUR SPECIALIST:** ('researcher' for data/weather/news, 'architect' for code/system changes).\n"
         "3. **STOP TURN ON SPAWN:** When you call 'spawn', your turn is OVER. Do NOT predict or hallucinate an ID. Acknowledge the spawn and END your response.\n"
         "4. **ZERO SHELL BYPASS:** You are strictly FORBIDDEN from using the 'exec' tool to bypass restricted tools (e.g., using 'curl' instead of search_ai). Any attempt to bypass mandates via shell will be BLOCKED.\n"
-        "5. **REPORT DATA GAPS:** If you cannot find information using your provided tools, DO NOT ask the user for it. Report the failure and suggest a course of action.\n"
+        "5. **MANDATE VIOLATION = TURN TERMINATION:** If a tool call returns 'Access Denied', you MUST STOP and use 'spawn'. Continued violations will result in hard turn termination.\n"
         f"6. **DEFINITIVE LOG ROOT (BUG-170):** All logs reside EXCLUSIVELY in `{LOG_ROOT}`. Use this absolute path for all log audits.\n"
-        "7. **MULTIMODAL HANDOVER:** If the message contains `[image: <path>]`, you MUST pass that path to the specialist via the `attachments` parameter."
+        "7. **MULTIMODAL HANDOVER:** If the message contains `[image: <path>]`, you MUST pass that path to the specialist via the `attachments` parameter.\n\n"
     )
-    return system_content + mandate
+    # MANDATE (BUG-262): PREPEND the mandate for maximum priority.
+    return mandate + system_content
 
 def build_specialist_instructions(base_prompt: str, specialist_type: str, attachments: Optional[List[Dict[str, Any]]] = None) -> str:
     header = f"\n## {specialist_type.upper()} SPECIALIST MANDATE\nYou are running a high-precision model. Exhaustively verify facts using surgical tools."

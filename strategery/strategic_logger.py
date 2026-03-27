@@ -40,7 +40,16 @@ def setup_strategic_logger(name="StrategicEdition", log_dir=None):
 
     # 1. Determine target log directory
     env_log_dir = os.environ.get("STRATEGIC_LOG_DIR")
-    target_dir = Path(log_dir or env_log_dir or "./logs")
+    
+    # BUG-263: Detect pytest environment to ensure log isolation
+    is_test = "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
+    
+    if is_test and not env_log_dir and not log_dir:
+        # Default to a safe test-specific path to avoid polluting production logs
+        target_dir = Path("./tests/logs")
+    else:
+        target_dir = Path(log_dir or env_log_dir or "./logs")
+        
     target_file = target_dir / "strategic.log"
 
     # 2. Check if we need to re-configure (log_dir changed)

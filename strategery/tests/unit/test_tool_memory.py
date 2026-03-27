@@ -56,15 +56,19 @@ async def test_search_memory_tool_no_results():
 
 @pytest.mark.asyncio
 async def test_search_memory_tool_error():
-    """Verify error handling."""
+    """Verify error handling and ensure no log pollution."""
     tool = SearchMemoryTool()
 
     with patch("strategery.patches.vsa.VectorStoreFactory.get_store") as mock_get_store:
-        mock_store = AsyncMock()
-        mock_store.query.side_effect = Exception("ChromaDB Failure")
-        mock_get_store.return_value = mock_store
+        # BUG-263: Also patch the logger to prevent mock errors from polluting real logs
+        with patch("strategery.strategic_logger.strategic_logger") as mock_log:
+            mock_store = AsyncMock()
+            mock_store.query.side_effect = Exception("ChromaDB Failure")
+            mock_get_store.return_value = mock_store
 
-        result = await tool.execute(query="test query")
+            result = await tool.execute(query="test query")
 
-        assert "Error querying memory" in result
-        assert "ChromaDB Failure" in result
+            assert "Error querying memory" in result
+            assert "ChromaDB Failure" in result
+            # Verify logger was called but didn't write to disk (it's a mock)
+            mock_log.error.assert_called()
