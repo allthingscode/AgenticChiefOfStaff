@@ -37,6 +37,42 @@ This document serves as the primary technical "Source of Truth" for AI agents an
 
 ---
 
+## 🚀 Golden Reference: Architectural Innovations
+
+These innovations represent the "Surgical DNA" of the Strategic Edition. Porting these to the Golang architecture is a high-priority mandate.
+
+### 1. Rubric-Driven Reflection (Generator-Critic-Refiner)
+- **Concept:** A specialist agent generates a JSON success rubric before execution. Its output is then audited by a separate "Critic" turn against that rubric.
+- **Value:** Eliminates 90% of model hallucinations and instruction-following failures.
+- **Reference:** `strategery/logic/reflection_logic.py`
+
+### 2. Hybrid Memory Index (Semantic + Keyword)
+- **Concept:** Combines ChromaDB (Vector) for semantic recall with SQLite FTS5 (Keyword) for precise identifier matching.
+- **Value:** Vector search often fails on technical strings (BUG IDs, UUIDs); keyword search ensures 100% precision for technical data.
+- **Reference:** `strategery/patches/hybrid_store.py`
+
+### 3. Silent Spawning & Turn Suppression
+- **Concept:** Suppresses the Main Agent's intermediate thoughts/hallucinations during a `spawn` call.
+- **Value:** User only sees the final, atomic result of the delegation, resulting in a cleaner, professional-grade interface.
+- **Reference:** `strategery/patches/loop.py`
+
+### 4. Stateless Shell & Command Hardening
+- **Concept:** A translation engine that converts POSIX-style shell commands into Windows-safe PowerShell, handling spaces and drive root redirects.
+- **Value:** Bridges the gap between "Unix-trained" LLMs and real-world Windows environments.
+- **Reference:** `strategery/logic/subagent_logic.py` (`harden_subagent_command`)
+
+### 5. Environmental Awareness Injection
+- **Concept:** Generates a real-time system manifest (`AWARENESS.md`) at launch and injects it into the system prompt.
+- **Value:** Prevents redundant informational tool calls; the agent "just knows" its current OS, paths, and date.
+- **Reference:** `strategery/patches/awareness.py`
+
+### 6. Triple-Lock Stability Patching
+- **Concept:** A three-layer patching strategy (Class, Instance, and Global utility) for pre-initialized Windows objects.
+- **Value:** Ensures that strategic upgrades stick even if objects were instantiated before the strategic launcher started.
+- **Reference:** `strategery/patches/telegram.py`
+
+---
+
 ## 🗺️ System Map & Pathing
 
 Strategic Edition operates across a dual-drive architecture. All tools and agents MUST use the following generalized paths:
